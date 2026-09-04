@@ -1,0 +1,6 @@
+{
+  "name": "Sistem Absensi SMP NEGERI 9 BANJAR",
+  "description": "Sistem absensi barcode/QR siswa SMP NEGERI 9 BANJAR dengan kiosk pos gerbang, cetak kartu pelajar resmi, impor Excel, dan notifikasi WhatsApp.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
