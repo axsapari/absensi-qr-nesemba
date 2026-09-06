@@ -9,16 +9,15 @@ import {
   ShieldCheck,
   CheckCircle2,
   AlertCircle,
-  KeyRound,
-  Sparkles,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface LoginPageProps {
   onSuccess?: () => void;
+  onCancel?: () => void;
 }
 
-export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
+export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onCancel }) => {
   const { users, currentUser, loginUser, profilSekolah } = useApp();
 
   const [selectedUsername, setSelectedUsername] = useState<string>(
@@ -168,16 +167,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
                   <Lock className="w-3.5 h-3.5 text-blue-400" />
                   Kata Sandi
                 </label>
-                <span className="text-[11px] text-slate-400 font-mono">
-                  Default: {selectedUsername}1234
-                </span>
               </div>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder={`Contoh: ${selectedUsername}1234`}
+                  placeholder="Masukkan kata sandi"
                   autoFocus
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all pr-11"
                 />
@@ -193,19 +189,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
                     <Eye className="w-4 h-4" />
                   )}
                 </button>
-              </div>
-            </div>
-
-            {/* Hint Box */}
-            <div className="bg-blue-950/40 border border-blue-900/60 rounded-xl p-3 text-[11px] text-blue-200/90 leading-relaxed flex items-start gap-2">
-              <KeyRound className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-semibold text-blue-300">Format Password Bawaan:</span>{' '}
-                Kombinasi nama pengguna + 1234 (
-                <span className="font-mono text-white">agus1234</span>,{' '}
-                <span className="font-mono text-white">moch1234</span>,{' '}
-                <span className="font-mono text-white">alia1234</span>,{' '}
-                <span className="font-mono text-white">feby1234</span>). Kata sandi dapat diubah di menu Admin/Profil.
               </div>
             </div>
 
@@ -244,27 +227,17 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess }) => {
             </button>
           </form>
 
-          {/* Quick Demo Fill Helper */}
-          <div className="mt-5 pt-4 border-t border-slate-800 text-center">
-            <span className="text-[11px] text-slate-500">
-              Uji Coba Cepat: Klik nama akun lalu klik masuk dengan password default.
-            </span>
-            <div className="mt-2 flex flex-wrap items-center justify-center gap-1.5">
-              {['agus', 'moch', 'alia', 'feby'].map((u) => (
-                <button
-                  key={u}
-                  type="button"
-                  onClick={() => {
-                    handleSelectUser(u);
-                    setPassword(`${u}1234`);
-                  }}
-                  className="text-[10px] bg-slate-800/80 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded-md border border-slate-700/60 font-mono transition-colors"
-                >
-                  {u} / {u}1234
-                </button>
-              ))}
+          {onCancel && (
+            <div className="mt-5 pt-4 border-t border-slate-800 text-center">
+              <button
+                type="button"
+                onClick={onCancel}
+                className="text-xs text-slate-400 hover:text-slate-200 font-medium transition-colors"
+              >
+                ← Kembali ke Layar Scan
+              </button>
             </div>
-          </div>
+          )}
         </div>
       </motion.div>
     </div>

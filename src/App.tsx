@@ -13,6 +13,10 @@ import { SettingsModal } from './components/SettingsModal';
 import { LoginPage } from './components/LoginPage';
 import { SyncNotificationToast } from './components/SyncNotificationToast';
 
+// Halaman yang WAJIB login untuk diakses. Layar scan (kiosk) sengaja dikecualikan
+// karena itu memang layar publik yang dipakai penjaga gerbang tanpa perlu login tiap pagi.
+const PROTECTED_VIEWS: AppView[] = ['rekap', 'master', 'kartu', 'backup', 'admin', 'settings'];
+
 function MainApp() {
   const { currentUser } = useApp();
   const [currentView, setCurrentView] = useState<AppView>('kiosk');
@@ -25,9 +29,22 @@ function MainApp() {
     setCurrentView('kartu');
   };
 
-  // If user opens login page
-  if (showLoginModal) {
-    return <LoginPage onSuccess={() => setShowLoginModal(false)} />;
+  // Wajibkan login kalau halaman yang sedang dituju termasuk yang dilindungi
+  // dan belum ada pengguna yang login -- dievaluasi ulang di setiap render,
+  // jadi otomatis kembali ke layar login juga kalau pengguna logout.
+  const needsLogin = PROTECTED_VIEWS.includes(currentView) && !currentUser;
+
+  // If user opens login page (baik lewat tombol login, maupun karena mengakses halaman terkunci)
+  if (showLoginModal || needsLogin) {
+    return (
+      <LoginPage
+        onSuccess={() => setShowLoginModal(false)}
+        onCancel={() => {
+          setShowLoginModal(false);
+          setCurrentView('kiosk');
+        }}
+      />
+    );
   }
 
   return (
