@@ -40,8 +40,8 @@ CREATE TABLE IF NOT EXISTS public.kelas (
 CREATE TABLE IF NOT EXISTS public.siswa (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     nama VARCHAR(150) NOT NULL,
-    kode_barcode VARCHAR(100) NOT NULL UNIQUE, -- ID unik yang dicetak pada kartu Barcode/QR
-    nisn VARCHAR(20) NOT NULL UNIQUE,
+    kode_barcode VARCHAR(100) NOT NULL UNIQUE, -- ID cadangan (kompatibilitas kartu lama), bukan yang dicetak di QR
+    nisn VARCHAR(20) NOT NULL UNIQUE CHECK (nisn ~ '^[0-9]{10}$'), -- Referensi utama QR/scan, wajib 10 digit
     kelas_id UUID NOT NULL REFERENCES public.kelas(id) ON DELETE RESTRICT,
     nomor_wa_ortu VARCHAR(25) NOT NULL,
     nama_ortu VARCHAR(100) NOT NULL,
@@ -70,6 +70,19 @@ CREATE TABLE IF NOT EXISTS public.absensi (
 -- Index pencegahan duplikasi dan kecepatan query rekap
 CREATE INDEX IF NOT EXISTS idx_absensi_siswa_tgl ON public.absensi(siswa_id, tanggal, jenis);
 CREATE INDEX IF NOT EXISTS idx_absensi_tanggal ON public.absensi(tanggal);
+
+-- WAJIB: proses sinkronisasi aplikasi memakai upsert() dengan onConflict pada
+-- (siswa_id, tanggal, jenis) -- Postgres MEWAJIBKAN ada unique constraint persis
+-- pada kombinasi kolom ini agar upsert bisa berjalan, tanpa ini setiap sinkronisasi GAGAL.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'absensi_siswa_tgl_jenis_unique'
+  ) THEN
+    ALTER TABLE public.absensi
+      ADD CONSTRAINT absensi_siswa_tgl_jenis_unique UNIQUE (siswa_id, tanggal, jenis);
+  END IF;
+END $$;
 
 -- 4. TABEL LOG NOTIFIKASI WA
 CREATE TABLE IF NOT EXISTS public.log_notifikasi_wa (
@@ -110,12 +123,31 @@ ALTER TABLE public.absensi ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.log_notifikasi_wa ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.pengaturan_jam ENABLE ROW LEVEL SECURITY;
 
--- Allow anon read & write for Pos Absensi Kiosk & Dashboard
-CREATE POLICY "Allow public read-write for kelas" ON public.kelas FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow public read-write for siswa" ON public.siswa FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow public read-write for absensi" ON public.absensi FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow public read-write for log_notifikasi_wa" ON public.log_notifikasi_wa FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow public read-write for pengaturan_jam" ON public.pengaturan_jam FOR ALL USING (true) WITH CHECK (true);
+-- PENTING: kebijakan di bawah ini SENGAJA dibuat ketat, bukan "izinkan semua orang".
+-- Alasan: kunci anon (anonKey) yang dipakai aplikasi ini TERTANAM di kode frontend,
+-- sehingga bersifat publik/bisa dilihat siapa saja. Aplikasi saat ini menyimpan data
+-- siswa & kelas secara LOKAL di perangkat (localStorage) dan HANYA mengirim data
+-- absensi ke Supabase (insert/update lewat upsert) -- jadi tabel siswa/kelas/pengaturan_jam
+-- /log_notifikasi_wa TIDAK PERLU dan TIDAK BOLEH dibuka ke publik lewat anon key.
+--
+-- Jika ke depan Anda membangun fitur yang benar-benar membaca/menulis siswa/kelas
+-- langsung dari Supabase (misalnya dashboard multi-perangkat), tambahkan otentikasi
+-- pengguna sungguhan (Supabase Auth) lebih dulu, lalu buat kebijakan baru yang
+-- mensyaratkan auth.uid() IS NOT NULL -- jangan kembalikan ke "true" seperti semula.
+
+-- Tabel kelas, siswa, pengaturan_jam, log_notifikasi_wa: TIDAK ADA kebijakan publik sama
+-- sekali (RLS aktif + tanpa policy = otomatis menolak semua akses anon/publik).
+
+-- Tabel absensi: kiosk pos absensi boleh MENULIS (insert & update, dipakai proses
+-- upsert sinkronisasi), tapi TIDAK BOLEH membaca seluruh data atau menghapus lewat API publik.
+CREATE POLICY "Anon dapat insert absensi" ON public.absensi
+  FOR INSERT
+  WITH CHECK (true);
+
+CREATE POLICY "Anon dapat update absensi untuk proses upsert" ON public.absensi
+  FOR UPDATE
+  USING (true)
+  WITH CHECK (true);
 
 -- 7. CONTOH EDGE FUNCTION / DATABASE WEBHOOK TRIGGER
 -- Untuk auto-send WhatsApp dari server Supabase saat row absensi di-insert:

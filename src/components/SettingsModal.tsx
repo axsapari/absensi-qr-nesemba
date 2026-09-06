@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { SUPABASE_SQL_SCHEMA } from '../lib/supabase';
+import { SUPABASE_SQL_SCHEMA, getSupabaseClient } from '../lib/supabase';
 import { DEFAULT_WA_CONFIG, formatPhoneNumber } from '../lib/whatsapp';
 import {
   Clock,
@@ -71,24 +71,48 @@ export const SettingsModal: React.FC = () => {
     setTimeout(() => setCopiedSql(false), 2000);
   };
 
-  // Test WhatsApp
+  // Test WhatsApp -- benar-benar memanggil Supabase Edge Function `send-wa-notification`,
+  // supaya bisa dipakai untuk memastikan token & secret di Supabase sudah benar.
   const handleTestWhatsApp = async () => {
-    setTestResultMsg('Mengirim simulasi pesan uji coba WhatsApp...');
+    const formatted = formatPhoneNumber(testPhone);
+    const supabase = getSupabaseClient(supabaseConfig);
+
+    if (!supabase) {
+      setTestResultMsg(
+        'Supabase belum dikonfigurasi (lihat tab Supabase). Edge Function untuk pengiriman WA memerlukan koneksi Supabase.'
+      );
+      return;
+    }
+
+    setTestResultMsg('Menghubungi Edge Function send-wa-notification...');
     try {
-      const formatted = formatPhoneNumber(testPhone);
-      if (!waForm.apiToken.trim()) {
+      const { data, error } = await supabase.functions.invoke('send-wa-notification', {
+        body: {
+          provider: waForm.provider,
+          endpointUrl: waForm.endpointUrl,
+          targetPhone: formatted,
+          message: `Ini pesan uji coba dari Sistem Presensi Digital pada ${new Date().toLocaleString('id-ID')}.`,
+        },
+      });
+
+      if (error) {
         setTestResultMsg(
-          `[Mode Simulasi] Pesan sukses di-generate untuk ${formatted}. Untuk pengiriman nyata ke HP, masukkan API Token Fonnte/Wablas Anda.`
+          `Gagal memanggil Edge Function: ${error.message}. Pastikan function "send-wa-notification" sudah di-deploy di Supabase Dashboard.`
         );
-      } else {
-        setTestResultMsg(`Permintaan terkirim ke gateway ${waForm.provider}. Memeriksa status...`);
-        // Actual call can be executed
-        setTimeout(() => {
-          setTestResultMsg(`Sukses! Pesan WhatsApp percobaan diproses untuk nomor ${formatted}.`);
-        }, 1200);
+        return;
       }
-    } catch {
-      setTestResultMsg('Gagal mengirim WhatsApp.');
+
+      if (data?.success) {
+        setTestResultMsg(`Berhasil! Pesan uji coba dikirim ke ${formatted}. Cek HP tujuan.`);
+      } else {
+        setTestResultMsg(
+          `Edge Function merespons tapi gagal mengirim: ${JSON.stringify(data?.response || data)}. Periksa apakah secret WA_API_TOKEN sudah diisi dengan benar di Supabase.`
+        );
+      }
+    } catch (err) {
+      setTestResultMsg(
+        `Gagal menghubungi Edge Function: ${err instanceof Error ? err.message : 'Kesalahan tak dikenal'}`
+      );
     }
   };
 
@@ -293,16 +317,12 @@ export const SettingsModal: React.FC = () => {
                 <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
                   API Key / Token Gateway
                 </label>
-                <input
-                  type="password"
-                  value={waForm.apiToken}
-                  onChange={(e) => setWaForm({ ...waForm, apiToken: e.target.value })}
-                  placeholder="Masukkan API Token dari Fonnte/Wablas..."
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-mono text-slate-900 focus:outline-none focus:border-emerald-500"
-                />
-                <p className="text-[11px] text-slate-400 mt-1">
-                  {waForm.apiToken ? 'Token aktif' : 'Jika kosong, sistem berjalan dalam Mode Simulasi yang tetap mencatat log pengiriman.'}
-                </p>
+                <div className="w-full bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-xs text-amber-800 leading-relaxed">
+                  Token API <strong>tidak lagi diatur di sini</strong> demi keamanan (supaya tidak
+                  terlihat siapa pun lewat browser). Atur token di{' '}
+                  <strong>Supabase Dashboard → Edge Functions → send-wa-notification → Manage secrets</strong>,
+                  dengan nama secret <code className="font-mono bg-amber-100 px-1 rounded">WA_API_TOKEN</code>.
+                </div>
               </div>
             </div>
 

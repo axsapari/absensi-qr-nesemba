@@ -36,6 +36,7 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
   const [activeTab, setActiveTab] = useState<'siswa' | 'kelas'>('siswa');
   const [searchSiswa, setSearchSiswa] = useState('');
   const [selectedKelasFilter, setSelectedKelasFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'aktif' | 'nonaktif' | 'all'>('aktif');
 
   // Excel Modal State
   const [showImportModal, setShowImportModal] = useState(false);
@@ -71,6 +72,8 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
   // Filtered Siswa
   const filteredSiswa = siswaList.filter((s) => {
     if (selectedKelasFilter !== 'all' && s.kelas_id !== selectedKelasFilter) return false;
+    if (statusFilter === 'aktif' && !s.status_aktif) return false;
+    if (statusFilter === 'nonaktif' && s.status_aktif) return false;
     if (searchSiswa.trim()) {
       const q = searchSiswa.toLowerCase();
       return (
@@ -130,10 +133,30 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
     e.preventDefault();
     if (!siswaForm.nama.trim() || !siswaForm.kode_barcode.trim()) return;
 
+    let nisn = siswaForm.nisn.trim();
+    // Normalisasi: kalau semua digit tapi kurang dari 10 karakter, tambahkan nol di depan
+    // (mengantisipasi NISN yang tanpa sengaja diketik/ditempel tanpa angka nol di depan)
+    if (/^\d+$/.test(nisn) && nisn.length < 10) {
+      nisn = nisn.padStart(10, '0');
+    }
+    if (!/^\d{10}$/.test(nisn)) {
+      alert('NISN harus tepat 10 digit angka. NISN ini akan dicetak sebagai QR untuk scan absensi, jadi harus benar.');
+      return;
+    }
+    const isDuplicate = siswaList.some(
+      (s) => s.nisn === nisn && s.id !== editingSiswaId
+    );
+    if (isDuplicate) {
+      alert(`NISN ${nisn} sudah dipakai siswa lain. Setiap siswa harus punya NISN unik.`);
+      return;
+    }
+
+    const finalForm = { ...siswaForm, nisn };
+
     if (editingSiswaId) {
-      updateSiswa(editingSiswaId, siswaForm);
+      updateSiswa(editingSiswaId, finalForm);
     } else {
-      addSiswa(siswaForm);
+      addSiswa(finalForm);
     }
     setShowSiswaModal(false);
   };
@@ -282,6 +305,19 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
               </select>
             </div>
 
+            <div className="flex items-center gap-2 text-xs text-slate-500 font-semibold shrink-0">
+              <span>Status:</span>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as 'aktif' | 'nonaktif' | 'all')}
+                className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-2.5 py-1.5 focus:outline-none cursor-pointer"
+              >
+                <option value="aktif">Aktif Saja</option>
+                <option value="nonaktif">Nonaktif / Lulus Saja</option>
+                <option value="all">Semua</option>
+              </select>
+            </div>
+
             <div className="relative w-full md:w-80">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
@@ -346,7 +382,14 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
                               {s.kode_barcode}
                             </span>
                           </td>
-                          <td className="px-4 py-3 font-mono text-slate-600 font-semibold">{s.nisn}</td>
+                          <td className="px-4 py-3 font-mono text-slate-600 font-semibold">
+                            {s.nisn}
+                            {!s.status_aktif && (
+                              <span className="ml-1.5 inline-block bg-slate-200 text-slate-500 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded">
+                                Nonaktif
+                              </span>
+                            )}
+                          </td>
                           <td className="px-4 py-3">
                             <span className="font-semibold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
                               {k?.nama_kelas || '-'}
@@ -375,6 +418,22 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
                                   <QrCode className="w-4 h-4" />
                                 </button>
                               )}
+                              <button
+                                title={s.status_aktif ? 'Tandai Lulus / Nonaktifkan' : 'Aktifkan Kembali'}
+                                onClick={() => {
+                                  const aksi = s.status_aktif ? 'menonaktifkan (lulus/pindah)' : 'mengaktifkan kembali';
+                                  if (confirm(`Yakin ingin ${aksi} siswa ${s.nama}?`)) {
+                                    updateSiswa(s.id, { status_aktif: !s.status_aktif });
+                                  }
+                                }}
+                                className={`p-1.5 rounded-lg transition cursor-pointer ${
+                                  s.status_aktif
+                                    ? 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'
+                                    : 'text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50'
+                                }`}
+                              >
+                                <GraduationCap className="w-4 h-4" />
+                              </button>
                               <button
                                 title="Edit Siswa"
                                 onClick={() => handleOpenEditSiswa(s)}

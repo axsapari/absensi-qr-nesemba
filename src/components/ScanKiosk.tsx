@@ -572,11 +572,11 @@ export const ScanKiosk: React.FC = () => {
               <button
                 key={s.id}
                 id={`quick-scan-${s.id}`}
-                onClick={() => handleQuickTestScan(s.kode_barcode)}
+                onClick={() => handleQuickTestScan(s.nisn)}
                 disabled={isProcessing}
                 className="px-2.5 py-1.5 bg-slate-800 hover:bg-emerald-600/30 hover:border-emerald-500 border border-slate-700 rounded-lg text-slate-300 hover:text-white transition cursor-pointer"
               >
-                Scan {s.nama.split(' ')[0]} ({s.kode_barcode.split('-')[1]})
+                Scan {s.nama.split(' ')[0]} ({s.nisn.slice(-4)})
               </button>
             ))}
 

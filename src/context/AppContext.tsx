@@ -38,6 +38,7 @@ import {
 import { soundManager } from '../lib/sound';
 import { DEFAULT_WA_CONFIG, sendWhatsAppNotification } from '../lib/whatsapp';
 import { processSyncToDatabase } from '../lib/syncService';
+import { getSupabaseClient } from '../lib/supabase';
 
 interface RecentScanItem {
   absensi: Absensi;
@@ -635,12 +636,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return failResult;
     }
 
-    // 1. Find student
+    // 1. Find student -- NISN adalah referensi utama (dipakai untuk QR yang dicetak),
+    // kode_barcode & id tetap dicek sebagai cadangan untuk kompatibilitas kartu lama.
     const normalizedInput = cleanCode.toLowerCase();
+    // NISN standar selalu 10 digit -- kalau scanner/alat lain membaca tanpa angka nol
+    // di depan, kita tambahkan kembali sebelum dicocokkan supaya tidak gagal scan.
+    const normalizedInputPadded = /^\d+$/.test(normalizedInput)
+      ? normalizedInput.padStart(10, '0')
+      : normalizedInput;
+
     const student = siswaList.find(
       (s) =>
-        s.kode_barcode.toLowerCase() === normalizedInput ||
         s.nisn.toLowerCase() === normalizedInput ||
+        s.nisn.toLowerCase() === normalizedInputPadded ||
+        s.kode_barcode.toLowerCase() === normalizedInput ||
         s.id.toLowerCase() === normalizedInput
     );
 
@@ -649,6 +658,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const failResult: ScanResult = {
         success: false,
         message: `ID/Barcode "${cleanCode}" tidak terdaftar di sistem!`,
+        waktu: currentActiveTimeStr,
+      };
+      setLastScanResult(failResult);
+      return failResult;
+    }
+
+    // Tolak scan untuk siswa yang sudah ditandai nonaktif (lulus/pindah sekolah/keluar) --
+    // penting supaya alumni tidak ikut tercatat & memicu notifikasi WA ke orang tua.
+    if (!student.status_aktif) {
+      soundManager.playError();
+      const failResult: ScanResult = {
+        success: false,
+        siswa: student,
+        message: `${student.nama} berstatus NONAKTIF (lulus/pindah). Absensi tidak dicatat.`,
         waktu: currentActiveTimeStr,
       };
       setLastScanResult(failResult);
@@ -774,7 +797,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       setLogNotifikasiList((prev) => [offlineWALog, ...prev]);
     } else {
-      sendWhatsAppNotification(waConfig, student, studentClass, newAbsensi)
+      sendWhatsAppNotification(waConfig, student, studentClass, newAbsensi, getSupabaseClient(supabaseConfig))
         .then((logEntry) => {
           setLogNotifikasiList((prev) => [logEntry, ...prev]);
         })

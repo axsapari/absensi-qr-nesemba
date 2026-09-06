@@ -147,7 +147,7 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({ isOpen, onCl
         tanggal_lahir: row.tanggal_lahir,
         alamat: row.alamat,
         foto_url: row.foto_url,
-        status_aktif: true,
+        status_aktif: row.status_aktif,
       };
     });
 

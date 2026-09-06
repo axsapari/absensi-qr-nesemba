@@ -13,6 +13,7 @@ export interface ParsedSiswaRow {
   nomor_wa_ortu: string;
   nama_ortu: string;
   foto_url: string;
+  status_aktif: boolean;
   isValid: boolean;
   errors: string[];
 }
@@ -209,7 +210,7 @@ export async function parseExcelFile(file: File): Promise<ParsedSiswaRow[]> {
 
   const parsed: ParsedSiswaRow[] = rawRows.map((row, index) => {
     const nama = findValue(row, ['Nama Lengkap', 'Nama', 'Nama Siswa', 'Full Name']);
-    const nisn = findValue(row, ['NISN', 'Nomor Induk Siswa Nasional', 'NIS']);
+    let nisn = findValue(row, ['NISN', 'Nomor Induk Siswa Nasional', 'NIS']);
     const kode_barcode = findValue(row, ['Kode Barcode', 'Barcode', 'Barcode Scanner', 'Kode']);
     const nama_kelas = findValue(row, ['Kelas', 'Nama Kelas', 'Class', 'Rombel']);
     const jkRaw = findValue(row, ['Jenis Kelamin (L/P)', 'Jenis Kelamin', 'JK', 'Gender', 'L/P']).toUpperCase();
@@ -219,17 +220,36 @@ export async function parseExcelFile(file: File): Promise<ParsedSiswaRow[]> {
     const nomor_wa_ortu = findValue(row, ['No WA Ortu', 'No WA', 'Nomor WhatsApp', 'No HP', 'Kontak Ortu', 'Telepon']);
     const nama_ortu = findValue(row, ['Nama Ortu', 'Nama Orang Tua', 'Nama Wali', 'Orang Tua']);
     const foto_url = findValue(row, ['Foto URL', 'Foto', 'Photo', 'URL Foto']);
+    const statusRaw = findValue(row, ['Status', 'Status Aktif', 'Status Siswa']).toLowerCase();
+
+    // PENTING: NISN standar Indonesia selalu 10 digit. Excel sering membaca kolom
+    // NISN sebagai angka dan menghilangkan angka nol di depan (mis. "0098234101"
+    // menjadi "98234101"). Kalau nilainya semua digit tapi kurang dari 10 karakter,
+    // kita tambahkan kembali angka nol di depan supaya tidak salah cocok saat scan.
+    if (nisn && /^\d+$/.test(nisn) && nisn.length < 10) {
+      nisn = nisn.padStart(10, '0');
+    }
+
+    // Status aktif: default aktif kecuali eksplisit ditulis nonaktif/lulus/keluar/pindah
+    const isInactive = ['nonaktif', 'lulus', 'keluar', 'pindah', 'alumni'].some((k) =>
+      statusRaw.includes(k)
+    );
 
     const jenis_kelamin: 'L' | 'P' = jkRaw.startsWith('P') || jkRaw.includes('PEREMPUAN') ? 'P' : 'L';
 
     const errors: string[] = [];
     if (!nama) errors.push('Nama siswa wajib diisi');
     if (!nama_kelas) errors.push('Kelas wajib diisi');
+    if (!nisn) {
+      errors.push('NISN wajib diisi (dipakai sebagai referensi cetak QR & scan)');
+    } else if (!/^\d{10}$/.test(nisn)) {
+      errors.push(`NISN "${nisn}" harus tepat 10 digit angka`);
+    }
 
     return {
       nama,
-      nisn: nisn || `009${String(Date.now()).slice(-7)}${index}`,
-      kode_barcode: kode_barcode || '', // will be auto generated if empty
+      nisn,
+      kode_barcode: kode_barcode || '', // will be auto generated if empty (id cadangan, bukan yang dicetak di QR)
       nama_kelas,
       jenis_kelamin,
       tempat_lahir: tempat_lahir || 'Banjar',
@@ -240,6 +260,7 @@ export async function parseExcelFile(file: File): Promise<ParsedSiswaRow[]> {
       foto_url: foto_url || (jenis_kelamin === 'P'
         ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200'
         : 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=200'),
+      status_aktif: !isInactive,
       isValid: errors.length === 0,
       errors,
     };

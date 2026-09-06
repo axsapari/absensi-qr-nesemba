@@ -32,7 +32,7 @@ export const KartuPelajar: React.FC<{ initialSelectedId?: string }> = ({ initial
       const urls: Record<string, string> = {};
       for (const s of siswaList) {
         try {
-          const dataUrl = await QRCode.toDataURL(s.kode_barcode, {
+          const dataUrl = await QRCode.toDataURL(s.nisn, {
             width: 320,
             margin: 1,
             color: {
@@ -417,7 +417,7 @@ export const OfficialStudentCard: React.FC<OfficialStudentCardProps> = ({
             {qrCodeUrl ? (
               <img
                 src={qrCodeUrl}
-                alt={`QR ${siswa.kode_barcode}`}
+                alt={`QR NISN ${siswa.nisn}`}
                 className="w-20 h-20 object-contain rounded-md"
               />
             ) : (
@@ -426,7 +426,7 @@ export const OfficialStudentCard: React.FC<OfficialStudentCardProps> = ({
               </div>
             )}
             <div className="text-[8px] font-mono font-bold text-slate-800 tracking-tighter mt-1 text-center truncate w-full">
-              {siswa.kode_barcode}
+              {siswa.nisn}
             </div>
           </div>
         </div>

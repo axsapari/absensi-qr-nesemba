@@ -1,9 +1,10 @@
+import { SupabaseClient } from '@supabase/supabase-js';
 import { LogNotifikasiWA, Siswa, Kelas, Absensi, WAGatewayConfig } from '../types';
 
 export const DEFAULT_WA_CONFIG: WAGatewayConfig = {
   provider: 'fonnte',
   endpointUrl: 'https://api.fonnte.com/send',
-  apiToken: '',
+  apiToken: '', // TIDAK LAGI DIPAKAI dari sisi client -- token diatur sebagai Secret di Supabase Edge Function
   senderPhone: '',
   active: true,
   templateMasuk: 'Yth. Bapak/Ibu {nama_ortu}, ananda *{nama}* (Kelas {kelas}) telah tiba di sekolah dan tercatat *HADIR TEPAT WAKTU* pada hari {hari}, {tanggal} pukul *{waktu} WIB*. Terima kasih. - Pos Absensi SMP NEGERI 9 BANJAR',
@@ -64,7 +65,8 @@ export async function sendWhatsAppNotification(
   config: WAGatewayConfig,
   siswa: Siswa,
   kelas: Kelas | undefined,
-  absensi: Absensi
+  absensi: Absensi,
+  supabase: SupabaseClient | null
 ): Promise<LogNotifikasiWA> {
   const logId = 'log_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
   const jenisPesan = absensi.status === 'terlambat' ? 'terlambat' : absensi.jenis;
@@ -79,8 +81,8 @@ export async function sendWhatsAppNotification(
   const messageText = buildWhatsAppMessage(template, siswa, kelas, absensi);
   const targetPhone = formatPhoneNumber(siswa.nomor_wa_ortu);
 
-  // If Gateway is not active or token is empty, save as Simulation mode
-  if (!config.active || !config.apiToken.trim()) {
+  // Kalau fitur WA dimatikan dari Pengaturan, catat sebagai simulasi tanpa memanggil apa pun
+  if (!config.active) {
     return {
       id: logId,
       absensi_id: absensi.id,
@@ -90,69 +92,54 @@ export async function sendWhatsAppNotification(
       pesan: messageText,
       status_kirim: 'simulasi',
       waktu_kirim: new Date().toISOString(),
-      response_payload: 'Mode Simulasi (Token Gateway belum diisi). Pesan berhasil di-generate sesuai template.',
+      response_payload: 'Mode Simulasi (Notifikasi WA dimatikan di Pengaturan). Pesan berhasil di-generate sesuai template.',
     };
   }
 
-  // Dispatch to real REST API
+  // Supabase belum dikonfigurasi -- tidak ada Edge Function yang bisa dipanggil,
+  // jadi catat sebagai simulasi dengan pesan yang jelas (bukan pura-pura berhasil)
+  if (!supabase) {
+    return {
+      id: logId,
+      absensi_id: absensi.id,
+      siswa_id: siswa.id,
+      nomor_tujuan: targetPhone,
+      jenis_pesan: jenisPesan,
+      pesan: messageText,
+      status_kirim: 'simulasi',
+      waktu_kirim: new Date().toISOString(),
+      response_payload: 'Mode Simulasi (Supabase belum dikonfigurasi). Notifikasi WA memerlukan Edge Function di Supabase untuk benar-benar terkirim.',
+    };
+  }
+
+  // Dispatch lewat Supabase Edge Function -- token gateway TIDAK PERNAH dikirim dari
+  // browser, hanya provider/endpoint (tidak sensitif) + nomor tujuan + isi pesan.
+  // Token asli tersimpan sebagai Secret di sisi Supabase dan hanya dipakai server-side.
   try {
-    let res: Response;
+    const { data, error } = await supabase.functions.invoke('send-wa-notification', {
+      body: {
+        provider: config.provider,
+        endpointUrl: config.endpointUrl,
+        targetPhone,
+        message: messageText,
+      },
+    });
 
-    if (config.provider === 'fonnte') {
-      const formData = new FormData();
-      formData.append('target', targetPhone);
-      formData.append('message', messageText);
-      if (config.senderPhone) {
-        formData.append('countryCode', '62');
-      }
-
-      res = await fetch(config.endpointUrl || 'https://api.fonnte.com/send', {
-        method: 'POST',
-        headers: {
-          Authorization: config.apiToken.trim(),
-        },
-        body: formData,
-      });
-    } else if (config.provider === 'wablas') {
-      res = await fetch(config.endpointUrl || 'https://phone.wablas.com/api/send-message', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: config.apiToken.trim(),
-        },
-        body: JSON.stringify({
-          phone: targetPhone,
-          message: messageText,
-        }),
-      });
-    } else {
-      // Custom Webhook REST API
-      res = await fetch(config.endpointUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${config.apiToken.trim()}`,
-        },
-        body: JSON.stringify({
-          to: targetPhone,
-          message: messageText,
-          student: {
-            id: siswa.id,
-            name: siswa.nama,
-            class: kelas?.nama_kelas,
-          },
-          attendance: {
-            type: absensi.jenis,
-            status: absensi.status,
-            time: absensi.waktu_scan,
-            date: absensi.tanggal,
-          },
-        }),
-      });
+    if (error) {
+      return {
+        id: logId,
+        absensi_id: absensi.id,
+        siswa_id: siswa.id,
+        nomor_tujuan: targetPhone,
+        jenis_pesan: jenisPesan,
+        pesan: messageText,
+        status_kirim: 'gagal',
+        waktu_kirim: new Date().toISOString(),
+        response_payload: `Gagal memanggil Edge Function: ${error.message}`,
+      };
     }
 
-    const resJson = await res.json().catch(() => ({ status: res.status, text: 'No JSON body' }));
-    const isSuccess = res.ok && (resJson.status === true || resJson.status === 'success' || res.status === 200);
+    const isSuccess = data?.success === true;
 
     return {
       id: logId,
@@ -163,7 +150,7 @@ export async function sendWhatsAppNotification(
       pesan: messageText,
       status_kirim: isSuccess ? 'terkirim' : 'gagal',
       waktu_kirim: new Date().toISOString(),
-      response_payload: JSON.stringify(resJson),
+      response_payload: JSON.stringify(data),
     };
   } catch (err) {
     return {
@@ -175,7 +162,7 @@ export async function sendWhatsAppNotification(
       pesan: messageText,
       status_kirim: 'gagal',
       waktu_kirim: new Date().toISOString(),
-      response_payload: err instanceof Error ? err.message : 'Network error saat menghubungi WhatsApp Gateway',
+      response_payload: err instanceof Error ? err.message : 'Kesalahan tak terduga saat menghubungi Edge Function',
     };
   }
 }
