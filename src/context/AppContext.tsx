@@ -283,16 +283,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
-  // Active Logged-in User
+  // Active Logged-in User -- PENTING: default HARUS null (belum login) kalau tidak ada
+  // sesi tersimpan. Sebelumnya di sini otomatis login sebagai admin pertama tanpa
+  // password, yang membuat seluruh halaman terkunci (Master Data, Admin, Settings, dst)
+  // bisa diakses siapa saja tanpa login sama sekali -- celah keamanan serius.
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
       if (saved) {
         return JSON.parse(saved);
       }
-      return INITIAL_USERS[0]; // Default logged in as Agus Sugiharto Sapari
+      return null;
     } catch {
-      return INITIAL_USERS[0];
+      return null;
     }
   });
 
@@ -860,9 +863,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const updatedList = [...prev];
       newStudents.forEach((newS, idx) => {
         const existingIdx = updatedList.findIndex(
-          (curr) =>
-            (curr.kode_barcode && curr.kode_barcode === newS.kode_barcode) ||
-            (curr.nisn && curr.nisn === newS.nisn)
+          (curr) => curr.nisn && curr.nisn === newS.nisn
         );
 
         if (existingIdx !== -1) {

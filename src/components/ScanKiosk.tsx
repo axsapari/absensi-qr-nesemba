@@ -25,6 +25,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { getFotoSiswaUrl, getFotoPlaceholder } from '../lib/fotoHelper';
 
 export const ScanKiosk: React.FC = () => {
   const {
@@ -41,6 +42,7 @@ export const ScanKiosk: React.FC = () => {
     setSimulatedTime,
     effectiveOnline,
     pendingSyncCount,
+    supabaseConfig,
   } = useApp();
 
   const [inputVal, setInputVal] = useState('');
@@ -315,9 +317,18 @@ export const ScanKiosk: React.FC = () => {
                 {/* Student Photo */}
                 <div className="relative">
                   <img
-                    src={lastScanResult.siswa?.foto_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200'}
+                    src={
+                      lastScanResult.siswa
+                        ? getFotoSiswaUrl(lastScanResult.siswa, supabaseConfig.url)
+                        : getFotoPlaceholder('L')
+                    }
                     alt={lastScanResult.siswa?.nama}
                     className="w-36 h-36 md:w-44 md:h-44 object-cover rounded-2xl border-4 border-amber-500 shadow-xl"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = getFotoPlaceholder(
+                        lastScanResult.siswa?.jenis_kelamin || 'L'
+                      );
+                    }}
                   />
                   <div className="absolute -top-3 -right-3 bg-amber-500 text-slate-950 p-2 rounded-full shadow-lg">
                     <AlertTriangle className="w-7 h-7 stroke-[2.5]" />
@@ -339,8 +350,6 @@ export const ScanKiosk: React.FC = () => {
                     <span className="font-semibold text-amber-400">Kelas {lastScanResult.kelas?.nama_kelas || '-'}</span>
                     <span>•</span>
                     <span>NISN: {lastScanResult.siswa?.nisn}</span>
-                    <span>•</span>
-                    <span>ID: {lastScanResult.siswa?.kode_barcode}</span>
                   </div>
 
                   <div className="bg-amber-900/30 border border-amber-800/60 p-4 rounded-xl text-amber-200 text-base">
@@ -397,10 +406,16 @@ export const ScanKiosk: React.FC = () => {
                 <div className="relative shrink-0">
                   <img
                     src={
-                      lastScanResult.siswa?.foto_url ||
-                      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200'
+                      lastScanResult.siswa
+                        ? getFotoSiswaUrl(lastScanResult.siswa, supabaseConfig.url)
+                        : getFotoPlaceholder('L')
                     }
                     alt={lastScanResult.siswa?.nama}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = getFotoPlaceholder(
+                        lastScanResult.siswa?.jenis_kelamin || 'L'
+                      );
+                    }}
                     className={`w-40 h-40 md:w-52 md:h-52 object-cover rounded-2xl border-4 shadow-2xl ${
                       lastScanResult.status === 'terlambat'
                         ? 'border-amber-400'
@@ -465,7 +480,6 @@ export const ScanKiosk: React.FC = () => {
                       Kelas {lastScanResult.kelas?.nama_kelas || '-'}
                     </span>
                     <span className="text-slate-400">NISN: {lastScanResult.siswa?.nisn}</span>
-                    <span className="text-slate-400 font-mono text-base">[{lastScanResult.siswa?.kode_barcode}]</span>
                   </div>
 
                   {/* Info Grid */}

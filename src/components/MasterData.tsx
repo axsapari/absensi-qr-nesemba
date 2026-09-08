@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { Siswa, Kelas } from '../types';
 import { ImportExcelModal } from './ImportExcelModal';
 import { downloadExcelTemplate, exportStudentsToExcel } from '../lib/excelHelper';
+import { getFotoSiswaUrl, getFotoPlaceholder } from '../lib/fotoHelper';
 import {
   Plus,
   Search,
@@ -31,6 +32,7 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
     addKelas,
     updateKelas,
     deleteKelas,
+    supabaseConfig,
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<'siswa' | 'kelas'>('siswa');
@@ -53,9 +55,9 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
     nama_ortu: '',
     jenis_kelamin: 'L',
     tempat_lahir: 'Banjar',
-    tanggal_lahir: '12 Mei 2012',
-    alamat: 'Jl. Tentara Pelajar No. 45, Banjar',
-    foto_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200',
+    tanggal_lahir: '',
+    alamat: '',
+    foto_url: '',
     status_aktif: true,
   });
 
@@ -90,19 +92,18 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
   // Handle Open Create Siswa
   const handleOpenAddSiswa = () => {
     setEditingSiswaId(null);
-    const nextBarcodeNumber = String(siswaList.length + 1).padStart(3, '0');
     setSiswaForm({
       nama: '',
-      kode_barcode: `SMP9-7A-${nextBarcodeNumber}`,
-      nisn: `0098234${nextBarcodeNumber}`,
+      kode_barcode: '', // otomatis diisi = NISN saat disimpan, tidak perlu diinput manual
+      nisn: '',
       kelas_id: kelasList[0]?.id || '',
       nomor_wa_ortu: '081234567890',
       nama_ortu: '',
       jenis_kelamin: 'L',
       tempat_lahir: 'Banjar',
-      tanggal_lahir: '12 Mei 2012',
-      alamat: 'Jl. Tentara Pelajar No. 45, Banjar',
-      foto_url: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=200',
+      tanggal_lahir: '',
+      alamat: '',
+      foto_url: '', // kosong = otomatis pakai foto dari Supabase Storage berdasarkan NISN
       status_aktif: true,
     });
     setShowSiswaModal(true);
@@ -131,7 +132,7 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
   // Save Siswa
   const handleSaveSiswa = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!siswaForm.nama.trim() || !siswaForm.kode_barcode.trim()) return;
+    if (!siswaForm.nama.trim()) return;
 
     let nisn = siswaForm.nisn.trim();
     // Normalisasi: kalau semua digit tapi kurang dari 10 karakter, tambahkan nol di depan
@@ -151,7 +152,9 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
       return;
     }
 
-    const finalForm = { ...siswaForm, nisn };
+    // kode_barcode tidak lagi diinput manual -- otomatis disamakan dengan NISN
+    // (dipertahankan di data hanya untuk kompatibilitas kartu lama yang sudah tercetak)
+    const finalForm = { ...siswaForm, nisn, kode_barcode: nisn };
 
     if (editingSiswaId) {
       updateSiswa(editingSiswaId, finalForm);
@@ -338,7 +341,6 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
                   <tr>
                     <th className="px-4 py-3.5">Foto</th>
                     <th className="px-4 py-3.5">Nama & Jenis Kelamin</th>
-                    <th className="px-4 py-3.5">Kode Barcode</th>
                     <th className="px-4 py-3.5">NISN</th>
                     <th className="px-4 py-3.5">Kelas</th>
                     <th className="px-4 py-3.5">TTL & Alamat</th>
@@ -360,14 +362,11 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
                         <tr key={s.id} className="hover:bg-slate-50 transition">
                           <td className="px-4 py-3">
                             <img
-                              src={s.foto_url}
+                              src={getFotoSiswaUrl(s, supabaseConfig.url)}
                               alt={s.nama}
                               className="w-10 h-10 rounded-xl object-cover border border-slate-200 shadow-2xs"
                               onError={(e) => {
-                                (e.target as HTMLImageElement).src =
-                                  s.jenis_kelamin === 'P'
-                                    ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200'
-                                    : 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=200';
+                                (e.target as HTMLImageElement).src = getFotoPlaceholder(s.jenis_kelamin);
                               }}
                             />
                           </td>
@@ -376,11 +375,6 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
                             <div className="text-[11px] text-slate-400 font-normal">
                               Jenis Kelamin: {s.jenis_kelamin === 'L' ? 'Laki-laki' : 'Perempuan'}
                             </div>
-                          </td>
-                          <td className="px-4 py-3 font-mono font-bold text-emerald-700">
-                            <span className="bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                              {s.kode_barcode}
-                            </span>
                           </td>
                           <td className="px-4 py-3 font-mono text-slate-600 font-semibold">
                             {s.nisn}
@@ -552,34 +546,19 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                    Kode Barcode Scanner *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={siswaForm.kode_barcode}
-                    onChange={(e) => setSiswaForm({ ...siswaForm, kode_barcode: e.target.value })}
-                    placeholder="Contoh: SMP9-7A-001"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-mono font-bold text-slate-900 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                    NISN *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={siswaForm.nisn}
-                    onChange={(e) => setSiswaForm({ ...siswaForm, nisn: e.target.value })}
-                    placeholder="Contoh: 0098234101"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-mono text-slate-900 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  NISN * <span className="normal-case font-normal text-slate-400">(dipakai untuk cetak QR & scan)</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={siswaForm.nisn}
+                  onChange={(e) => setSiswaForm({ ...siswaForm, nisn: e.target.value })}
+                  placeholder="Contoh: 0098234101"
+                  maxLength={10}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-mono text-slate-900 focus:outline-none focus:border-emerald-500"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -692,15 +671,20 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                  Foto URL Siswa
+                  Foto URL Siswa <span className="normal-case font-normal text-slate-400">(opsional)</span>
                 </label>
                 <input
                   type="url"
                   value={siswaForm.foto_url}
                   onChange={(e) => setSiswaForm({ ...siswaForm, foto_url: e.target.value })}
-                  placeholder="https://..."
+                  placeholder="Kosongkan agar otomatis dari Storage (nama file = NISN)"
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-900 focus:outline-none focus:border-emerald-500"
                 />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Kosongkan field ini kalau foto sudah diupload ke Supabase Storage (bucket "foto-siswa")
+                  dengan nama file = NISN siswa (contoh: {siswaForm.nisn || '0012345678'}.jpg). Isi manual
+                  hanya kalau ingin pakai link foto dari sumber lain.
+                </p>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">

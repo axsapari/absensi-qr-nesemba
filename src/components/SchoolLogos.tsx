@@ -1,7 +1,8 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
+import { LOGO_SEKOLAH_DATA_URL } from '../lib/logoData';
 
-// Dynamic School Logo component (uses custom uploaded logo or defaults to official vector SVG)
+// Dynamic School Logo component (uses custom uploaded logo or defaults to the real official logo)
 export const SchoolLogo: React.FC<{
   className?: string;
   size?: number;
@@ -18,19 +19,20 @@ export const SchoolLogo: React.FC<{
     // If rendered outside AppProvider
   }
 
-  if (logoUrl && !forceDefault) {
-    const style = size ? { width: size, height: size } : undefined;
-    return (
-      <img
-        src={logoUrl}
-        alt="Logo Sekolah"
-        className={`${className} object-contain`}
-        style={style}
-      />
-    );
+  // Default ke logo ASLI sekolah (diambil dari kartu pelajar resmi), bukan ilustrasi vektor generik
+  if (!logoUrl || forceDefault) {
+    logoUrl = LOGO_SEKOLAH_DATA_URL;
   }
 
-  return <LogoSMPN9Banjar className={className} size={size} />;
+  const style = size ? { width: size, height: size } : undefined;
+  return (
+    <img
+      src={logoUrl}
+      alt="Logo SMP Negeri 9 Banjar"
+      className={`${className} object-contain`}
+      style={style}
+    />
+  );
 };
 
 // Official Logo SMP NEGERI 9 BANJAR (Vector SVG based on the school emblem)

@@ -32,11 +32,12 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { SchoolLogo, LogoTutWuri, CityLogo } from './SchoolLogos';
+import { getFotoSiswaUrl, getFotoPlaceholder } from '../lib/fotoHelper';
 
 type FilterMode = 'harian' | 'bulanan' | 'rentang';
 
 export const RekapDashboard: React.FC = () => {
-  const { absensiList, siswaList, kelasList, logNotifikasiList, deleteAbsensi, profilSekolah } = useApp();
+  const { absensiList, siswaList, kelasList, logNotifikasiList, deleteAbsensi, profilSekolah, supabaseConfig } = useApp();
 
   // Mode Tarik Data
   const [filterMode, setFilterMode] = useState<FilterMode>('harian');
@@ -349,7 +350,6 @@ export const RekapDashboard: React.FC = () => {
         No: idx + 1,
         Tanggal: selectedDate,
         NISN: item.siswa.nisn,
-        'Kode Barcode': item.siswa.kode_barcode,
         'Nama Siswa': item.siswa.nama,
         Kelas: item.kelas?.nama_kelas || '-',
         'Wali Kelas': item.kelas?.wali_kelas || '-',
@@ -372,7 +372,6 @@ export const RekapDashboard: React.FC = () => {
       const data = periodicStudentMetrics.map((item, idx) => ({
         No: idx + 1,
         NISN: item.siswa.nisn,
-        'Kode Barcode': item.siswa.kode_barcode,
         'Nama Siswa': item.siswa.nama,
         Kelas: item.kelas?.nama_kelas || '-',
         'Wali Kelas': item.kelas?.wali_kelas || '-',
@@ -403,7 +402,6 @@ export const RekapDashboard: React.FC = () => {
       const headers = [
         'Tanggal',
         'NISN',
-        'Kode Barcode',
         'Nama Siswa',
         'Kelas',
         'Jam Masuk',
@@ -414,7 +412,6 @@ export const RekapDashboard: React.FC = () => {
       const rows = dailyAttendanceList.map((item) => [
         selectedDate,
         `"${item.siswa.nisn}"`,
-        `"${item.siswa.kode_barcode}"`,
         `"${item.siswa.nama}"`,
         `"${item.kelas?.nama_kelas || '-'}"`,
         item.scanMasuk ? item.scanMasuk.waktu_scan : '-',
@@ -900,14 +897,17 @@ export const RekapDashboard: React.FC = () => {
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-3">
                               <img
-                                src={item.siswa.foto_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
+                                src={getFotoSiswaUrl(item.siswa, supabaseConfig.url)}
                                 alt={item.siswa.nama}
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = getFotoPlaceholder(item.siswa.jenis_kelamin);
+                                }}
                                 className="w-9 h-9 rounded-full object-cover border border-slate-200 shrink-0"
                               />
                               <div>
                                 <div className="font-bold text-slate-900">{item.siswa.nama}</div>
                                 <div className="text-xs text-slate-500 font-mono">
-                                  NISN: {item.siswa.nisn} • ID: {item.siswa.kode_barcode}
+                                  NISN: {item.siswa.nisn}
                                 </div>
                               </div>
                             </div>
@@ -1056,8 +1056,11 @@ export const RekapDashboard: React.FC = () => {
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-3">
                               <img
-                                src={item.siswa.foto_url}
+                                src={getFotoSiswaUrl(item.siswa, supabaseConfig.url)}
                                 alt={item.siswa.nama}
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = getFotoPlaceholder(item.siswa.jenis_kelamin);
+                                }}
                                 className="w-9 h-9 rounded-full object-cover border border-slate-200 shrink-0"
                               />
                               <div>
@@ -1277,8 +1280,11 @@ export const RekapDashboard: React.FC = () => {
             {selectedStudentData.student && (
               <div className="flex items-center gap-4 w-full md:w-auto">
                 <img
-                  src={selectedStudentData.student.foto_url}
+                  src={getFotoSiswaUrl(selectedStudentData.student, supabaseConfig.url)}
                   alt={selectedStudentData.student.nama}
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = getFotoPlaceholder(selectedStudentData.student!.jenis_kelamin);
+                  }}
                   className="w-14 h-14 rounded-2xl object-cover border-2 border-emerald-500 shadow-xs shrink-0"
                 />
                 <div>

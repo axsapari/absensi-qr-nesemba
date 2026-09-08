@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { LogoSMPN9Banjar } from './SchoolLogos';
+import { SchoolLogo } from './SchoolLogos';
 import { SyncStatusBadge } from './SyncStatusBadge';
 import {
   Scan,
@@ -66,7 +66,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setCurrentView }) =
             className="flex items-center gap-3 cursor-pointer group"
           >
             <div className="w-10 h-10 rounded-xl bg-slate-800/80 border border-slate-700/80 p-0.5 flex items-center justify-center shadow-lg group-hover:scale-105 transition shrink-0">
-              <LogoSMPN9Banjar className="w-9 h-9" />
+              <SchoolLogo className="w-9 h-9" />
             </div>
             <div>
               <div className="font-black text-base text-white tracking-tight leading-none flex items-center gap-1.5">

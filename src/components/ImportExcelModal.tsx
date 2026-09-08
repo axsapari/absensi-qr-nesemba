@@ -126,18 +126,13 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({ isOpen, onCl
     }
 
     // 2. Prepare student objects
-    const studentsToImport = validRows.map((row, idx) => {
+    const studentsToImport = validRows.map((row) => {
       const targetClassId =
         classIdMap[row.nama_kelas.toLowerCase().trim()] || kelasList[0]?.id || 'k-7a';
 
-      // Ensure barcode
-      const cleanBarcode =
-        row.kode_barcode ||
-        `SMP9-${row.nama_kelas.replace(/[^a-zA-Z0-9]/g, '')}-${String(idx + 1).padStart(3, '0')}`;
-
       return {
         nama: row.nama,
-        kode_barcode: cleanBarcode,
+        kode_barcode: row.nisn, // otomatis = NISN
         nisn: row.nisn,
         kelas_id: targetClassId,
         nomor_wa_ortu: row.nomor_wa_ortu,
@@ -371,7 +366,6 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({ isOpen, onCl
                       <th className="px-3 py-2">Nama Siswa</th>
                       <th className="px-3 py-2">Kelas</th>
                       <th className="px-3 py-2">NISN</th>
-                      <th className="px-3 py-2">Kode Barcode</th>
                       <th className="px-3 py-2">Tempat, Tanggal Lahir</th>
                       <th className="px-3 py-2">Alamat</th>
                       <th className="px-3 py-2">No. WA Ortu</th>
@@ -389,9 +383,6 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({ isOpen, onCl
                           </span>
                         </td>
                         <td className="px-3 py-2 font-mono text-slate-600">{r.nisn}</td>
-                        <td className="px-3 py-2 font-mono font-bold text-emerald-700">
-                          {r.kode_barcode || <span className="text-slate-400 italic">Auto-generate</span>}
-                        </td>
                         <td className="px-3 py-2 text-slate-600">
                           {r.tempat_lahir}, {r.tanggal_lahir}
                         </td>

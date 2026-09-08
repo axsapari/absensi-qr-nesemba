@@ -3,6 +3,7 @@ import { useApp } from '../context/AppContext';
 import { Siswa, Kelas } from '../types';
 import QRCode from 'qrcode';
 import { SchoolLogo, LogoOSIS } from './SchoolLogos';
+import { getFotoSiswaUrl, getFotoPlaceholder } from '../lib/fotoHelper';
 import {
   Printer,
   Download,
@@ -225,7 +226,7 @@ export const KartuPelajar: React.FC<{ initialSelectedId?: string }> = ({ initial
         <div className="flex items-center gap-2.5">
           <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
           <span>
-            Desain kartu disesuaikan dengan template resmi <strong>SMP NEGERI 9 BANJAR</strong>: Logo Sekolah, Logo OSIS, NISN, Nama, Tempat Tanggal Lahir, Alamat, dan Media Sosial Resmi.
+            Desain kartu disesuaikan dengan template resmi <strong>SMP NEGERI 9 BANJAR</strong>: Logo Sekolah, NISN, Nama, Tempat Tanggal Lahir, Alamat di sisi depan; Visi Sekolah & media sosial di sisi belakang.
           </span>
         </div>
         <span className="font-bold text-indigo-700 hidden sm:inline">
@@ -246,8 +247,9 @@ export const KartuPelajar: React.FC<{ initialSelectedId?: string }> = ({ initial
               const qrUrl = qrCodeUrls[siswa.id];
 
               return (
-                <div key={siswa.id} className="card-wrapper">
+                <div key={siswa.id} className="card-wrapper flex flex-col items-center gap-4">
                   <OfficialStudentCard siswa={siswa} kelas={k} qrCodeUrl={qrUrl} />
+                  <OfficialStudentCardBack />
                 </div>
               );
             })}
@@ -272,12 +274,13 @@ export const OfficialStudentCard: React.FC<OfficialStudentCardProps> = ({
   kelas,
   qrCodeUrl,
 }) => {
-  const { profilSekolah } = useApp();
+  const { profilSekolah, supabaseConfig } = useApp();
   return (
     <div
       className="w-[360px] h-[540px] rounded-3xl overflow-hidden relative shadow-xl border border-purple-200/80 flex flex-col justify-between font-sans text-slate-900 select-none print:shadow-none print:border print:border-slate-300"
       style={{
-        background: 'linear-gradient(145deg, #fce7f3 0%, #ede9fe 35%, #e9d5ff 70%, #d8b4fe 100%)',
+        background:
+          'radial-gradient(circle at 25% 10%, #fde68a 0%, #fbcfe8 25%, #e9d5ff 55%, #c4b5fd 85%, #a78bfa 100%)',
       }}
     >
       {/* Decorative Pastel Wave Curves in Background */}
@@ -347,15 +350,12 @@ export const OfficialStudentCard: React.FC<OfficialStudentCardProps> = ({
             {/* Photo frame with smooth rounded corners and shadow */}
             <div className="w-36 h-44 rounded-2xl overflow-hidden border-[3px] border-white shadow-md bg-white">
               <img
-                src={siswa.foto_url}
+                src={getFotoSiswaUrl(siswa, supabaseConfig.url)}
                 alt={siswa.nama}
                 className="w-full h-full object-cover"
                 onError={(e) => {
-                  // Fallback avatar
-                  (e.target as HTMLImageElement).src =
-                    siswa.jenis_kelamin === 'P'
-                      ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200'
-                      : 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=200';
+                  // Fallback avatar kalau foto belum diupload ke Storage untuk NISN ini
+                  (e.target as HTMLImageElement).src = getFotoPlaceholder(siswa.jenis_kelamin);
                 }}
               />
             </div>
@@ -456,6 +456,84 @@ export const OfficialStudentCard: React.FC<OfficialStudentCardProps> = ({
               @smpn9banjar_official
             </span>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// =========================================================================
+// CARD BACK -- VISI SEKOLAH & BRANDING (sama untuk semua siswa)
+// =========================================================================
+export const OfficialStudentCardBack: React.FC = () => {
+  return (
+    <div
+      className="w-[360px] h-[540px] rounded-3xl overflow-hidden relative shadow-xl border border-purple-200/80 flex flex-col font-sans text-slate-900 select-none print:shadow-none print:border print:border-slate-300"
+      style={{
+        background:
+          'radial-gradient(circle at 30% 15%, #fbcfe8 0%, #e9d5ff 32%, #c4b5fd 58%, #a78bfa 100%)',
+      }}
+    >
+      {/* Decorative bottom-right triangle accent, echoing the original design */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <svg viewBox="0 0 360 540" className="w-full h-full" preserveAspectRatio="none">
+          <path d="M360 540 L220 540 L360 380 Z" fill="#6d28d9" fillOpacity="0.55" />
+          <path d="M360 540 L280 540 L360 440 Z" fill="#4c1d95" fillOpacity="0.5" />
+        </svg>
+      </div>
+
+      <div className="relative z-10 flex flex-col items-center h-full px-6 pt-8 pb-5">
+        {/* Logo */}
+        <SchoolLogo className="w-24 h-24 drop-shadow-md" />
+
+        {/* Title */}
+        <h2
+          className="mt-3 text-3xl italic font-black text-[#1e1b4b] tracking-wide"
+          style={{ fontFamily: 'Georgia, serif' }}
+        >
+          Visi Sekolah
+        </h2>
+
+        {/* Visi Box */}
+        <div className="mt-4 bg-[#8b5cf6]/90 rounded-2xl px-4 py-4 shadow-md border border-purple-300/50">
+          <p className="text-white text-[13px] font-black leading-snug text-center uppercase tracking-tight">
+            Terwujudnya peserta didik yang beriman, berkarakter, berprestasi, berbudaya, cinta
+            lingkungan dan berkebhinekaan global
+          </p>
+        </div>
+
+        {/* Tagline */}
+        <div className="mt-6 flex-1 flex flex-col items-center justify-center text-center">
+          <p className="text-2xl font-black italic text-[#4338ca] tracking-tight leading-none">
+            WE ARE THE BEST!!!
+          </p>
+          <p className="text-5xl font-black italic text-[#1e1b4b] tracking-tight mt-1 drop-shadow-xs">
+            YES!!!
+          </p>
+        </div>
+
+        {/* Program Badges */}
+        <div className="flex items-center justify-center gap-4 mb-3">
+          <div className="text-center leading-none">
+            <div className="text-[8px] font-bold text-slate-700 tracking-wider">KEMENDIKDASMEN</div>
+            <div className="text-base font-black text-sky-500 tracking-wide">RAMAH</div>
+          </div>
+          <div className="w-px h-7 bg-slate-400/50" />
+          <div className="flex items-center gap-1 text-left leading-tight">
+            <span className="text-rose-600 font-black text-lg">#</span>
+            <div>
+              <div className="text-[10px] font-black text-rose-600">PENDIDIKAN</div>
+              <div className="text-[10px] font-black text-indigo-700">BERMUTU UNTUK SEMUA</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Social Bar */}
+        <div className="w-full bg-[#1e1b4b] text-white rounded-xl py-2 px-3 flex items-center justify-center gap-2 shadow-xs">
+          <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-red-500">
+            <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+          </svg>
+          <span className="text-[10px] font-bold tracking-tight">@SMPN9BANJAR</span>
         </div>
       </div>
     </div>
