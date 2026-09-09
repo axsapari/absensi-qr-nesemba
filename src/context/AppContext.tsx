@@ -125,10 +125,11 @@ interface AppContextType {
   // Multi-user authentication & Super Admin
   users: UserAccount[];
   currentUser: UserAccount | null;
+  authChecking: boolean;
   isSuperAdmin: boolean;
-  loginUser: (username: string, password: string) => { success: boolean; message: string };
+  loginUser: (username: string, password: string) => Promise<{ success: boolean; message: string }>;
   logoutUser: () => void;
-  changeUserPassword: (username: string, oldPass: string, newPass: string) => { success: boolean; message: string };
+  changeUserPassword: (username: string, oldPass: string, newPass: string) => Promise<{ success: boolean; message: string }>;
   adminResetUserPassword: (username: string, newPass: string) => { success: boolean; message: string };
   addUser: (newUser: Omit<UserAccount, 'id'>) => { success: boolean; message: string };
   deleteUser: (userIdOrUsername: string) => { success: boolean; message: string };
@@ -283,21 +284,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
-  // Active Logged-in User -- PENTING: default HARUS null (belum login) kalau tidak ada
-  // sesi tersimpan. Sebelumnya di sini otomatis login sebagai admin pertama tanpa
-  // password, yang membuat seluruh halaman terkunci (Master Data, Admin, Settings, dst)
-  // bisa diakses siapa saja tanpa login sama sekali -- celah keamanan serius.
-  const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
-      if (saved) {
-        return JSON.parse(saved);
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  });
+  // Active Logged-in User -- SEKARANG sumber kebenarannya adalah sesi Supabase Auth
+  // (bukan localStorage lokal lagi), supaya status login konsisten di semua perangkat
+  // dan data privat benar-benar diverifikasi server, bukan sekadar dicek di browser.
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
+  const [authChecking, setAuthChecking] = useState(true);
 
   const [localSnapshots, setLocalSnapshots] = useState<LocalSnapshot[]>(() => {
     try {
@@ -424,17 +415,128 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
   }, [users]);
 
+  // Pantau sesi Supabase Auth -- ini sumber kebenaran status login sekarang, bukan
+  // localStorage lokal. Efek ini: (1) mengecek sesi yang sudah ada saat app dibuka,
+  // (2) berlangganan perubahan (login/logout/token refresh) dari mana pun perubahan
+  // itu terjadi, (3) mencocokkan email sesi ke profil staf lokal (untuk tampilan nama/
+  // role di UI), dan (4) kalau TIDAK ADA sesi sama sekali dan akun kiosk sudah diatur,
+  // otomatis login diam-diam pakai akun kiosk (supaya penjaga gerbang tidak perlu login).
   useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser));
-      localStorage.setItem(STORAGE_KEYS.ADMIN_AUTH, 'true');
-      setIsAdminLoggedIn(true);
-    } else {
-      localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
-      localStorage.setItem(STORAGE_KEYS.ADMIN_AUTH, 'false');
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (!supabase) {
+      // Supabase belum dikonfigurasi -- tidak ada yang bisa dicek, anggap belum login
+      setCurrentUser(null);
       setIsAdminLoggedIn(false);
+      setAuthChecking(false);
+      return;
     }
-  }, [currentUser]);
+
+    const resolveUserFromSession = (email: string | undefined) => {
+      if (!email) {
+        setCurrentUser(null);
+        setIsAdminLoggedIn(false);
+        return;
+      }
+      const matchedStaff = users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
+      if (matchedStaff) {
+        // Sesi ini adalah staf (admin/petugas) yang benar-benar login
+        setCurrentUser(matchedStaff);
+        setIsAdminLoggedIn(true);
+      } else {
+        // Sesi ini kemungkinan akun kiosk (terautentikasi ke Supabase, tapi bukan
+        // profil staf) -- pos gerbang tetap bisa akses data, tapi TIDAK dianggap
+        // "login" di level tampilan (tidak buka akses halaman admin/master data).
+        setCurrentUser(null);
+        setIsAdminLoggedIn(false);
+      }
+    };
+
+    let attemptedKioskLogin = false;
+
+    const trySilentKioskLogin = async () => {
+      if (attemptedKioskLogin) return;
+      attemptedKioskLogin = true;
+      if (supabaseConfig.kioskEmail && supabaseConfig.kioskPassword) {
+        try {
+          await supabase.auth.signInWithPassword({
+            email: supabaseConfig.kioskEmail,
+            password: supabaseConfig.kioskPassword,
+          });
+        } catch {
+          // Diamkan -- pos gerbang tetap bisa jalan pakai data lokal/cache kalau ini gagal
+        }
+      }
+    };
+
+    supabase.auth.getSession().then(({ data }) => {
+      const email = data.session?.user?.email;
+      resolveUserFromSession(email);
+      setAuthChecking(false);
+      if (!email) {
+        trySilentKioskLogin();
+      }
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      resolveUserFromSession(session?.user?.email);
+    });
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabaseConfig.url, supabaseConfig.anonKey, supabaseConfig.kioskEmail, supabaseConfig.kioskPassword]);
+
+  // Sinkronisasi siswa & kelas -- berjalan begitu ada STAF yang login (bukan akun
+  // kiosk, supaya perilakunya lebih terduga dan tidak dipicu berulang oleh pos gerbang).
+  // Logikanya:
+  //  - Kalau Supabase SUDAH punya data siswa/kelas -> itu jadi acuan, timpa data lokal
+  //    (supaya semua perangkat akhirnya seragam mengikuti data pusat).
+  //  - Kalau Supabase MASIH KOSONG tapi lokal sudah ada data (kasus Anda sekarang,
+  //    baru saja import) -> dorong (push) data lokal ke Supabase sebagai migrasi awal,
+  //    supaya tidak kehilangan data yang sudah di-import.
+  useEffect(() => {
+    if (!currentUser) return;
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (!supabase) return;
+
+    (async () => {
+      try {
+        const [{ data: remoteKelas, error: kelasErr }, { data: remoteSiswa, error: siswaErr }] =
+          await Promise.all([
+            supabase.from('kelas').select('*'),
+            supabase.from('siswa').select('*'),
+          ]);
+
+        if (kelasErr || siswaErr) {
+          console.error('Gagal memuat data siswa/kelas dari Supabase:', kelasErr || siswaErr);
+          return;
+        }
+
+        const remoteHasData = (remoteKelas && remoteKelas.length > 0) || (remoteSiswa && remoteSiswa.length > 0);
+
+        if (remoteHasData) {
+          // Supabase adalah acuan -- ganti data lokal dengan data pusat
+          if (remoteKelas) setKelasList(remoteKelas as Kelas[]);
+          if (remoteSiswa) setSiswaList(remoteSiswa as Siswa[]);
+        } else if (kelasList.length > 0 || siswaList.length > 0) {
+          // Supabase masih kosong, tapi perangkat ini sudah punya data lokal --
+          // dorong ke Supabase (kelas dulu, baru siswa, karena siswa mengacu ke kelas)
+          if (kelasList.length > 0) {
+            const { error } = await supabase.from('kelas').upsert(kelasList, { onConflict: 'id' });
+            if (error) console.error('Gagal migrasi kelas ke Supabase:', error.message);
+          }
+          if (siswaList.length > 0) {
+            const { error } = await supabase.from('siswa').upsert(siswaList, { onConflict: 'id' });
+            if (error) console.error('Gagal migrasi siswa ke Supabase:', error.message);
+          }
+        }
+      } catch (err) {
+        console.error('Gagal sinkronisasi siswa/kelas:', err);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id]);
 
   // Real-time ticking clock
   useEffect(() => {
@@ -835,12 +937,62 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // CRUD Siswa
+  // Helper: dorong perubahan siswa/kelas ke Supabase secara diam-diam (fire-and-forget).
+  // Tidak memblokir UI -- kalau gagal (misal sedang offline), perubahan tetap tersimpan
+  // lokal dan akan tersinkron lagi saat fetch berikutnya berhasil terhubung.
+  const pushSiswaUpsert = (rows: Siswa[]) => {
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (!supabase || rows.length === 0) return;
+    supabase
+      .from('siswa')
+      .upsert(rows, { onConflict: 'id' })
+      .then(({ error }) => {
+        if (error) console.error('Gagal menyinkronkan data siswa ke Supabase:', error.message);
+      });
+  };
+
+  const deleteSiswaRemote = (id: string) => {
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (!supabase) return;
+    supabase
+      .from('siswa')
+      .delete()
+      .eq('id', id)
+      .then(({ error }) => {
+        if (error) console.error('Gagal menghapus data siswa di Supabase:', error.message);
+      });
+  };
+
+  const pushKelasUpsert = (rows: Kelas[]) => {
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (!supabase || rows.length === 0) return;
+    supabase
+      .from('kelas')
+      .upsert(rows, { onConflict: 'id' })
+      .then(({ error }) => {
+        if (error) console.error('Gagal menyinkronkan data kelas ke Supabase:', error.message);
+      });
+  };
+
+  const deleteKelasRemote = (id: string) => {
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (!supabase) return;
+    supabase
+      .from('kelas')
+      .delete()
+      .eq('id', id)
+      .then(({ error }) => {
+        if (error) console.error('Gagal menghapus data kelas di Supabase:', error.message);
+      });
+  };
+
   const addSiswa = (data: Omit<Siswa, 'id'>) => {
     const newSiswa: Siswa = {
       ...data,
       id: 's-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
     };
     setSiswaList((prev) => [...prev, newSiswa]);
+    pushSiswaUpsert([newSiswa]);
   };
 
   const importSiswaBatch = (
@@ -856,9 +1008,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         id: `s-${Date.now()}-${idx}`,
       }));
       setSiswaList(generated);
+      pushSiswaUpsert(generated);
       return { added: generated.length, updated: 0 };
     }
 
+    let finalList: Siswa[] = [];
     setSiswaList((prev) => {
       const updatedList = [...prev];
       newStudents.forEach((newS, idx) => {
@@ -882,18 +1036,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           added++;
         }
       });
+      finalList = updatedList;
       return updatedList;
     });
+
+    // Dorong seluruh daftar terbaru ke Supabase (upsert aman dipanggil berulang)
+    pushSiswaUpsert(finalList);
 
     return { added, updated };
   };
 
   const updateSiswa = (id: string, data: Partial<Siswa>) => {
-    setSiswaList((prev) => prev.map((s) => (s.id === id ? { ...s, ...data } : s)));
+    let updatedRow: Siswa | undefined;
+    setSiswaList((prev) =>
+      prev.map((s) => {
+        if (s.id === id) {
+          updatedRow = { ...s, ...data };
+          return updatedRow;
+        }
+        return s;
+      })
+    );
+    if (updatedRow) pushSiswaUpsert([updatedRow]);
   };
 
   const deleteSiswa = (id: string) => {
     setSiswaList((prev) => prev.filter((s) => s.id !== id));
+    deleteSiswaRemote(id);
   };
 
   // CRUD Kelas
@@ -903,14 +1072,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       id: 'k-' + Date.now(),
     };
     setKelasList((prev) => [...prev, newKelas]);
+    pushKelasUpsert([newKelas]);
   };
 
   const updateKelas = (id: string, data: Partial<Kelas>) => {
-    setKelasList((prev) => prev.map((k) => (k.id === id ? { ...k, ...data } : k)));
+    let updatedRow: Kelas | undefined;
+    setKelasList((prev) =>
+      prev.map((k) => {
+        if (k.id === id) {
+          updatedRow = { ...k, ...data };
+          return updatedRow;
+        }
+        return k;
+      })
+    );
+    if (updatedRow) pushKelasUpsert([updatedRow]);
   };
 
   const deleteKelas = (id: string) => {
     setKelasList((prev) => prev.filter((k) => k.id !== id));
+    deleteKelasRemote(id);
   };
 
   // Settings
@@ -1135,8 +1316,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Super Admin Check: Only user 'agus' has Super Admin privileges
   const isSuperAdmin = currentUser?.username?.toLowerCase() === 'agus';
 
-  // Multi-user authentication & password management
-  const loginUser = (username: string, password: string): { success: boolean; message: string } => {
+  // Multi-user authentication -- sekarang benar-benar diverifikasi server lewat Supabase Auth
+  const loginUser = async (
+    username: string,
+    password: string
+  ): Promise<{ success: boolean; message: string }> => {
     const cleanUsername = username.trim().toLowerCase();
     const cleanPass = password.trim();
 
@@ -1144,20 +1328,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!targetUser) {
       return { success: false, message: `Pengguna dengan username "${username}" tidak ditemukan.` };
     }
+    if (!targetUser.email) {
+      return {
+        success: false,
+        message: 'Akun ini belum diatur emailnya. Hubungi Super Admin untuk melengkapi data akun.',
+      };
+    }
 
-    const expectedPass = targetUser.password || `${targetUser.username}1234`;
-    if (cleanPass !== expectedPass) {
-      return { success: false, message: 'Kata sandi salah. Silakan coba lagi.' };
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (!supabase) {
+      return {
+        success: false,
+        message: 'Supabase belum dikonfigurasi. Login memerlukan koneksi Supabase yang aktif.',
+      };
+    }
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: targetUser.email,
+      password: cleanPass,
+    });
+
+    if (error || !data.session) {
+      return { success: false, message: 'Kata sandi salah atau akun belum terdaftar di Supabase Auth.' };
     }
 
     const updatedUser = {
       ...targetUser,
       lastLogin: new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }),
     };
-
     setCurrentUser(updatedUser);
     setIsAdminLoggedIn(true);
-
     setUsers((prev) =>
       prev.map((u) => (u.username.toLowerCase() === cleanUsername ? updatedUser : u))
     );
@@ -1166,83 +1366,67 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const logoutUser = () => {
+    const supabase = getSupabaseClient(supabaseConfig);
+    supabase?.auth.signOut();
     setCurrentUser(null);
     setIsAdminLoggedIn(false);
   };
 
-  const changeUserPassword = (
+  const changeUserPassword = async (
     username: string,
     oldPass: string,
     newPass: string
-  ): { success: boolean; message: string } => {
-    const cleanUsername = username.trim().toLowerCase();
-    const cleanOld = oldPass.trim();
+  ): Promise<{ success: boolean; message: string }> => {
     const cleanNew = newPass.trim();
-
-    if (!cleanNew || cleanNew.length < 4) {
-      return { success: false, message: 'Kata sandi baru minimal 4 karakter.' };
+    if (!cleanNew || cleanNew.length < 6) {
+      return { success: false, message: 'Kata sandi baru minimal 6 karakter (syarat Supabase Auth).' };
     }
 
-    const targetIndex = users.findIndex((u) => u.username.toLowerCase() === cleanUsername);
-    if (targetIndex === -1) {
-      return { success: false, message: 'User tidak ditemukan.' };
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (!supabase) {
+      return { success: false, message: 'Supabase belum dikonfigurasi.' };
     }
 
-    const currentPass = users[targetIndex].password || `${users[targetIndex].username}1234`;
-    if (cleanOld !== currentPass) {
+    // Supabase Auth hanya mengizinkan pengguna mengganti password AKUN DIRI SENDIRI
+    // yang sedang login (butuh sesi aktif) -- tidak bisa dilakukan atas nama pengguna lain
+    // dari sisi aplikasi seperti dulu, karena itu perlu Service Role Key yang tidak boleh
+    // ada di browser. Verifikasi dulu dengan kata sandi lama sebelum mengganti.
+    const targetUser = users.find((u) => u.username.toLowerCase() === username.trim().toLowerCase());
+    if (!targetUser?.email) {
+      return { success: false, message: 'Akun tidak ditemukan atau belum diatur emailnya.' };
+    }
+
+    const { error: verifyError } = await supabase.auth.signInWithPassword({
+      email: targetUser.email,
+      password: oldPass.trim(),
+    });
+    if (verifyError) {
       return { success: false, message: 'Kata sandi lama tidak sesuai.' };
     }
 
-    const updatedUsers = [...users];
-    updatedUsers[targetIndex] = {
-      ...updatedUsers[targetIndex],
-      password: cleanNew,
-    };
-    setUsers(updatedUsers);
-
-    if (currentUser && currentUser.username.toLowerCase() === cleanUsername) {
-      setCurrentUser((prev) => (prev ? { ...prev, password: cleanNew } : null));
+    const { error } = await supabase.auth.updateUser({ password: cleanNew });
+    if (error) {
+      return { success: false, message: `Gagal mengubah kata sandi: ${error.message}` };
     }
 
     return { success: true, message: 'Kata sandi berhasil diperbarui!' };
   };
 
-  // Only Super Admin 'agus' is permitted to reset passwords of other users
+  // CATATAN PENTING: Super Admin TIDAK LAGI bisa mereset password pengguna lain
+  // langsung dari aplikasi ini -- Supabase Auth mewajibkan itu dilakukan lewat
+  // Supabase Dashboard (Authentication > Users > pilih user > Reset Password),
+  // atau lewat Edge Function terpisah yang memakai Service Role Key di server.
+  // Fungsi di bawah ini sengaja dinonaktifkan (bukan dihapus) supaya UI yang
+  // memanggilnya tidak error, dan mengarahkan Super Admin ke cara yang benar.
   const adminResetUserPassword = (
     username: string,
-    newPass: string
+    _newPass: string
   ): { success: boolean; message: string } => {
-    if (currentUser?.username?.toLowerCase() !== 'agus') {
-      return {
-        success: false,
-        message: 'Akses Ditolak! Hanya Super Admin (Bpk. Agus Sugiharto Sapari) yang berhak mengubah kata sandi pengguna lain.',
-      };
-    }
-
-    const cleanUsername = username.trim().toLowerCase();
-    const cleanNew = newPass.trim();
-
-    if (!cleanNew || cleanNew.length < 4) {
-      return { success: false, message: 'Kata sandi baru minimal 4 karakter.' };
-    }
-
-    const targetIndex = users.findIndex((u) => u.username.toLowerCase() === cleanUsername);
-    if (targetIndex === -1) {
-      return { success: false, message: 'User tidak ditemukan.' };
-    }
-
-    const updatedUsers = [...users];
-    updatedUsers[targetIndex] = {
-      ...updatedUsers[targetIndex],
-      password: cleanNew,
+    return {
+      success: false,
+      message:
+        'Reset password pengguna lain sekarang dilakukan lewat Supabase Dashboard > Authentication > Users, bukan dari aplikasi ini (demi keamanan).',
     };
-    setUsers(updatedUsers);
-
-    if (currentUser && currentUser.username.toLowerCase() === cleanUsername) {
-      setCurrentUser((prev) => (prev ? { ...prev, password: cleanNew } : null));
-    }
-
-    return { success: true, message: `Kata sandi user @${cleanUsername} berhasil direset.` };
   };
 
   // Only Super Admin 'agus' is permitted to add new users
@@ -1263,20 +1447,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, message: `Username "@${cleanUsername}" sudah digunakan.` };
     }
 
-    const cleanPass = newUser.password?.trim() || `${cleanUsername}1234`;
+    const cleanEmail = newUser.email?.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return {
+        success: false,
+        message: 'Email wajib diisi dan valid. PENTING: akun dengan email ini harus SUDAH dibuat lebih dulu di Supabase Dashboard > Authentication > Users, sebelum didaftarkan di sini.',
+      };
+    }
+    if (users.some((u) => u.email?.toLowerCase() === cleanEmail)) {
+      return { success: false, message: `Email "${cleanEmail}" sudah dipakai akun lain.` };
+    }
+
     const createdUser: UserAccount = {
       ...newUser,
       id: `u-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
       username: cleanUsername,
+      email: cleanEmail,
       isSuperAdmin: false,
-      password: cleanPass,
       avatar: newUser.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80',
     };
 
     setUsers((prev) => [...prev, createdUser]);
     return {
       success: true,
-      message: `Akun baru @${cleanUsername} (${createdUser.name}) berhasil dibuat. Sandi awal: ${cleanPass}`,
+      message: `Profil @${cleanUsername} (${createdUser.name}) berhasil didaftarkan. Pastikan akun dengan email ${cleanEmail} sudah dibuat di Supabase Auth agar bisa login.`,
     };
   };
 
@@ -1484,6 +1678,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Multi-User Auth & Super Admin
         users,
         currentUser,
+        authChecking,
         isSuperAdmin,
         loginUser,
         logoutUser,

@@ -27,8 +27,10 @@ export const SUPABASE_SQL_SCHEMA = `-- =========================================
 -- ==========================================================
 
 -- 1. TABEL KELAS
+-- CATATAN: id bertipe TEXT (bukan UUID) karena aplikasi membuat ID sendiri
+-- di sisi klien (format seperti "k-1737000000"), bukan UUID Postgres.
 CREATE TABLE IF NOT EXISTS public.kelas (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY,
     nama_kelas VARCHAR(50) NOT NULL UNIQUE,
     tingkat VARCHAR(10) NOT NULL CHECK (tingkat IN ('7', '8', '9')),
     wali_kelas VARCHAR(100) NOT NULL,
@@ -38,14 +40,17 @@ CREATE TABLE IF NOT EXISTS public.kelas (
 
 -- 2. TABEL SISWA
 CREATE TABLE IF NOT EXISTS public.siswa (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY,
     nama VARCHAR(150) NOT NULL,
     kode_barcode VARCHAR(100) NOT NULL UNIQUE, -- ID cadangan (kompatibilitas kartu lama), bukan yang dicetak di QR
     nisn VARCHAR(20) NOT NULL UNIQUE CHECK (nisn ~ '^[0-9]{10}$'), -- Referensi utama QR/scan, wajib 10 digit
-    kelas_id UUID NOT NULL REFERENCES public.kelas(id) ON DELETE RESTRICT,
+    kelas_id TEXT NOT NULL REFERENCES public.kelas(id) ON DELETE RESTRICT,
     nomor_wa_ortu VARCHAR(25) NOT NULL,
     nama_ortu VARCHAR(100) NOT NULL,
     jenis_kelamin VARCHAR(2) NOT NULL CHECK (jenis_kelamin IN ('L', 'P')),
+    tempat_lahir VARCHAR(100),
+    tanggal_lahir VARCHAR(50),
+    alamat TEXT,
     foto_url TEXT,
     status_aktif BOOLEAN DEFAULT true NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
@@ -56,8 +61,8 @@ CREATE INDEX IF NOT EXISTS idx_siswa_kelas ON public.siswa(kelas_id);
 
 -- 3. TABEL ABSENSI
 CREATE TABLE IF NOT EXISTS public.absensi (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    siswa_id UUID NOT NULL REFERENCES public.siswa(id) ON DELETE CASCADE,
+    id TEXT PRIMARY KEY DEFAULT ('a-' || gen_random_uuid()::text),
+    siswa_id TEXT NOT NULL REFERENCES public.siswa(id) ON DELETE CASCADE,
     tanggal DATE NOT NULL DEFAULT CURRENT_DATE,
     waktu_scan TIME NOT NULL DEFAULT CURRENT_TIME,
     timestamp BIGINT NOT NULL,
@@ -86,9 +91,9 @@ END $$;
 
 -- 4. TABEL LOG NOTIFIKASI WA
 CREATE TABLE IF NOT EXISTS public.log_notifikasi_wa (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    absensi_id UUID REFERENCES public.absensi(id) ON DELETE SET NULL,
-    siswa_id UUID REFERENCES public.siswa(id) ON DELETE CASCADE,
+    id TEXT PRIMARY KEY DEFAULT ('log-' || gen_random_uuid()::text),
+    absensi_id TEXT REFERENCES public.absensi(id) ON DELETE SET NULL,
+    siswa_id TEXT REFERENCES public.siswa(id) ON DELETE CASCADE,
     nomor_tujuan VARCHAR(25) NOT NULL,
     jenis_pesan VARCHAR(20) NOT NULL, -- 'masuk', 'pulang', 'terlambat'
     pesan TEXT NOT NULL,

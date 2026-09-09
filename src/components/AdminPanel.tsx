@@ -61,7 +61,7 @@ export const AdminPanel: React.FC = () => {
   const [newUserName, setNewUserName] = useState('');
   const [newUserUsername, setNewUserUsername] = useState('');
   const [newUserRole, setNewUserRole] = useState<'admin' | 'petugas'>('petugas');
-  const [newUserPassword, setNewUserPassword] = useState('');
+  const [newUserEmail, setNewUserEmail] = useState('');
   const [addUserFeedback, setAddUserFeedback] = useState<{ success?: boolean; message: string } | null>(null);
 
   // Password reset modal for specific user
@@ -150,15 +150,15 @@ export const AdminPanel: React.FC = () => {
     const res = addUser({
       name: newUserName,
       username: newUserUsername,
+      email: newUserEmail,
       role: newUserRole,
-      password: newUserPassword.trim() || undefined,
     });
 
     setAddUserFeedback(res);
     if (res.success) {
       setNewUserName('');
       setNewUserUsername('');
-      setNewUserPassword('');
+      setNewUserEmail('');
       setTimeout(() => {
         setShowAddUserModal(false);
         setAddUserFeedback(null);
@@ -803,14 +803,18 @@ export const AdminPanel: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Kata Sandi (Opsional)</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Email (Supabase Auth) *</label>
                   <input
-                    type="text"
-                    value={newUserPassword}
-                    onChange={(e) => setNewUserPassword(e.target.value)}
-                    placeholder="Kosongkan = [user]1234"
+                    type="email"
+                    required
+                    value={newUserEmail}
+                    onChange={(e) => setNewUserEmail(e.target.value)}
+                    placeholder="nama@smpn9banjar.sch.id"
                     className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Akun dengan email ini harus SUDAH dibuat lebih dulu di Supabase Dashboard {'>'} Authentication {'>'} Users.
+                  </p>
                 </div>
               </div>
 

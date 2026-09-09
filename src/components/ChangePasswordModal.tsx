@@ -27,7 +27,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
@@ -38,8 +38,8 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
       return;
     }
 
-    if (newPassword.length < 4) {
-      setErrorMsg('Kata sandi baru minimal 4 karakter.');
+    if (newPassword.length < 6) {
+      setErrorMsg('Kata sandi baru minimal 6 karakter (syarat Supabase Auth).');
       return;
     }
 
@@ -49,7 +49,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
     }
 
     if (isSelf) {
-      const res = changeUserPassword(activeUser, oldPassword, newPassword);
+      const res = await changeUserPassword(activeUser, oldPassword, newPassword);
       if (res.success) {
         setSuccessMsg(res.message);
         setTimeout(() => {
@@ -63,7 +63,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
         setErrorMsg(res.message);
       }
     } else {
-      // Super Admin reset without requiring old password
+      // Super Admin reset -- sekarang harus lewat Supabase Dashboard, lihat pesan yang dikembalikan
       const res = adminResetUserPassword(activeUser, newPassword);
       if (res.success) {
         setSuccessMsg(res.message);

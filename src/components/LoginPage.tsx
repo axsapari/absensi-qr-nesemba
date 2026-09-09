@@ -37,7 +37,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onCancel }) => 
     setPassword('');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!password.trim()) {
       setErrorMsg('Masukkan kata sandi terlebih dahulu.');
@@ -47,19 +47,17 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onCancel }) => 
     setIsLoading(true);
     setErrorMsg(null);
 
-    setTimeout(() => {
-      const res = loginUser(selectedUsername, password);
-      setIsLoading(false);
+    const res = await loginUser(selectedUsername, password);
+    setIsLoading(false);
 
-      if (res.success) {
-        setSuccessMsg(res.message);
-        setTimeout(() => {
-          if (onSuccess) onSuccess();
-        }, 500);
-      } else {
-        setErrorMsg(res.message);
-      }
-    }, 300);
+    if (res.success) {
+      setSuccessMsg(res.message);
+      setTimeout(() => {
+        if (onSuccess) onSuccess();
+      }, 500);
+    } else {
+      setErrorMsg(res.message);
+    }
   };
 
   const targetAccount = users.find(

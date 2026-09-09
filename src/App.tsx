@@ -18,7 +18,7 @@ import { SyncNotificationToast } from './components/SyncNotificationToast';
 const PROTECTED_VIEWS: AppView[] = ['rekap', 'master', 'kartu', 'backup', 'admin', 'settings'];
 
 function MainApp() {
-  const { currentUser } = useApp();
+  const { currentUser, authChecking } = useApp();
   const [currentView, setCurrentView] = useState<AppView>('kiosk');
   const [selectedStudentForCard, setSelectedStudentForCard] = useState<string | undefined>(undefined);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -33,6 +33,20 @@ function MainApp() {
   // dan belum ada pengguna yang login -- dievaluasi ulang di setiap render,
   // jadi otomatis kembali ke layar login juga kalau pengguna logout.
   const needsLogin = PROTECTED_VIEWS.includes(currentView) && !currentUser;
+
+  // Sedang mengecek sesi Supabase Auth (sekali saat app dibuka) -- tampilkan loading
+  // singkat, jangan langsung anggap "belum login" supaya tidak salah kedip ke layar
+  // login padahal sesinya sebenarnya masih ada.
+  if (authChecking && PROTECTED_VIEWS.includes(currentView)) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-slate-400">
+          <div className="w-8 h-8 border-2 border-slate-700 border-t-blue-500 rounded-full animate-spin" />
+          <span className="text-xs">Memeriksa sesi masuk...</span>
+        </div>
+      </div>
+    );
+  }
 
   // If user opens login page (baik lewat tombol login, maupun karena mengakses halaman terkunci)
   if (showLoginModal || needsLogin) {

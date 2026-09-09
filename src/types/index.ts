@@ -80,6 +80,8 @@ export interface SupabaseConfig {
   url: string;
   anonKey: string;
   connected: boolean;
+  kioskEmail?: string; // akun teknis khusus pos gerbang, auto-login diam-diam (tanpa prompt ke penjaga)
+  kioskPassword?: string;
 }
 
 export interface ScanResult {
@@ -145,10 +147,11 @@ export interface UserAccount {
   id: string;
   username: string; // 'agus' | 'moch' | 'alia' | 'feby'
   name: string; // Full Name
+  email: string; // WAJIB sama persis dengan akun yang dibuat di Supabase Auth Dashboard
   role: 'admin' | 'petugas';
   isSuperAdmin?: boolean; // Only 'agus' is Super Admin
   avatar?: string;
-  password?: string;
+  password?: string; // sudah tidak dipakai untuk verifikasi (itu tugas Supabase Auth), disimpan hanya untuk kompatibilitas data lama
   lastLogin?: string;
 }
 

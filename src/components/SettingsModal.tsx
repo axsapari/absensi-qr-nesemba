@@ -470,6 +470,33 @@ export const SettingsModal: React.FC = () => {
               </div>
             </div>
 
+            <div className="border-t border-slate-200 pt-4 mt-1">
+              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                Akun Kiosk Pos Gerbang
+              </label>
+              <p className="text-[11px] text-slate-400 mb-2">
+                Akun teknis khusus supaya PC pos gerbang bisa akses data (nama siswa, kirim absensi)
+                tanpa penjaga perlu login manual tiap pagi. Buat dulu akun ini di Supabase Dashboard {'>'}{' '}
+                Authentication {'>'} Users, lalu masukkan email & password-nya di sini.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <input
+                  type="email"
+                  value={supabaseForm.kioskEmail || ''}
+                  onChange={(e) => setSupabaseForm({ ...supabaseForm, kioskEmail: e.target.value })}
+                  placeholder="kiosk@smpn9banjar.sch.id"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 focus:outline-none focus:border-emerald-500"
+                />
+                <input
+                  type="password"
+                  value={supabaseForm.kioskPassword || ''}
+                  onChange={(e) => setSupabaseForm({ ...supabaseForm, kioskPassword: e.target.value })}
+                  placeholder="Password akun kiosk"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
             <div className="flex items-center justify-end pt-2">
               <button
                 type="submit"
