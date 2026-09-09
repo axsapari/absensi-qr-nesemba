@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 
 export const KartuPelajar: React.FC<{ initialSelectedId?: string }> = ({ initialSelectedId }) => {
-  const { siswaList, kelasList, profilSekolah } = useApp();
+  const { siswaList, kelasList, profilSekolah, updateProfilSekolah } = useApp();
 
   const [selectedKelasId, setSelectedKelasId] = useState<string>('all');
   const [selectedSiswaId, setSelectedSiswaId] = useState<string>(
@@ -25,6 +25,22 @@ export const KartuPelajar: React.FC<{ initialSelectedId?: string }> = ({ initial
   const [modeCetak, setModeCetak] = useState<'single' | 'batch'>('single');
   const [searchFilter, setSearchFilter] = useState('');
   const [qrCodeUrls, setQrCodeUrls] = useState<Record<string, string>>({});
+  const [showTemplatePanel, setShowTemplatePanel] = useState(false);
+
+  const handleUploadTemplate = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) {
+      alert('Ukuran gambar terlalu besar (maks 4MB). Kompres dulu gambarnya, ya.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      updateProfilSekolah({ templateKartuUrl: reader.result as string });
+      setShowTemplatePanel(true);
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Generate QR codes for all students
   useEffect(() => {
@@ -221,17 +237,123 @@ export const KartuPelajar: React.FC<{ initialSelectedId?: string }> = ({ initial
         </div>
       </div>
 
-      {/* Info Badge */}
-      <div className="no-print bg-indigo-50/70 border border-indigo-200/80 rounded-2xl p-4 flex items-center justify-between text-xs text-indigo-900">
-        <div className="flex items-center gap-2.5">
-          <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
-          <span>
-            Desain kartu disesuaikan dengan template resmi <strong>SMP NEGERI 9 BANJAR</strong>: Logo Sekolah, NISN, Nama, Tempat Tanggal Lahir, Alamat di sisi depan; Visi Sekolah & media sosial di sisi belakang.
-          </span>
+      {/* Info Badge + Template Upload Toggle */}
+      <div className="no-print bg-indigo-50/70 border border-indigo-200/80 rounded-2xl p-4 text-xs text-indigo-900 space-y-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-2.5">
+            <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
+            <span>
+              {profilSekolah.templateKartuUrl ? (
+                <>Kartu memakai <strong>desain template kustom</strong> yang Anda upload sendiri.</>
+              ) : (
+                <>Desain kartu memakai template bawaan <strong>SMP NEGERI 9 BANJAR</strong>. Ingin pakai desain kartu OSIS Anda sendiri secara identik?</>
+              )}
+            </span>
+          </div>
+          <button
+            onClick={() => setShowTemplatePanel((v) => !v)}
+            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold rounded-lg shrink-0 cursor-pointer"
+          >
+            {showTemplatePanel ? 'Tutup Pengaturan Template' : 'Atur Template Kartu Sendiri'}
+          </button>
         </div>
-        <span className="font-bold text-indigo-700 hidden sm:inline">
-          Format ID Card Portrait (54mm x 86mm)
-        </span>
+
+        {showTemplatePanel && (
+          <div className="bg-white rounded-xl p-4 border border-indigo-200 grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Left: Upload + Preview */}
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1.5">
+                1. Upload Gambar Desain Kartu Depan (PNG/JPG)
+              </label>
+              <input
+                type="file"
+                accept="image/png,image/jpeg"
+                onChange={handleUploadTemplate}
+                className="block w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-indigo-100 file:text-indigo-700 file:font-bold cursor-pointer"
+              />
+              <p className="text-[10px] text-slate-400 mt-1.5">
+                Upload foto/scan desain kartu OSIS asli sekolah Anda (utuh, tanpa foto & QR -- itu akan
+                ditimpakan otomatis oleh sistem di posisi yang Anda atur di sebelah kanan). Ukuran ideal
+                mengikuti rasio kartu ID (lebar:tinggi ≈ 2:3), maks 4MB.
+              </p>
+
+              {profilSekolah.templateKartuUrl && (
+                <div className="mt-3 flex items-center gap-3">
+                  <img
+                    src={profilSekolah.templateKartuUrl}
+                    alt="Template kartu"
+                    className="w-20 h-30 object-cover rounded-lg border border-slate-200"
+                  />
+                  <button
+                    onClick={() => {
+                      if (confirm('Hapus template kustom dan kembali ke desain bawaan?')) {
+                        updateProfilSekolah({ templateKartuUrl: null });
+                      }
+                    }}
+                    className="text-[11px] font-bold text-rose-600 hover:text-rose-800 cursor-pointer"
+                  >
+                    Hapus Template, Kembali ke Desain Bawaan
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Right: Position Calibration */}
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 uppercase mb-1.5">
+                2. Atur Posisi Foto & QR Code (dalam pixel, kanvas kartu 360 x 540)
+              </label>
+              <p className="text-[10px] text-slate-400 mb-2">
+                Geser angka di bawah sambil melihat pratinjau kartu pertama di bawah, sampai kotak foto
+                & QR pas menutupi area yang benar di desain Anda.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-slate-50 rounded-lg p-2.5 border border-slate-200">
+                  <div className="text-[10px] font-bold text-slate-500 mb-1.5">KOTAK FOTO</div>
+                  {(['x', 'y', 'width', 'height'] as const).map((key) => (
+                    <div key={key} className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] text-slate-500 uppercase">{key}</span>
+                      <input
+                        type="number"
+                        value={profilSekolah.templateFotoBox[key]}
+                        onChange={(e) =>
+                          updateProfilSekolah({
+                            templateFotoBox: {
+                              ...profilSekolah.templateFotoBox,
+                              [key]: Number(e.target.value) || 0,
+                            },
+                          })
+                        }
+                        className="w-16 text-xs border border-slate-200 rounded px-1.5 py-0.5 text-right"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="bg-slate-50 rounded-lg p-2.5 border border-slate-200">
+                  <div className="text-[10px] font-bold text-slate-500 mb-1.5">KOTAK QR CODE</div>
+                  {(['x', 'y', 'width', 'height'] as const).map((key) => (
+                    <div key={key} className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] text-slate-500 uppercase">{key}</span>
+                      <input
+                        type="number"
+                        value={profilSekolah.templateQrBox[key]}
+                        onChange={(e) =>
+                          updateProfilSekolah({
+                            templateQrBox: {
+                              ...profilSekolah.templateQrBox,
+                              [key]: Number(e.target.value) || 0,
+                            },
+                          })
+                        }
+                        className="w-16 text-xs border border-slate-200 rounded px-1.5 py-0.5 text-right"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* PRINT AREA / CARD RENDER CONTAINER */}
@@ -275,6 +397,51 @@ export const OfficialStudentCard: React.FC<OfficialStudentCardProps> = ({
   qrCodeUrl,
 }) => {
   const { profilSekolah, supabaseConfig } = useApp();
+
+  // MODE TEMPLATE KUSTOM: kalau sekolah sudah upload desain kartu asli, pakai itu sebagai
+  // latar, lalu timpakan foto siswa & QR code di posisi yang sudah dikalibrasi -- hasilnya
+  // identik dengan kartu OSIS fisik, bukan pendekatan/replika buatan sistem.
+  if (profilSekolah.templateKartuUrl) {
+    const fotoBox = profilSekolah.templateFotoBox;
+    const qrBox = profilSekolah.templateQrBox;
+    return (
+      <div className="w-[360px] h-[540px] rounded-3xl overflow-hidden relative shadow-xl border border-slate-200 print:shadow-none print:border print:border-slate-300">
+        <img
+          src={profilSekolah.templateKartuUrl}
+          alt="Template Kartu Pelajar"
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+        <img
+          src={getFotoSiswaUrl(siswa, supabaseConfig.url)}
+          alt={siswa.nama}
+          onError={(e) => {
+            (e.target as HTMLImageElement).src = getFotoPlaceholder(siswa.jenis_kelamin);
+          }}
+          className="absolute object-cover"
+          style={{
+            left: fotoBox.x,
+            top: fotoBox.y,
+            width: fotoBox.width,
+            height: fotoBox.height,
+          }}
+        />
+        {qrCodeUrl && (
+          <img
+            src={qrCodeUrl}
+            alt={`QR ${siswa.nisn}`}
+            className="absolute object-contain bg-white p-1 rounded"
+            style={{
+              left: qrBox.x,
+              top: qrBox.y,
+              width: qrBox.width,
+              height: qrBox.height,
+            }}
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
       className="w-[360px] h-[540px] rounded-3xl overflow-hidden relative shadow-xl border border-purple-200/80 flex flex-col justify-between font-sans text-slate-900 select-none print:shadow-none print:border print:border-slate-300"
@@ -358,11 +525,6 @@ export const OfficialStudentCard: React.FC<OfficialStudentCardProps> = ({
                   (e.target as HTMLImageElement).src = getFotoPlaceholder(siswa.jenis_kelamin);
                 }}
               />
-            </div>
-
-            {/* Student Class Badge */}
-            <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 bg-[#1e1b4b] text-white text-[10px] font-bold px-3 py-0.5 rounded-full shadow-xs uppercase tracking-wider whitespace-nowrap">
-              Kelas {kelas?.nama_kelas || '-'}
             </div>
           </div>
         </div>

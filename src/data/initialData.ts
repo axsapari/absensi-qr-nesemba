@@ -14,6 +14,9 @@ export const INITIAL_PROFIL_SEKOLAH: ProfilSekolah = {
   nipKepalaSekolah: '19680512 199403 1 005',
   customLogoUrl: null,
   customLogoKotaUrl: null,
+  templateKartuUrl: null,
+  templateFotoBox: { x: 72, y: 158, width: 144, height: 176 },
+  templateQrBox: { x: 252, y: 358, width: 84, height: 84 },
 };
 
 export const INITIAL_USERS: UserAccount[] = [

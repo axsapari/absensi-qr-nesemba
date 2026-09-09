@@ -152,6 +152,13 @@ export interface UserAccount {
   lastLogin?: string;
 }
 
+export interface KartuOverlayBox {
+  x: number; // posisi dari kiri (px, kanvas kartu 360x540)
+  y: number; // posisi dari atas (px)
+  width: number;
+  height: number;
+}
+
 export interface ProfilSekolah {
   nama: string;
   npsn: string;
@@ -166,6 +173,9 @@ export interface ProfilSekolah {
   nipKepalaSekolah: string;
   customLogoUrl: string | null; // base64 / data URL Logo Sekolah
   customLogoKotaUrl: string | null; // base64 / data URL Logo Kota Banjar
+  templateKartuUrl: string | null; // base64 desain kartu OSIS asli (opsional, menggantikan desain bawaan)
+  templateFotoBox: KartuOverlayBox; // posisi & ukuran foto siswa di atas template
+  templateQrBox: KartuOverlayBox; // posisi & ukuran QR code di atas template
 }
 
 export type TipeHariKhusus =
