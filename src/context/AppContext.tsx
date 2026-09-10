@@ -536,6 +536,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     })();
   }, [currentUser?.id, supabaseConfig.url, supabaseConfig.anonKey]);
 
+  // Bersihkan payload berdasarkan primary key sebelum upsert.
+  // PostgreSQL menolak satu statement upsert jika key yang sama muncul lebih dari sekali.
+  // Jika ada duplikat, pertahankan data terakhir untuk ID tersebut.
+  function dedupeRowsById<T extends { id: string }>(rows: T[]) {
+    const byId = new Map<string, T>();
+    const duplicateIds = new Set<string>();
+
+    for (const row of rows) {
+      const id = String(row.id ?? '').trim();
+      if (!id) continue;
+      if (byId.has(id)) duplicateIds.add(id);
+      byId.set(id, row);
+    }
+
+    return {
+      rows: Array.from(byId.values()),
+      duplicateIds: Array.from(duplicateIds),
+      invalidCount: rows.filter((row) => !String(row.id ?? '').trim()).length,
+    };
+  }
+
   // Migrasi master lokal -> Supabase secara eksplisit.
   // Urutan wajib: kelas dulu, baru siswa karena siswa.kelas_id adalah FK ke kelas.id.
   const syncMasterData = async (): Promise<{ success: boolean; message: string; kelas: number; siswa: number }> => {
@@ -552,14 +573,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (sessionError) throw new Error(`Gagal memeriksa session: ${sessionError.message}`);
       if (!sessionData.session) throw new Error('Session Supabase tidak aktif. Silakan logout lalu login kembali.');
 
+      // Bersihkan duplicate primary key sebelum upsert.
+      // Ini penting karena PostgreSQL menghasilkan: \"ON CONFLICT DO UPDATE command cannot affect row a second time\"
+      // jika dua baris dalam satu batch memiliki ID yang sama.
+      const kelasPrepared = dedupeRowsById(kelasList);
+      const siswaPrepared = dedupeRowsById(siswaList);
+
+      if (kelasPrepared.invalidCount > 0) {
+        throw new Error(`Ditemukan ${kelasPrepared.invalidCount} data kelas tanpa ID. Periksa master kelas sebelum sinkronisasi.`);
+      }
+      if (siswaPrepared.invalidCount > 0) {
+        throw new Error(`Ditemukan ${siswaPrepared.invalidCount} data siswa tanpa ID. Periksa master siswa sebelum sinkronisasi.`);
+      }
+
       // Pastikan semua kelas tersedia sebelum siswa di-upsert.
-      if (kelasList.length > 0) {
-        const { error } = await supabase.from('kelas').upsert(kelasList, { onConflict: 'id' });
+      if (kelasPrepared.rows.length > 0) {
+        const { error } = await supabase.from('kelas').upsert(kelasPrepared.rows, { onConflict: 'id' });
         if (error) throw new Error(`Upload kelas gagal: ${error.message}`);
       }
 
-      if (siswaList.length > 0) {
-        const { error } = await supabase.from('siswa').upsert(siswaList, { onConflict: 'id' });
+      if (siswaPrepared.rows.length > 0) {
+        const { error } = await supabase.from('siswa').upsert(siswaPrepared.rows, { onConflict: 'id' });
         if (error) throw new Error(`Upload siswa gagal: ${error.message}`);
       }
 
@@ -573,7 +607,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setKelasList((verifyKelas.data ?? []) as Kelas[]);
       setSiswaList((verifySiswa.data ?? []) as Siswa[]);
 
-      const message = `Sinkronisasi master berhasil: ${kelasCount} kelas dan ${siswaCount} siswa tersimpan di Supabase.`;
+      const duplicateSummary = [
+        kelasPrepared.duplicateIds.length > 0
+          ? `${kelasPrepared.duplicateIds.length} ID kelas duplikat dibersihkan`
+          : '',
+        siswaPrepared.duplicateIds.length > 0
+          ? `${siswaPrepared.duplicateIds.length} ID siswa duplikat dibersihkan`
+          : '',
+      ].filter(Boolean).join('; ');
+
+      const message = duplicateSummary
+        ? `Sinkronisasi master berhasil: ${kelasCount} kelas dan ${siswaCount} siswa tersimpan di Supabase. ${duplicateSummary}.`
+        : `Sinkronisasi master berhasil: ${kelasCount} kelas dan ${siswaCount} siswa tersimpan di Supabase.`;
       setSyncBanner({ type: 'sync_success', message });
       return { success: true, message, kelas: kelasCount, siswa: siswaCount };
     } catch (err) {
@@ -991,7 +1036,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!supabase || rows.length === 0) return;
     supabase
       .from('siswa')
-      .upsert(rows, { onConflict: 'id' })
+      .upsert(dedupeRowsById(rows).rows, { onConflict: 'id' })
       .then(({ error }) => {
         if (error) {
           setSyncBanner({ type: 'sync_error', message: `Gagal menyinkronkan siswa: ${error.message}` });
@@ -1020,7 +1065,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!supabase || rows.length === 0) return;
     supabase
       .from('kelas')
-      .upsert(rows, { onConflict: 'id' })
+      .upsert(dedupeRowsById(rows).rows, { onConflict: 'id' })
       .then(({ error }) => {
         if (error) {
           setSyncBanner({ type: 'sync_error', message: `Gagal menyinkronkan kelas: ${error.message}` });
