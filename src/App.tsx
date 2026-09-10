@@ -12,13 +12,14 @@ import { AdminPanel } from './components/AdminPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { LoginPage } from './components/LoginPage';
 import { SyncNotificationToast } from './components/SyncNotificationToast';
+import { BootstrapSupabase } from './BootstrapSupabase';
 
 // Halaman yang WAJIB login untuk diakses. Layar scan (kiosk) sengaja dikecualikan
 // karena itu memang layar publik yang dipakai penjaga gerbang tanpa perlu login tiap pagi.
 const PROTECTED_VIEWS: AppView[] = ['rekap', 'master', 'kartu', 'backup', 'admin', 'settings'];
 
 function MainApp() {
-  const { currentUser, authChecking } = useApp();
+  const { currentUser, authChecking, supabaseConfig } = useApp();
   const [currentView, setCurrentView] = useState<AppView>('kiosk');
   const [selectedStudentForCard, setSelectedStudentForCard] = useState<string | undefined>(undefined);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -33,6 +34,12 @@ function MainApp() {
   // dan belum ada pengguna yang login -- dievaluasi ulang di setiap render,
   // jadi otomatis kembali ke layar login juga kalau pengguna logout.
   const needsLogin = PROTECTED_VIEWS.includes(currentView) && !currentUser;
+
+  // Bootstrap hanya muncul jika konfigurasi Supabase belum tersedia. Ini memutus
+  // circular lock pada perangkat baru tanpa membuat Settings menjadi publik.
+  if (!supabaseConfig.url || !supabaseConfig.anonKey) {
+    return <BootstrapSupabase />;
+  }
 
   // Sedang mengecek sesi Supabase Auth (sekali saat app dibuka) -- tampilkan loading
   // singkat, jangan langsung anggap "belum login" supaya tidak salah kedip ke layar

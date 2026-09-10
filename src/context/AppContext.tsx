@@ -95,6 +95,7 @@ interface AppContextType {
   updatePengaturanJam: (pengaturan: Partial<PengaturanJam>) => void;
   updateWAConfig: (config: Partial<WAGatewayConfig>) => void;
   updateSupabaseConfig: (config: Partial<SupabaseConfig>) => void;
+  syncMasterData: () => Promise<{ success: boolean; message: string; kelas: number; siswa: number }>;
 
   // Attendance Actions
   deleteAbsensi: (id: string) => void;
@@ -268,35 +269,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [users, setUsers] = useState<UserAccount[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.USERS);
-      if (!saved) return INITIAL_USERS;
-
-      const parsed: UserAccount[] = JSON.parse(saved);
-
-      // Migrasi ringan data user lama: data localStorage tetap dipertahankan,
-      // tetapi field yang belum ada (terutama email untuk Supabase Auth)
-      // dilengkapi dari INITIAL_USERS berdasarkan username.
-      const normalized = parsed.map((savedUser) => {
-        const defaultUser = INITIAL_USERS.find(
-          (u) => u.username.toLowerCase() === savedUser.username?.toLowerCase()
-        );
-
-        if (!defaultUser) return savedUser;
-
-        return {
-          ...defaultUser,
-          ...savedUser,
-          email: savedUser.email?.trim() || defaultUser.email,
-        };
-      });
-
-      // Tambahkan akun default yang benar-benar belum pernah ada di localStorage.
-      for (const defUser of INITIAL_USERS) {
-        if (!normalized.some((u) => u.username?.toLowerCase() === defUser.username.toLowerCase())) {
-          normalized.push(defUser);
+      if (saved) {
+        const parsed: UserAccount[] = JSON.parse(saved);
+        const merged = [...parsed];
+        for (const defUser of INITIAL_USERS) {
+          const existing = merged.find((u) => u.username.toLowerCase() === defUser.username.toLowerCase());
+          if (!existing) merged.push(defUser);
+          else if (!existing.email && defUser.email) existing.email = defUser.email;
         }
+        return merged;
       }
-
-      return normalized;
+      return INITIAL_USERS;
     } catch {
       return INITIAL_USERS;
     }
@@ -505,14 +488,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabaseConfig.url, supabaseConfig.anonKey, supabaseConfig.kioskEmail, supabaseConfig.kioskPassword]);
 
-  // Sinkronisasi siswa & kelas -- berjalan begitu ada STAF yang login (bukan akun
-  // kiosk, supaya perilakunya lebih terduga dan tidak dipicu berulang oleh pos gerbang).
-  // Logikanya:
-  //  - Kalau Supabase SUDAH punya data siswa/kelas -> itu jadi acuan, timpa data lokal
-  //    (supaya semua perangkat akhirnya seragam mengikuti data pusat).
-  //  - Kalau Supabase MASIH KOSONG tapi lokal sudah ada data (kasus Anda sekarang,
-  //    baru saja import) -> dorong (push) data lokal ke Supabase sebagai migrasi awal,
-  //    supaya tidak kehilangan data yang sudah di-import.
+  // Sinkronisasi master siswa & kelas.
+  // Pada login kita HANYA mengambil data yang memang tersedia di cloud.
+  // Jika cloud kosong, data lokal tidak otomatis ditimpa dan tidak otomatis
+  // di-seed agar perangkat baru tidak tanpa sengaja mengirim INITIAL_DATA.
   useEffect(() => {
     if (!currentUser) return;
     const supabase = getSupabaseClient(supabaseConfig);
@@ -520,41 +499,90 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     (async () => {
       try {
-        const [{ data: remoteKelas, error: kelasErr }, { data: remoteSiswa, error: siswaErr }] =
-          await Promise.all([
-            supabase.from('kelas').select('*'),
-            supabase.from('siswa').select('*'),
-          ]);
-
-        if (kelasErr || siswaErr) {
-          console.error('Gagal memuat data siswa/kelas dari Supabase:', kelasErr || siswaErr);
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (!sessionData.session) {
+          setSyncBanner({ type: 'sync_error', message: 'Session Supabase tidak ditemukan. Silakan login ulang.' });
           return;
         }
 
-        const remoteHasData = (remoteKelas && remoteKelas.length > 0) || (remoteSiswa && remoteSiswa.length > 0);
-
-        if (remoteHasData) {
-          // Supabase adalah acuan -- ganti data lokal dengan data pusat
-          if (remoteKelas) setKelasList(remoteKelas as Kelas[]);
-          if (remoteSiswa) setSiswaList(remoteSiswa as Siswa[]);
-        } else if (kelasList.length > 0 || siswaList.length > 0) {
-          // Supabase masih kosong, tapi perangkat ini sudah punya data lokal --
-          // dorong ke Supabase (kelas dulu, baru siswa, karena siswa mengacu ke kelas)
-          if (kelasList.length > 0) {
-            const { error } = await supabase.from('kelas').upsert(kelasList, { onConflict: 'id' });
-            if (error) console.error('Gagal migrasi kelas ke Supabase:', error.message);
-          }
-          if (siswaList.length > 0) {
-            const { error } = await supabase.from('siswa').upsert(siswaList, { onConflict: 'id' });
-            if (error) console.error('Gagal migrasi siswa ke Supabase:', error.message);
-          }
+        const kelasResult = await supabase.from('kelas').select('*');
+        if (kelasResult.error) {
+          setSyncBanner({ type: 'sync_error', message: `Gagal membaca tabel kelas: ${kelasResult.error.message}` });
+          console.error('Supabase kelas SELECT:', kelasResult.error);
+          return;
         }
+
+        const siswaResult = await supabase.from('siswa').select('*');
+        if (siswaResult.error) {
+          setSyncBanner({ type: 'sync_error', message: `Gagal membaca tabel siswa: ${siswaResult.error.message}` });
+          console.error('Supabase siswa SELECT:', siswaResult.error);
+          return;
+        }
+
+        if ((kelasResult.data?.length ?? 0) > 0) setKelasList(kelasResult.data as Kelas[]);
+        if ((siswaResult.data?.length ?? 0) > 0) setSiswaList(siswaResult.data as Siswa[]);
+
+        const kelasCount = kelasResult.data?.length ?? 0;
+        const siswaCount = siswaResult.data?.length ?? 0;
+        setSyncBanner({
+          type: 'sync_success',
+          message: `Terhubung ke Supabase. Master cloud: ${kelasCount} kelas, ${siswaCount} siswa.`,
+        });
       } catch (err) {
-        console.error('Gagal sinkronisasi siswa/kelas:', err);
+        const message = err instanceof Error ? err.message : String(err);
+        setSyncBanner({ type: 'sync_error', message: `Gagal memeriksa master Supabase: ${message}` });
+        console.error('Master sync check:', err);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser?.id]);
+  }, [currentUser?.id, supabaseConfig.url, supabaseConfig.anonKey]);
+
+  // Migrasi master lokal -> Supabase secara eksplisit.
+  // Urutan wajib: kelas dulu, baru siswa karena siswa.kelas_id adalah FK ke kelas.id.
+  const syncMasterData = async (): Promise<{ success: boolean; message: string; kelas: number; siswa: number }> => {
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (!supabase) {
+      const message = 'Supabase belum dikonfigurasi.';
+      setSyncBanner({ type: 'sync_error', message });
+      return { success: false, message, kelas: 0, siswa: 0 };
+    }
+
+    setSyncBanner({ type: 'syncing', message: 'Memeriksa sesi dan mengirim master data...' });
+    try {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw new Error(`Gagal memeriksa session: ${sessionError.message}`);
+      if (!sessionData.session) throw new Error('Session Supabase tidak aktif. Silakan logout lalu login kembali.');
+
+      // Pastikan semua kelas tersedia sebelum siswa di-upsert.
+      if (kelasList.length > 0) {
+        const { error } = await supabase.from('kelas').upsert(kelasList, { onConflict: 'id' });
+        if (error) throw new Error(`Upload kelas gagal: ${error.message}`);
+      }
+
+      if (siswaList.length > 0) {
+        const { error } = await supabase.from('siswa').upsert(siswaList, { onConflict: 'id' });
+        if (error) throw new Error(`Upload siswa gagal: ${error.message}`);
+      }
+
+      const verifyKelas = await supabase.from('kelas').select('*');
+      if (verifyKelas.error) throw new Error(`Verifikasi kelas gagal: ${verifyKelas.error.message}`);
+      const verifySiswa = await supabase.from('siswa').select('*');
+      if (verifySiswa.error) throw new Error(`Verifikasi siswa gagal: ${verifySiswa.error.message}`);
+
+      const kelasCount = verifyKelas.data?.length ?? 0;
+      const siswaCount = verifySiswa.data?.length ?? 0;
+      setKelasList((verifyKelas.data ?? []) as Kelas[]);
+      setSiswaList((verifySiswa.data ?? []) as Siswa[]);
+
+      const message = `Sinkronisasi master berhasil: ${kelasCount} kelas dan ${siswaCount} siswa tersimpan di Supabase.`;
+      setSyncBanner({ type: 'sync_success', message });
+      return { success: true, message, kelas: kelasCount, siswa: siswaCount };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setSyncBanner({ type: 'sync_error', message });
+      console.error('Master data sync:', err);
+      return { success: false, message, kelas: 0, siswa: 0 };
+    }
+  };
 
   // Real-time ticking clock
   useEffect(() => {
@@ -955,7 +983,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // CRUD Siswa
-  // Helper: dorong perubahan siswa/kelas ke Supabase secara diam-diam (fire-and-forget).
+  // Helper CRUD tetap fire-and-forget; kegagalan juga diteruskan ke banner agar tidak tersembunyi di console.
   // Tidak memblokir UI -- kalau gagal (misal sedang offline), perubahan tetap tersimpan
   // lokal dan akan tersinkron lagi saat fetch berikutnya berhasil terhubung.
   const pushSiswaUpsert = (rows: Siswa[]) => {
@@ -965,7 +993,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .from('siswa')
       .upsert(rows, { onConflict: 'id' })
       .then(({ error }) => {
-        if (error) console.error('Gagal menyinkronkan data siswa ke Supabase:', error.message);
+        if (error) {
+          setSyncBanner({ type: 'sync_error', message: `Gagal menyinkronkan siswa: ${error.message}` });
+          console.error('Gagal menyinkronkan data siswa ke Supabase:', error);
+        }
       });
   };
 
@@ -977,7 +1008,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .delete()
       .eq('id', id)
       .then(({ error }) => {
-        if (error) console.error('Gagal menghapus data siswa di Supabase:', error.message);
+        if (error) {
+          setSyncBanner({ type: 'sync_error', message: `Gagal menghapus siswa: ${error.message}` });
+          console.error('Gagal menghapus data siswa di Supabase:', error);
+        }
       });
   };
 
@@ -988,7 +1022,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .from('kelas')
       .upsert(rows, { onConflict: 'id' })
       .then(({ error }) => {
-        if (error) console.error('Gagal menyinkronkan data kelas ke Supabase:', error.message);
+        if (error) {
+          setSyncBanner({ type: 'sync_error', message: `Gagal menyinkronkan kelas: ${error.message}` });
+          console.error('Gagal menyinkronkan data kelas ke Supabase:', error);
+        }
       });
   };
 
@@ -1000,7 +1037,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       .delete()
       .eq('id', id)
       .then(({ error }) => {
-        if (error) console.error('Gagal menghapus data kelas di Supabase:', error.message);
+        if (error) {
+          setSyncBanner({ type: 'sync_error', message: `Gagal menghapus kelas: ${error.message}` });
+          console.error('Gagal menghapus data kelas di Supabase:', error);
+        }
       });
   };
 
@@ -1122,15 +1162,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateSupabaseConfig = (data: Partial<SupabaseConfig>) => {
-    // Client Supabase adalah singleton. Reset ketika konfigurasi berubah agar
-    // URL/anon key baru benar-benar digunakan tanpa perlu menunggu reload.
-    setSupabaseConfig((prev) => {
-      const next = { ...prev, ...data };
-      if (next.url !== prev.url || next.anonKey !== prev.anonKey) {
-        resetSupabaseClient();
-      }
-      return next;
-    });
+    resetSupabaseClient();
+    setSupabaseConfig((prev) => ({ ...prev, ...data, connected: Boolean((data.url ?? prev.url) && (data.anonKey ?? prev.anonKey)) }));
+    setSyncBanner({ type: 'syncing', message: 'Konfigurasi Supabase diperbarui. Memeriksa koneksi...' });
   };
 
   const deleteAbsensi = (id: string) => {
@@ -1348,18 +1382,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     password: string
   ): Promise<{ success: boolean; message: string }> => {
     const cleanUsername = username.trim().toLowerCase();
-    // Jangan trim password. Spasi dapat menjadi bagian sah dari password.
     const cleanPass = password;
 
     const targetUser = users.find((u) => u.username.toLowerCase() === cleanUsername);
     if (!targetUser) {
       return { success: false, message: `Pengguna dengan username "${username}" tidak ditemukan.` };
     }
-    const authEmail = targetUser.email?.trim().toLowerCase();
-    if (!authEmail) {
+    if (!targetUser.email) {
       return {
         success: false,
-        message: 'Profil akun belum memiliki email Supabase Auth. Silakan buka ulang aplikasi atau lengkapi email akun di data pengguna.',
+        message: 'Akun ini belum diatur emailnya. Hubungi Super Admin untuk melengkapi data akun.',
       };
     }
 
@@ -1372,24 +1404,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: authEmail,
+      email: targetUser.email,
       password: cleanPass,
     });
 
     if (error || !data.session) {
-      const authMessage = error?.message?.toLowerCase() || '';
-      let message = 'Login Supabase Auth gagal. Periksa email akun dan kata sandi.';
-
-      if (authMessage.includes('email not confirmed')) {
-        message = 'Email akun belum dikonfirmasi di Supabase Auth.';
-      } else if (authMessage.includes('invalid login credentials')) {
-        message = 'Kata sandi salah, atau email akun tidak cocok dengan pengguna di Supabase Auth.';
-      } else if (error?.message) {
-        message = `Login Supabase Auth gagal: ${error.message}`;
-      }
-
-      console.error('Supabase Auth login failed:', error);
-      return { success: false, message };
+      return { success: false, message: 'Kata sandi salah atau akun belum terdaftar di Supabase Auth.' };
     }
 
     const updatedUser = {
@@ -1700,6 +1720,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updatePengaturanJam,
         updateWAConfig,
         updateSupabaseConfig,
+        syncMasterData,
         deleteAbsensi,
         resetTodayAttendance,
         reloadInitialData,

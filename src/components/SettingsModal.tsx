@@ -25,6 +25,9 @@ export const SettingsModal: React.FC = () => {
     updateWAConfig,
     supabaseConfig,
     updateSupabaseConfig,
+    syncMasterData,
+    siswaList,
+    kelasList,
     reloadInitialData,
     resetTodayAttendance,
   } = useApp();
@@ -507,6 +510,45 @@ export const SettingsModal: React.FC = () => {
               </button>
             </div>
           </form>
+
+          {/* Master Data Sync */}
+          <div className="bg-blue-50 p-6 rounded-2xl border border-blue-200 space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-base font-black text-slate-900">Sinkronisasi Master Data</h3>
+                <p className="text-xs text-slate-600 mt-1">
+                  Kirim data lokal <strong>kelas</strong> terlebih dahulu, lalu <strong>siswa</strong>. Setelah itu aplikasi membaca ulang database untuk memastikan hasilnya benar-benar tersimpan.
+                </p>
+              </div>
+              <Database className="w-5 h-5 text-blue-600 shrink-0" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-center">
+              <div className="bg-white border border-blue-100 rounded-xl p-3">
+                <div className="text-xl font-black text-slate-900">{kelasList.length}</div>
+                <div className="text-[10px] uppercase font-bold text-slate-400">Kelas lokal</div>
+              </div>
+              <div className="bg-white border border-blue-100 rounded-xl p-3">
+                <div className="text-xl font-black text-slate-900">{siswaList.length}</div>
+                <div className="text-[10px] uppercase font-bold text-slate-400">Siswa lokal</div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={async () => {
+                await syncMasterData();
+              }}
+              className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Sinkronkan Master Data ke Supabase
+            </button>
+
+            <p className="text-[11px] text-blue-800/70">
+              Aman untuk migrasi awal: proses ini tidak menghapus data lokal sebelum verifikasi database berhasil.
+            </p>
+          </div>
 
           {/* Supabase SQL DDL Schema Script */}
           <div className="bg-slate-900 text-slate-100 p-6 rounded-2xl shadow-xl space-y-4">
