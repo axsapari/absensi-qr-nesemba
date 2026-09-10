@@ -38,7 +38,7 @@ import {
 import { soundManager } from '../lib/sound';
 import { DEFAULT_WA_CONFIG, sendWhatsAppNotification } from '../lib/whatsapp';
 import { processSyncToDatabase } from '../lib/syncService';
-import { getSupabaseClient } from '../lib/supabase';
+import { getSupabaseClient, resetSupabaseClient } from '../lib/supabase';
 
 interface RecentScanItem {
   absensi: Absensi;
@@ -268,17 +268,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [users, setUsers] = useState<UserAccount[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.USERS);
-      if (saved) {
-        const parsed: UserAccount[] = JSON.parse(saved);
-        const merged = [...parsed];
-        for (const defUser of INITIAL_USERS) {
-          if (!merged.some((u) => u.username.toLowerCase() === defUser.username.toLowerCase())) {
-            merged.push(defUser);
-          }
+      if (!saved) return INITIAL_USERS;
+
+      const parsed: UserAccount[] = JSON.parse(saved);
+
+      // Migrasi ringan data user lama: data localStorage tetap dipertahankan,
+      // tetapi field yang belum ada (terutama email untuk Supabase Auth)
+      // dilengkapi dari INITIAL_USERS berdasarkan username.
+      const normalized = parsed.map((savedUser) => {
+        const defaultUser = INITIAL_USERS.find(
+          (u) => u.username.toLowerCase() === savedUser.username?.toLowerCase()
+        );
+
+        if (!defaultUser) return savedUser;
+
+        return {
+          ...defaultUser,
+          ...savedUser,
+          email: savedUser.email?.trim() || defaultUser.email,
+        };
+      });
+
+      // Tambahkan akun default yang benar-benar belum pernah ada di localStorage.
+      for (const defUser of INITIAL_USERS) {
+        if (!normalized.some((u) => u.username?.toLowerCase() === defUser.username.toLowerCase())) {
+          normalized.push(defUser);
         }
-        return merged;
       }
-      return INITIAL_USERS;
+
+      return normalized;
     } catch {
       return INITIAL_USERS;
     }
@@ -1104,7 +1122,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateSupabaseConfig = (data: Partial<SupabaseConfig>) => {
-    setSupabaseConfig((prev) => ({ ...prev, ...data }));
+    // Client Supabase adalah singleton. Reset ketika konfigurasi berubah agar
+    // URL/anon key baru benar-benar digunakan tanpa perlu menunggu reload.
+    setSupabaseConfig((prev) => {
+      const next = { ...prev, ...data };
+      if (next.url !== prev.url || next.anonKey !== prev.anonKey) {
+        resetSupabaseClient();
+      }
+      return next;
+    });
   };
 
   const deleteAbsensi = (id: string) => {
@@ -1322,16 +1348,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     password: string
   ): Promise<{ success: boolean; message: string }> => {
     const cleanUsername = username.trim().toLowerCase();
-    const cleanPass = password.trim();
+    // Jangan trim password. Spasi dapat menjadi bagian sah dari password.
+    const cleanPass = password;
 
     const targetUser = users.find((u) => u.username.toLowerCase() === cleanUsername);
     if (!targetUser) {
       return { success: false, message: `Pengguna dengan username "${username}" tidak ditemukan.` };
     }
-    if (!targetUser.email) {
+    const authEmail = targetUser.email?.trim().toLowerCase();
+    if (!authEmail) {
       return {
         success: false,
-        message: 'Akun ini belum diatur emailnya. Hubungi Super Admin untuk melengkapi data akun.',
+        message: 'Profil akun belum memiliki email Supabase Auth. Silakan buka ulang aplikasi atau lengkapi email akun di data pengguna.',
       };
     }
 
@@ -1344,12 +1372,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: targetUser.email,
+      email: authEmail,
       password: cleanPass,
     });
 
     if (error || !data.session) {
-      return { success: false, message: 'Kata sandi salah atau akun belum terdaftar di Supabase Auth.' };
+      const authMessage = error?.message?.toLowerCase() || '';
+      let message = 'Login Supabase Auth gagal. Periksa email akun dan kata sandi.';
+
+      if (authMessage.includes('email not confirmed')) {
+        message = 'Email akun belum dikonfirmasi di Supabase Auth.';
+      } else if (authMessage.includes('invalid login credentials')) {
+        message = 'Kata sandi salah, atau email akun tidak cocok dengan pengguna di Supabase Auth.';
+      } else if (error?.message) {
+        message = `Login Supabase Auth gagal: ${error.message}`;
+      }
+
+      console.error('Supabase Auth login failed:', error);
+      return { success: false, message };
     }
 
     const updatedUser = {

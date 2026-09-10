@@ -17,6 +17,8 @@ export function getSupabaseClient(config?: SupabaseConfig): SupabaseClient | nul
 }
 
 export function resetSupabaseClient() {
+  // Dipakai ketika URL / anon key berubah agar client singleton tidak
+  // terus menunjuk ke project Supabase yang lama.
   supabaseInstance = null;
 }
 
