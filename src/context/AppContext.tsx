@@ -557,6 +557,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }
 
+  // Supabase tabel master memiliki kolom created_at NOT NULL.
+  // Data lama/localStorage belum tentu memiliki kolom ini, dan nilai null
+  // akan dikirim sebagai NULL sehingga INSERT/UPSERT ditolak PostgreSQL.
+  // Isi created_at hanya jika belum ada; data created_at yang sudah ada
+  // tetap dipertahankan.
+  function ensureCreatedAt<T extends { id: string }>(rows: T[]) {
+    const now = new Date().toISOString();
+    return rows.map((row) => {
+      const existing = (row as T & { created_at?: string | null }).created_at;
+      return {
+        ...row,
+        created_at: existing || now,
+      };
+    });
+  }
+
   // Migrasi master lokal -> Supabase secara eksplisit.
   // Urutan wajib: kelas dulu, baru siswa karena siswa.kelas_id adalah FK ke kelas.id.
   const syncMasterData = async (): Promise<{ success: boolean; message: string; kelas: number; siswa: number }> => {
@@ -576,8 +592,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Bersihkan duplicate primary key sebelum upsert.
       // Ini penting karena PostgreSQL menghasilkan: \"ON CONFLICT DO UPDATE command cannot affect row a second time\"
       // jika dua baris dalam satu batch memiliki ID yang sama.
-      const kelasPrepared = dedupeRowsById(kelasList);
-      const siswaPrepared = dedupeRowsById(siswaList);
+      const kelasPrepared = { ...dedupeRowsById(kelasList), rows: ensureCreatedAt(dedupeRowsById(kelasList).rows) };
+      const siswaPrepared = { ...dedupeRowsById(siswaList), rows: ensureCreatedAt(dedupeRowsById(siswaList).rows) };
 
       if (kelasPrepared.invalidCount > 0) {
         throw new Error(`Ditemukan ${kelasPrepared.invalidCount} data kelas tanpa ID. Periksa master kelas sebelum sinkronisasi.`);
@@ -1036,7 +1052,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!supabase || rows.length === 0) return;
     supabase
       .from('siswa')
-      .upsert(dedupeRowsById(rows).rows, { onConflict: 'id' })
+      .upsert(ensureCreatedAt(dedupeRowsById(rows).rows), { onConflict: 'id' })
       .then(({ error }) => {
         if (error) {
           setSyncBanner({ type: 'sync_error', message: `Gagal menyinkronkan siswa: ${error.message}` });
@@ -1065,7 +1081,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!supabase || rows.length === 0) return;
     supabase
       .from('kelas')
-      .upsert(dedupeRowsById(rows).rows, { onConflict: 'id' })
+      .upsert(ensureCreatedAt(dedupeRowsById(rows).rows), { onConflict: 'id' })
       .then(({ error }) => {
         if (error) {
           setSyncBanner({ type: 'sync_error', message: `Gagal menyinkronkan kelas: ${error.message}` });
