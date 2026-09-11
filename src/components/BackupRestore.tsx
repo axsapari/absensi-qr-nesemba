@@ -84,7 +84,6 @@ export const BackupRestore: React.FC = () => {
         Tanggal: a.tanggal,
         'Waktu Scan': a.waktu_scan,
         NISN: s?.nisn || '-',
-        'Kode Barcode': s?.kode_barcode || '-',
         'Nama Siswa': s?.nama || 'Siswa Terhapus',
         Kelas: k?.nama_kelas || '-',
         'Jenis Absensi': a.jenis === 'masuk' ? 'Kedatangan (Pagi)' : 'Kepulangan (Siang)',
@@ -361,7 +360,6 @@ export const BackupRestore: React.FC = () => {
                       return {
                         No: i + 1,
                         NISN: s.nisn,
-                        'Kode Barcode': s.kode_barcode,
                         'Nama Lengkap': s.nama,
                         Kelas: k?.nama_kelas || '-',
                         'Jenis Kelamin': s.jenis_kelamin,
@@ -709,7 +707,7 @@ export const BackupRestore: React.FC = () => {
               <div>
                 <div className="font-bold text-sm text-slate-900">Reset Absensi Hari Ini Saja</div>
                 <div className="text-xs text-slate-500">
-                  Menghapus catatan scan barcode masuk dan pulang untuk hari ini saja. Data master siswa dan riwayat tanggal lain tetap aman.
+                  Menghapus catatan scan QR/NISN masuk dan pulang untuk hari ini saja. Data master siswa dan riwayat tanggal lain tetap aman.
                 </div>
               </div>
               <button

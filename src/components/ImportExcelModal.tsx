@@ -132,7 +132,6 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({ isOpen, onCl
 
       return {
         nama: row.nama,
-        kode_barcode: row.nisn, // otomatis = NISN
         nisn: row.nisn,
         kelas_id: targetClassId,
         nomor_wa_ortu: row.nomor_wa_ortu,

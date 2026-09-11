@@ -148,7 +148,7 @@ class AudioFeedbackManager {
     osc.stop(now + 0.4);
   }
 
-  // Nada Gagal / Barcode Tidak Dikenal
+  // Nada Gagal / QR/NISN Tidak Dikenal
   public playError() {
     if (!this.soundEnabled) return;
     const ctx = this.getContext();

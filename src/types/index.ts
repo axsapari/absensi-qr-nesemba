@@ -11,7 +11,6 @@ export interface Kelas {
 export interface Siswa {
   id: string;
   nama: string;
-  kode_barcode: string; // Unik untuk scan barcode/QR
   nisn: string;
   kelas_id: string;
   nomor_wa_ortu: string;

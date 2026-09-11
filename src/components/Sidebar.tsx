@@ -66,7 +66,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       id: 'kiosk',
       label: 'Pos Gerbang (Scan)',
-      description: 'Layar scan barcode & audio',
+      description: 'Layar scan QR/NISN & audio',
       icon: Scan,
     },
     {
@@ -84,7 +84,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       id: 'kartu',
       label: 'Cetak Kartu Pelajar',
-      description: 'Kartu barcode siap print A4',
+      description: 'Kartu QR/NISN siap print A4',
       icon: CreditCard,
     },
     {

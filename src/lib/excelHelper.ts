@@ -4,7 +4,6 @@ import { Siswa, Kelas } from '../types';
 export interface ParsedSiswaRow {
   nama: string;
   nisn: string;
-  kode_barcode: string;
   nama_kelas: string;
   jenis_kelamin: 'L' | 'P';
   tempat_lahir: string;
@@ -249,7 +248,6 @@ export async function parseExcelFile(file: File): Promise<ParsedSiswaRow[]> {
     return {
       nama,
       nisn,
-      kode_barcode: nisn, // otomatis = NISN, tidak lagi kolom terpisah
       nama_kelas,
       jenis_kelamin,
       tempat_lahir: tempat_lahir || 'Banjar',

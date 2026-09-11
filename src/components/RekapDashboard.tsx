@@ -121,8 +121,7 @@ export const RekapDashboard: React.FC = () => {
           const q = searchQuery.toLowerCase();
           const matchName = siswa.nama.toLowerCase().includes(q);
           const matchNisn = siswa.nisn.toLowerCase().includes(q);
-          const matchBarcode = siswa.kode_barcode.toLowerCase().includes(q);
-          if (!matchName && !matchNisn && !matchBarcode) return false;
+          if (!matchName && !matchNisn) return false;
         }
         return true;
       })
@@ -170,8 +169,7 @@ export const RekapDashboard: React.FC = () => {
           const q = searchQuery.toLowerCase();
           const matchName = siswa.nama.toLowerCase().includes(q);
           const matchNisn = siswa.nisn.toLowerCase().includes(q);
-          const matchBarcode = siswa.kode_barcode.toLowerCase().includes(q);
-          if (!matchName && !matchNisn && !matchBarcode) return false;
+          if (!matchName && !matchNisn) return false;
         }
         return true;
       })
@@ -1541,7 +1539,7 @@ export const RekapDashboard: React.FC = () => {
             <div>
               <h3 className="font-bold text-slate-800">Riwayat Pengiriman Pesan WhatsApp</h3>
               <p className="text-xs text-slate-500">
-                Log audit setiap notifikasi kehadiran yang dipicu saat siswa scan barcode di gerbang.
+                Log audit setiap notifikasi kehadiran yang dipicu saat siswa scan QR/NISN di gerbang.
               </p>
             </div>
             <div className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">

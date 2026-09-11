@@ -186,7 +186,7 @@ export const SettingsModal: React.FC = () => {
           <div className="border-b border-slate-100 pb-3">
             <h3 className="text-lg font-black text-slate-900">Aturan Jam Kedatangan & Kepulangan</h3>
             <p className="text-xs text-slate-500">
-              Sistem akan menentukan secara otomatis apakah scan barcode termasuk Masuk (Tepat Waktu / Terlambat) atau Pulang berdasarkan jam berikut.
+              Sistem akan menentukan secara otomatis apakah scan QR/NISN termasuk Masuk (Tepat Waktu / Terlambat) atau Pulang berdasarkan jam berikut.
             </p>
           </div>
 

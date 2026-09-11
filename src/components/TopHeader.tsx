@@ -26,7 +26,7 @@ interface TopHeaderProps {
 const VIEW_TITLES: Record<AppView, { title: string; subtitle: string; icon: React.ComponentType<{ className?: string }> }> = {
   kiosk: {
     title: 'Pos Gerbang Scan Siswa',
-    subtitle: 'Pemindai Barcode, Display Status & Audio Bell',
+    subtitle: 'Pemindai QR/NISN, Display Status & Audio Bell',
     icon: Scan,
   },
   rekap: {
@@ -41,7 +41,7 @@ const VIEW_TITLES: Record<AppView, { title: string; subtitle: string; icon: Reac
   },
   kartu: {
     title: 'Cetak Kartu Pelajar',
-    subtitle: 'Generator Kartu Siswa Barcode Siap Cetak A4',
+    subtitle: 'Generator Kartu Siswa QR/NISN Siap Cetak A4',
     icon: CreditCard,
   },
   backup: {

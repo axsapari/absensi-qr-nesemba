@@ -979,7 +979,7 @@ export const AdminPanel: React.FC = () => {
                   Hari Aktif Sekolah
                 </label>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Tentukan hari kegiatan belajar mengajar aktif. Hari yang dipilih akan memproses scan barcode siswa.
+                  Tentukan hari kegiatan belajar mengajar aktif. Hari yang dipilih akan memproses scan QR/NISN siswa.
                 </p>
               </div>
 

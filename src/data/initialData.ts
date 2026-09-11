@@ -84,7 +84,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-000',
     nama: 'Cahaya Dewi',
-    kode_barcode: 'SMP9-7A-001',
     nisn: '0098234101',
     kelas_id: 'k-7a',
     nomor_wa_ortu: '081234567890',
@@ -99,7 +98,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-001',
     nama: 'Aditya Pratama Putra',
-    kode_barcode: 'SMP9-7A-002',
     nisn: '0098234102',
     kelas_id: 'k-7a',
     nomor_wa_ortu: '081298765432',
@@ -114,8 +112,7 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-002',
     nama: 'Annisa Putri Rahmadani',
-    kode_barcode: 'SMP2026-7A-002',
-    nisn: '0098234102',
+    nisn: '0098234106',
     kelas_id: 'k-7a',
     nomor_wa_ortu: '081298765432',
     nama_ortu: 'Ibu Sri Wahyuni',
@@ -126,7 +123,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-003',
     nama: 'Bagas Satria Nugraha',
-    kode_barcode: 'SMP2026-7A-003',
     nisn: '0098234103',
     kelas_id: 'k-7a',
     nomor_wa_ortu: '085712345678',
@@ -138,7 +134,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-004',
     nama: 'Cantika Ayu Maharani',
-    kode_barcode: 'SMP2026-7A-004',
     nisn: '0098234104',
     kelas_id: 'k-7a',
     nomor_wa_ortu: '087812349988',
@@ -150,7 +145,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-005',
     nama: 'Dimas Arya Permana',
-    kode_barcode: 'SMP2026-7A-005',
     nisn: '0098234105',
     kelas_id: 'k-7a',
     nomor_wa_ortu: '081388990011',
@@ -164,7 +158,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-006',
     nama: 'Fahri Ramadhan Hidayat',
-    kode_barcode: 'SMP2026-7B-001',
     nisn: '0098234201',
     kelas_id: 'k-7b',
     nomor_wa_ortu: '085277889900',
@@ -176,7 +169,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-007',
     nama: 'Gita Safitri Nurjanah',
-    kode_barcode: 'SMP2026-7B-002',
     nisn: '0098234202',
     kelas_id: 'k-7b',
     nomor_wa_ortu: '081911223344',
@@ -188,7 +180,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-008',
     nama: 'Hafidz Al-Ghifari',
-    kode_barcode: 'SMP2026-7B-003',
     nisn: '0098234203',
     kelas_id: 'k-7b',
     nomor_wa_ortu: '082166554433',
@@ -200,7 +191,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-009',
     nama: 'Intan Nuraini',
-    kode_barcode: 'SMP2026-7B-004',
     nisn: '0098234204',
     kelas_id: 'k-7b',
     nomor_wa_ortu: '081399887766',
@@ -214,7 +204,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-010',
     nama: 'Kurniawan Dwi Cahyo',
-    kode_barcode: 'SMP2026-8A-001',
     nisn: '0087112201',
     kelas_id: 'k-8a',
     nomor_wa_ortu: '085811223300',
@@ -226,7 +215,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-011',
     nama: 'Lestari Indah Pratiwi',
-    kode_barcode: 'SMP2026-8A-002',
     nisn: '0087112202',
     kelas_id: 'k-8a',
     nomor_wa_ortu: '087788991122',
@@ -238,7 +226,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-012',
     nama: 'Muhammad Rizky Ramadhan',
-    kode_barcode: 'SMP2026-8A-003',
     nisn: '0087112203',
     kelas_id: 'k-8a',
     nomor_wa_ortu: '081255443322',
@@ -250,7 +237,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-013',
     nama: 'Nabila Syakirah',
-    kode_barcode: 'SMP2026-8A-004',
     nisn: '0087112204',
     kelas_id: 'k-8a',
     nomor_wa_ortu: '089612345678',
@@ -264,7 +250,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-014',
     nama: 'Pandu Wicaksono',
-    kode_barcode: 'SMP2026-8B-001',
     nisn: '0087112301',
     kelas_id: 'k-8b',
     nomor_wa_ortu: '081377889911',
@@ -276,7 +261,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-015',
     nama: 'Qori Amalia',
-    kode_barcode: 'SMP2026-8B-002',
     nisn: '0087112302',
     kelas_id: 'k-8b',
     nomor_wa_ortu: '085622334455',
@@ -288,7 +272,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-016',
     nama: 'Raka Dewantara',
-    kode_barcode: 'SMP2026-8B-003',
     nisn: '0087112303',
     kelas_id: 'k-8b',
     nomor_wa_ortu: '081299881100',
@@ -302,7 +285,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-017',
     nama: 'Salma Zahirah',
-    kode_barcode: 'SMP2026-9A-001',
     nisn: '0076113301',
     kelas_id: 'k-9a',
     nomor_wa_ortu: '081344556677',
@@ -314,7 +296,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-018',
     nama: 'Tegar Bintang Prakoso',
-    kode_barcode: 'SMP2026-9A-002',
     nisn: '0076113302',
     kelas_id: 'k-9a',
     nomor_wa_ortu: '085711998877',
@@ -326,7 +307,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-019',
     nama: 'Umar Farouq Al-Faruq',
-    kode_barcode: 'SMP2026-9A-003',
     nisn: '0076113303',
     kelas_id: 'k-9a',
     nomor_wa_ortu: '081277112233',
@@ -338,7 +318,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-020',
     nama: 'Vina Maulida',
-    kode_barcode: 'SMP2026-9A-004',
     nisn: '0076113304',
     kelas_id: 'k-9a',
     nomor_wa_ortu: '087899001122',
@@ -352,7 +331,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-021',
     nama: 'Wahyu Triyono',
-    kode_barcode: 'SMP2026-9B-001',
     nisn: '0076113401',
     kelas_id: 'k-9b',
     nomor_wa_ortu: '081244558899',
@@ -364,7 +342,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-022',
     nama: 'Yasmin Aulia Rachman',
-    kode_barcode: 'SMP2026-9B-002',
     nisn: '0076113402',
     kelas_id: 'k-9b',
     nomor_wa_ortu: '085611223344',
@@ -376,7 +353,6 @@ export const INITIAL_SISWA: Siswa[] = [
   {
     id: 's-023',
     nama: 'Zidan Al-Ghany',
-    kode_barcode: 'SMP2026-9B-003',
     nisn: '0076113403',
     kelas_id: 'k-9b',
     nomor_wa_ortu: '081399001122',

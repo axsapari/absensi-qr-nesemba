@@ -87,8 +87,7 @@ export const KartuPelajar: React.FC<{ initialSelectedId?: string }> = ({ initial
     const matchesSearch =
       !searchFilter ||
       s.nama.toLowerCase().includes(searchFilter.toLowerCase()) ||
-      s.nisn.includes(searchFilter) ||
-      s.kode_barcode.toLowerCase().includes(searchFilter.toLowerCase());
+      s.nisn.includes(searchFilter);
     return matchesKelas && matchesSearch;
   });
 
@@ -146,10 +145,10 @@ export const KartuPelajar: React.FC<{ initialSelectedId?: string }> = ({ initial
           </div>
           <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2 mt-1">
             <CreditCard className="w-6 h-6 text-indigo-600" />
-            <span>Kartu Pelajar Barcode & QR Code</span>
+            <span>Kartu Pelajar QR Code</span>
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Format resmi sesuai kartu identitas fisik SMP Negeri 9 Banjar. Dilengkapi QR Code & Barcode yang siap dipindai oleh scanner pos absensi.
+            Format resmi sesuai kartu identitas fisik SMP Negeri 9 Banjar. Dilengkapi QR Code NISN yang siap dipindai oleh scanner pos absensi.
           </p>
         </div>
 

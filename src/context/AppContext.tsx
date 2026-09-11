@@ -74,7 +74,7 @@ interface AppContextType {
   dismissSyncBanner: () => void;
 
   setSimulatedTime: (time: string | null) => void;
-  processScanBarcode: (barcodeInput: string) => Promise<ScanResult>;
+  processScanNisn: (nisnInput: string) => Promise<ScanResult>;
   clearLastScanResult: () => void;
 
   // CRUD Siswa
@@ -181,12 +181,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (saved) {
         const parsed: Siswa[] = JSON.parse(saved);
         // Ensure place of birth, date, address are populated for existing records
-        return parsed.map((s, idx) => ({
-          ...s,
-          tempat_lahir: s.tempat_lahir || 'Banjar',
-          tanggal_lahir: s.tanggal_lahir || `${10 + (idx % 18)} Mei 2012`,
-          alamat: s.alamat || `Jl. Tentara Pelajar No. ${15 + idx}, Banjar`,
-        }));
+        const seenNisn = new Set<string>();
+        return parsed
+          .map((s, idx) => {
+            const legacy = s as Siswa & { kode_barcode?: string };
+            const { kode_barcode: _legacyBarcode, ...cleanStudent } = legacy;
+            return {
+              ...cleanStudent,
+              tempat_lahir: s.tempat_lahir || 'Banjar',
+              tanggal_lahir: s.tanggal_lahir || `${10 + (idx % 18)} Mei 2012`,
+              alamat: s.alamat || `Jl. Tentara Pelajar No. ${15 + idx}, Banjar`,
+            };
+          })
+          .filter((s) => {
+            if (!s.nisn || seenNisn.has(s.nisn)) return false;
+            seenNisn.add(s.nisn);
+            return true;
+          });
       }
       return INITIAL_SISWA;
     } catch {
@@ -627,16 +638,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }
 
-  // kode_barcode di database bersifat WAJIB DIISI (NOT NULL) dan unik --
-  // jadi TIDAK BOLEH dihapus/dikosongkan begitu saja dari payload (itu akan
-  // menyebabkan error "null value in column kode_barcode"). Sesuai konvensi
-  // yang sudah kita pakai di seluruh aplikasi, kode_barcode otomatis
-  // disamakan dengan NISN (NISN sudah menjadi referensi utama QR/scan).
   function prepareSiswaForSupabase(rows: Siswa[]) {
-    return rows.map((row) => ({
-      ...row,
-      kode_barcode: row.nisn,
-    }));
+    return rows.map((row) => {
+      // Migrasi kompatibilitas: localStorage lama mungkin masih menyimpan
+      // properti kode_barcode. Properti itu sengaja dibuang sebelum request ke DB.
+      const legacy = row as Siswa & { kode_barcode?: string };
+      const { kode_barcode: _legacyBarcode, ...cleanRow } = legacy;
+      return cleanRow;
+    });
   }
 
   // Migrasi master lokal -> Supabase secara eksplisit.
@@ -823,6 +832,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return [...nationalHolidays, ...customSchoolDays].sort((a, b) => a.tanggal.localeCompare(b.tanggal));
   }, [nationalHolidays, customSchoolDays]);
 
+  // Ambil pengaturan operasional dari Supabase saat sesi authenticated tersedia.
+  // localStorage tetap menjadi fallback agar kiosk tetap dapat bekerja saat offline.
+  useEffect(() => {
+    if (!supabaseConfig.url || !supabaseConfig.anonKey || !activeSessionEmail) return;
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (!supabase) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('pengaturan_jam')
+        .select('*')
+        .eq('id', 'default_config')
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        setSyncBanner({ type: 'sync_error', message: `Gagal membaca pengaturan dari Supabase: ${error.message}` });
+        return;
+      }
+      if (data) {
+        setPengaturanJam((prev) => ({
+          ...prev,
+          jam_buka_pos: String(data.jam_buka_pos ?? prev.jam_buka_pos).slice(0, 5),
+          batas_tepat_waktu: String(data.batas_tepat_waktu ?? prev.batas_tepat_waktu).slice(0, 5),
+          batas_jam_masuk: String(data.batas_jam_masuk ?? prev.batas_jam_masuk).slice(0, 5),
+          batas_jam_pulang: String(data.batas_jam_pulang ?? prev.batas_jam_pulang).slice(0, 5),
+          batas_jam_pulang_jumat: String(data.batas_jam_pulang_jumat ?? prev.batas_jam_pulang_jumat).slice(0, 5),
+          hari_aktif_sekolah: Array.isArray(data.hari_aktif_sekolah) ? data.hari_aktif_sekolah : prev.hari_aktif_sekolah,
+          toleransi_duplikasi_menit: Number(data.toleransi_duplikasi_menit ?? prev.toleransi_duplikasi_menit),
+        }));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [supabaseConfig.url, supabaseConfig.anonKey, activeSessionEmail]);
+
   // Synchronization function
   const syncData = async (isAuto = false): Promise<{ success: boolean; count: number; message: string }> => {
     if (isSyncing) {
@@ -967,7 +1010,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           siswa: s || {
             id: abs.siswa_id,
             nama: 'Siswa Tidak Ditemukan',
-            kode_barcode: '-',
             nisn: '-',
             kelas_id: '',
             nomor_wa_ortu: '',
@@ -981,8 +1023,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
   }, [absensiList, siswaList, kelasList]);
 
-  // CORE LOGIC: Process Barcode Scan
-  const processScanBarcode = async (rawCode: string): Promise<ScanResult> => {
+  // CORE LOGIC: Process NISN Scan
+  const processScanNisn = async (rawCode: string): Promise<ScanResult> => {
     const cleanCode = rawCode.trim();
     if (!cleanCode) {
       soundManager.playError();
@@ -995,8 +1037,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return failResult;
     }
 
-    // 1. Find student -- NISN adalah referensi utama (dipakai untuk QR yang dicetak),
-    // kode_barcode & id tetap dicek sebagai cadangan untuk kompatibilitas kartu lama.
+    // 1. Find student -- NISN adalah satu-satunya identitas QR/scan.
     const normalizedInput = cleanCode.toLowerCase();
     // NISN standar selalu 10 digit -- kalau scanner/alat lain membaca tanpa angka nol
     // di depan, kita tambahkan kembali sebelum dicocokkan supaya tidak gagal scan.
@@ -1007,16 +1048,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const student = siswaList.find(
       (s) =>
         s.nisn.toLowerCase() === normalizedInput ||
-        s.nisn.toLowerCase() === normalizedInputPadded ||
-        s.kode_barcode.toLowerCase() === normalizedInput ||
-        s.id.toLowerCase() === normalizedInput
+        s.nisn.toLowerCase() === normalizedInputPadded
     );
 
     if (!student) {
       soundManager.playError();
       const failResult: ScanResult = {
         success: false,
-        message: `ID/Barcode "${cleanCode}" tidak terdaftar di sistem!`,
+        message: `NISN "${cleanCode}" tidak terdaftar di sistem!`,
         waktu: currentActiveTimeStr,
       };
       setLastScanResult(failResult);
@@ -1363,7 +1402,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Settings
   const updatePengaturanJam = (data: Partial<PengaturanJam>) => {
-    setPengaturanJam((prev) => ({ ...prev, ...data }));
+    const next = { ...pengaturanJam, ...data };
+    setPengaturanJam(next);
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (!supabase || !activeSessionEmail) return;
+    supabase.from('pengaturan_jam').upsert({
+      id: 'default_config',
+      jam_buka_pos: next.jam_buka_pos,
+      batas_tepat_waktu: next.batas_tepat_waktu,
+      batas_jam_masuk: next.batas_jam_masuk,
+      batas_jam_pulang: next.batas_jam_pulang,
+      batas_jam_pulang_jumat: next.batas_jam_pulang_jumat,
+      hari_aktif_sekolah: next.hari_aktif_sekolah,
+      toleransi_duplikasi_menit: next.toleransi_duplikasi_menit,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'id' }).then(({ error }) => {
+      if (error) setSyncBanner({ type: 'sync_error', message: `Gagal menyimpan pengaturan ke Supabase: ${error.message}` });
+    });
   };
 
   const updateWAConfig = (data: Partial<WAGatewayConfig>) => {
@@ -1399,7 +1454,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return {
       version: '2.0',
       timestamp: new Date().toISOString(),
-      app: 'Sistem Absensi Barcode & WhatsApp Gateway',
+      app: 'Sistem Presensi QR/NISN & WhatsApp Gateway',
       sekolah: 'SMP NEGERI 9 BANJAR',
       stats: {
         total_siswa: siswaList.length,
@@ -1917,7 +1972,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         dismissSyncBanner,
         // Actions
         setSimulatedTime,
-        processScanBarcode,
+        processScanNisn,
         clearLastScanResult,
         addSiswa,
         importSiswaBatch,

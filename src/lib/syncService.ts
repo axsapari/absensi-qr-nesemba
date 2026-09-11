@@ -121,7 +121,7 @@ export async function processSyncToDatabase(
 
   // Map pending absensi to Supabase schema columns
   const recordsToInsert = pendingItems.map((item) => ({
-    id: item.id.startsWith('abs_') ? undefined : item.id, // let supabase generate uuid or retain if valid
+    id: item.id,
     siswa_id: item.siswa_id,
     tanggal: item.tanggal,
     waktu_scan: item.waktu_scan,

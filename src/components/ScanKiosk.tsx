@@ -29,7 +29,7 @@ import { getFotoSiswaUrl, getFotoPlaceholder } from '../lib/fotoHelper';
 
 export const ScanKiosk: React.FC = () => {
   const {
-    processScanBarcode,
+    processScanNisn,
     lastScanResult,
     clearLastScanResult,
     recentScans,
@@ -48,6 +48,25 @@ export const ScanKiosk: React.FC = () => {
 
   const [inputVal, setInputVal] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  // Semua input dari scanner USB masuk ke antrean yang sama. Ini mencegah scan kedua hilang
+  // ketika dua scanner mengirim hampir bersamaan ke laptop yang sama.
+  const scanQueueRef = useRef<Promise<void>>(Promise.resolve());
+
+  const enqueueScan = (code: string) => {
+    const normalized = code.trim();
+    if (!normalized) return;
+    setIsProcessing(true);
+    scanQueueRef.current = scanQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        try {
+          await processScanNisn(normalized);
+        } finally {
+          setIsProcessing(false);
+          ensureInputFocus();
+        }
+      });
+  };
   const [soundOn, setSoundOn] = useState(soundManager.isEnabled());
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showManualInput, setShowManualInput] = useState(false);
@@ -100,22 +119,15 @@ export const ScanKiosk: React.FC = () => {
     soundManager.setSoundEnabled(next);
   };
 
-  // Handle Barcode Scanner Input via Enter key
+  // Handle QR Scanner Input via Enter key
   const handleKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       const code = inputVal.trim();
       setInputVal('');
 
-      if (!code || isProcessing) return;
-
-      setIsProcessing(true);
-      try {
-        await processScanBarcode(code);
-      } finally {
-        setIsProcessing(false);
-        ensureInputFocus();
-      }
+      if (!code) return;
+      enqueueScan(code);
     }
   };
 
@@ -123,26 +135,16 @@ export const ScanKiosk: React.FC = () => {
   const handleManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualCode.trim()) return;
-    setIsProcessing(true);
-    try {
-      await processScanBarcode(manualCode.trim());
-      setManualCode('');
-      setShowManualInput(false);
-    } finally {
-      setIsProcessing(false);
-      ensureInputFocus();
-    }
+    const code = manualCode.trim();
+    if (!code) return;
+    enqueueScan(code);
+    setManualCode('');
+    setShowManualInput(false);
   };
 
   // Quick Student Test Scanner Click
   const handleQuickTestScan = async (code: string) => {
-    setIsProcessing(true);
-    try {
-      await processScanBarcode(code);
-    } finally {
-      setIsProcessing(false);
-      ensureInputFocus();
-    }
+    enqueueScan(code);
   };
 
   // Determine current day & session status (Friday dismissal vs regular dismissal)
@@ -165,7 +167,7 @@ export const ScanKiosk: React.FC = () => {
       <div className="absolute top-0 left-1/4 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
 
-      {/* Hidden Transparent Input strictly listening to USB Barcode Scanner */}
+      {/* Hidden Transparent Input strictly listening to USB QR Code NISN Scanner */}
       <input
         id="scanner-hidden-input"
         ref={inputRef}
@@ -176,7 +178,7 @@ export const ScanKiosk: React.FC = () => {
         className="opacity-0 absolute -top-40 left-0 w-10 h-10 pointer-events-none"
         autoFocus
         autoComplete="off"
-        aria-label="USB Barcode Scanner Input"
+        aria-label="USB QR Scanner Input"
       />
 
       {(kioskAuthStatus === 'failed' || kioskAuthStatus === 'not_configured') && supabaseConfig.url && (
@@ -208,7 +210,7 @@ export const ScanKiosk: React.FC = () => {
               <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">POS GERBANG UTAMA</div>
               <div className="text-sm font-bold text-slate-200 flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                Scanner Barcode / QR Siaga
+                Scanner QR / NISN Siaga
               </div>
             </div>
           </div>
@@ -312,7 +314,7 @@ export const ScanKiosk: React.FC = () => {
                 SILAKAN SCAN KARTU PELAJAR
               </h2>
               <p className="text-slate-400 text-lg md:text-xl max-w-2xl mb-8 leading-relaxed">
-                Arahkan Barcode atau QR Code pada kartu identitas siswa ke laser scanner USB di pos gerbang sekolah.
+                Arahkan QR Code NISN pada kartu identitas siswa ke laser scanner USB di pos gerbang sekolah.
               </p>
 
               {/* Status Pill */}
@@ -394,13 +396,13 @@ export const ScanKiosk: React.FC = () => {
                 <AlertTriangle className="w-10 h-10" />
               </div>
               <h3 className="text-3xl md:text-4xl font-black text-rose-300 mb-3">
-                KODE BARCODE TIDAK DIKENAL
+                NISN TIDAK DIKENAL
               </h3>
               <p className="text-slate-300 text-lg max-w-xl mx-auto mb-6">
                 {lastScanResult.message}
               </p>
               <div className="text-sm text-slate-400">
-                Silakan periksa apakah kartu siswa terdaftar di database master, atau gunakan input manual jika barcode fisik rusak.
+                Silakan periksa apakah kartu siswa terdaftar di database master, atau gunakan input manual jika QR Code bermasalah.
               </div>
             </motion.div>
           ) : (
@@ -647,7 +649,7 @@ export const ScanKiosk: React.FC = () => {
               className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-xl text-xs font-medium transition cursor-pointer"
             >
               <Search className="w-3.5 h-3.5" />
-              <span>Ketik Manual Barcode</span>
+              <span>Ketik Manual NISN</span>
             </button>
           </div>
         </div>
@@ -657,7 +659,7 @@ export const ScanKiosk: React.FC = () => {
       {showManualInput && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl">
-            <h3 className="text-xl font-bold text-white mb-2">Input Manual ID / Barcode</h3>
+            <h3 className="text-xl font-bold text-white mb-2">Input Manual NISN</h3>
             <p className="text-slate-400 text-sm mb-4">
               Gunakan jika kartu siswa kotor, terlipat, atau scanner USB mengalami kendala.
             </p>
@@ -665,7 +667,7 @@ export const ScanKiosk: React.FC = () => {
             <form onSubmit={handleManualSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 uppercase mb-1">
-                  Nomor Barcode / NISN / ID Siswa
+                  NISN Siswa
                 </label>
                 <input
                   type="text"

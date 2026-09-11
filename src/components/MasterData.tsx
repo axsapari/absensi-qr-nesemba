@@ -48,7 +48,6 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
   const [editingSiswaId, setEditingSiswaId] = useState<string | null>(null);
   const [siswaForm, setSiswaForm] = useState<Omit<Siswa, 'id'>>({
     nama: '',
-    kode_barcode: '',
     nisn: '',
     kelas_id: kelasList[0]?.id || '',
     nomor_wa_ortu: '',
@@ -81,7 +80,6 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
       return (
         s.nama.toLowerCase().includes(q) ||
         s.nisn.toLowerCase().includes(q) ||
-        s.kode_barcode.toLowerCase().includes(q) ||
         (s.alamat && s.alamat.toLowerCase().includes(q)) ||
         s.nama_ortu.toLowerCase().includes(q)
       );
@@ -94,7 +92,6 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
     setEditingSiswaId(null);
     setSiswaForm({
       nama: '',
-      kode_barcode: '', // otomatis diisi = NISN saat disimpan, tidak perlu diinput manual
       nisn: '',
       kelas_id: kelasList[0]?.id || '',
       nomor_wa_ortu: '081234567890',
@@ -114,7 +111,6 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
     setEditingSiswaId(siswa.id);
     setSiswaForm({
       nama: siswa.nama,
-      kode_barcode: siswa.kode_barcode,
       nisn: siswa.nisn,
       kelas_id: siswa.kelas_id,
       nomor_wa_ortu: siswa.nomor_wa_ortu,
@@ -152,9 +148,8 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
       return;
     }
 
-    // kode_barcode tidak lagi diinput manual -- otomatis disamakan dengan NISN
     // (dipertahankan di data hanya untuk kompatibilitas kartu lama yang sudah tercetak)
-    const finalForm = { ...siswaForm, nisn, kode_barcode: nisn };
+    const finalForm = { ...siswaForm, nisn };
 
     if (editingSiswaId) {
       updateSiswa(editingSiswaId, finalForm);
@@ -192,7 +187,7 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
             Manajemen Data Siswa & Kelas
           </h1>
           <p className="text-sm text-slate-500">
-            Kelola data siswa, nomor barcode scanner, pencetakan kartu pelajar resmi, dan integrasi WhatsApp wali murid.
+            Kelola data siswa, nomor QR/NISN, pencetakan kartu pelajar resmi, dan integrasi WhatsApp wali murid.
           </p>
         </div>
 
@@ -327,7 +322,7 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
                 type="text"
                 value={searchSiswa}
                 onChange={(e) => setSearchSiswa(e.target.value)}
-                placeholder="Cari nama, NISN, barcode, atau alamat..."
+                placeholder="Cari nama, NISN, QR/NISN, atau alamat..."
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-emerald-500"
               />
             </div>
