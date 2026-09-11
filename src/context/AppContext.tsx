@@ -557,6 +557,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   }
 
+  // PENTING: database mewajibkan NISN unik per siswa (dipakai untuk QR/scan).
+  // Kalau ada 2+ baris LOKAL yang kebetulan punya NISN sama (misal dari percobaan
+  // import berulang sebelumnya), upsert berbasis ID saja TIDAK akan menangkap ini --
+  // Postgres akan menolak seluruh batch dengan error "duplicate key ... nisn_key".
+  // Fungsi ini membuang duplikat NISN, menyisakan data yang paling baru (created_at
+  // terbaru, atau baris terakhir kalau created_at sama) untuk tiap NISN.
+  function dedupeSiswaByNisn(rows: Siswa[]) {
+    const byNisn = new Map<string, Siswa>();
+    const duplicateNisn = new Set<string>();
+
+    for (const row of rows) {
+      const nisn = String(row.nisn ?? '').trim();
+      if (!nisn) continue;
+      if (byNisn.has(nisn)) duplicateNisn.add(nisn);
+      byNisn.set(nisn, row);
+    }
+
+    return {
+      rows: Array.from(byNisn.values()),
+      duplicateNisn: Array.from(duplicateNisn),
+      invalidCount: rows.filter((row) => !String(row.nisn ?? '').trim()).length,
+    };
+  }
+
   // Supabase tabel master memiliki kolom created_at NOT NULL.
   // Data lama/localStorage belum tentu memiliki kolom ini, dan nilai null
   // akan dikirim sebagai NULL sehingga INSERT/UPSERT ditolak PostgreSQL.
@@ -573,16 +597,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }
 
-  // kode_barcode adalah peninggalan sistem lama.
-  // Sinkronisasi master baru tidak lagi mengirim kolom ini ke Supabase.
-  // Identitas siswa untuk sistem QR/absensi saat ini menggunakan NISN.
-  // Dengan tidak mengirim kode_barcode, UNIQUE constraint lama di database
-  // tidak akan menghalangi migrasi data siswa yang valid.
+  // kode_barcode di database bersifat WAJIB DIISI (NOT NULL) dan unik --
+  // jadi TIDAK BOLEH dihapus/dikosongkan begitu saja dari payload (itu akan
+  // menyebabkan error "null value in column kode_barcode"). Sesuai konvensi
+  // yang sudah kita pakai di seluruh aplikasi, kode_barcode otomatis
+  // disamakan dengan NISN (NISN sudah menjadi referensi utama QR/scan).
   function prepareSiswaForSupabase(rows: Siswa[]) {
-    return rows.map((row) => {
-      const { kode_barcode: _legacyBarcode, ...rest } = row;
-      return rest;
-    });
+    return rows.map((row) => ({
+      ...row,
+      kode_barcode: row.nisn,
+    }));
   }
 
   // Migrasi master lokal -> Supabase secara eksplisit.
@@ -604,12 +628,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Bersihkan duplicate primary key sebelum upsert.
       // Ini penting karena PostgreSQL menghasilkan: \"ON CONFLICT DO UPDATE command cannot affect row a second time\"
       // jika dua baris dalam satu batch memiliki ID yang sama.
-      const kelasDeduped = dedupeRowsById(kelasList);
-      const siswaDeduped = dedupeRowsById(siswaList);
+      const kelasDeduped = dedupeRowsById<Kelas>(kelasList);
+      const siswaDedupedById = dedupeRowsById<Siswa>(siswaList);
+      // Lalu bersihkan juga duplikat NISN (lihat penjelasan di dedupeSiswaByNisn) --
+      // ini yang menyebabkan error "duplicate key value violates unique constraint siswa_nisn_key"
+      const siswaDedupedByNisn = dedupeSiswaByNisn(siswaDedupedById.rows);
       const kelasPrepared = { ...kelasDeduped, rows: ensureCreatedAt(kelasDeduped.rows) };
       const siswaPrepared = {
-        ...siswaDeduped,
-        rows: ensureCreatedAt(prepareSiswaForSupabase(siswaDeduped.rows)),
+        duplicateIds: [...siswaDedupedById.duplicateIds, ...siswaDedupedByNisn.duplicateNisn],
+        invalidCount: siswaDedupedById.invalidCount + siswaDedupedByNisn.invalidCount,
+        rows: ensureCreatedAt(prepareSiswaForSupabase(siswaDedupedByNisn.rows)),
       };
 
       if (kelasPrepared.invalidCount > 0) {

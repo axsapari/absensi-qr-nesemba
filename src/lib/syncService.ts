@@ -90,57 +90,94 @@ export async function processSyncToDatabase(
   }
 
   // Check if remote Supabase database is configured
-  const supabase = getSupabaseClient(supabaseConfig);
+  const isSupabaseConfigured = Boolean(supabaseConfig.url && supabaseConfig.anonKey);
 
-  if (supabase && supabaseConfig.url && supabaseConfig.anonKey) {
-    try {
-      // Map pending absensi to Supabase schema columns
-      const recordsToInsert = pendingItems.map((item) => ({
-        id: item.id.startsWith('abs_') ? undefined : item.id, // let supabase generate uuid or retain if valid
-        siswa_id: item.siswa_id,
-        tanggal: item.tanggal,
-        waktu_scan: item.waktu_scan,
-        timestamp: item.timestamp,
-        jenis: item.jenis,
-        status: item.status,
-        catatan: item.catatan || null,
-      }));
-
-      const { error } = await supabase.from('absensi').upsert(recordsToInsert, {
-        onConflict: 'siswa_id,tanggal,jenis',
-      });
-
-      if (error) {
-        console.warn('Supabase upsert warning, fallback to local persistent sync:', error.message);
-        // Fallback to local verified sync so the user's school operations are never blocked
-      }
-    } catch (err) {
-      console.warn('Remote sync attempt failed, fallback to local store:', err);
-    }
+  if (!isSupabaseConfigured) {
+    return {
+      updatedAbsensiList: absensiList,
+      result: {
+        success: true,
+        syncedCount: 0,
+        message: 'Supabase belum dikonfigurasi. Data tersimpan lokal saja di perangkat ini.',
+        timestamp: nowStr,
+      },
+    };
   }
 
-  // Mark all pending items as synced
-  const nowIso = new Date().toISOString();
-  const updatedAbsensiList = absensiList.map((item) => {
-    if (!item.synced) {
+  const supabase = getSupabaseClient(supabaseConfig);
+
+  if (!supabase) {
+    return {
+      updatedAbsensiList: absensiList,
+      result: {
+        success: false,
+        syncedCount: 0,
+        message: `Gagal terhubung ke Supabase. ${pendingItems.length} data tetap aman di perangkat, akan dicoba lagi otomatis.`,
+        timestamp: nowStr,
+        error: 'Supabase client tidak dapat diinisialisasi',
+      },
+    };
+  }
+
+  // Map pending absensi to Supabase schema columns
+  const recordsToInsert = pendingItems.map((item) => ({
+    id: item.id.startsWith('abs_') ? undefined : item.id, // let supabase generate uuid or retain if valid
+    siswa_id: item.siswa_id,
+    tanggal: item.tanggal,
+    waktu_scan: item.waktu_scan,
+    timestamp: item.timestamp,
+    jenis: item.jenis,
+    status: item.status,
+    catatan: item.catatan || null,
+  }));
+
+  try {
+    const { error } = await supabase.from('absensi').upsert(recordsToInsert, {
+      onConflict: 'siswa_id,tanggal,jenis',
+    });
+
+    if (error) {
+      // GAGAL SUNGGUHAN -- item TETAP ditandai belum synced supaya dicoba lagi di percobaan berikutnya,
+      // dan pesan errornya ditampilkan APA ADANYA supaya bisa didiagnosis (bukan disembunyikan)
       return {
-        ...item,
-        synced: true,
-        synced_at: nowIso,
+        updatedAbsensiList: absensiList,
+        result: {
+          success: false,
+          syncedCount: 0,
+          message: `Sinkronisasi gagal, ${pendingItems.length} data belum tersimpan ke server: ${error.message}`,
+          timestamp: nowStr,
+          error: error.message,
+        },
       };
     }
-    return item;
-  });
 
-  const count = pendingItems.length;
+    // BERHASIL SUNGGUHAN -- baru sekarang tandai item yang barusan terkirim sebagai synced
+    const syncedIds = new Set(pendingItems.map((item) => item.id));
+    const nowIso = new Date().toISOString();
+    const updatedAbsensiList = absensiList.map((item) =>
+      syncedIds.has(item.id) ? { ...item, synced: true, synced_at: nowIso } : item
+    );
 
-  return {
-    updatedAbsensiList,
-    result: {
-      success: true,
-      syncedCount: count,
-      message: `Berhasil menyinkronkan ${count} data presensi ke database.`,
-      timestamp: nowStr,
-    },
-  };
+    return {
+      updatedAbsensiList,
+      result: {
+        success: true,
+        syncedCount: pendingItems.length,
+        message: `Berhasil menyinkronkan ${pendingItems.length} data presensi ke database.`,
+        timestamp: nowStr,
+      },
+    };
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : 'Kesalahan tak terduga saat menyinkronkan data';
+    return {
+      updatedAbsensiList: absensiList,
+      result: {
+        success: false,
+        syncedCount: 0,
+        message: `Sinkronisasi gagal, ${pendingItems.length} data belum tersimpan ke server: ${errMsg}`,
+        timestamp: nowStr,
+        error: errMsg,
+      },
+    };
+  }
 }
