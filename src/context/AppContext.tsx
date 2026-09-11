@@ -573,41 +573,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }
 
-  // Kolom siswa.kode_barcode memiliki UNIQUE constraint di Supabase.
-  // Data localStorage lama dapat mengandung barcode ganda walaupun ID siswanya berbeda.
-  // Semua siswa tetap dipertahankan: barcode pertama dipertahankan, sedangkan duplikat
-  // diberi barcode baru yang deterministik berdasarkan ID siswa. Kartu siswa tersebut
-  // perlu dicetak ulang setelah perbaikan ini.
-  function ensureUniqueSiswaBarcode(rows: Siswa[]) {
-    const used = new Set<string>();
-    const repaired: string[] = [];
-
-    const result = rows.map((row) => {
-      const original = String(row.kode_barcode ?? '').trim();
-      let barcode = original;
-
-      if (!barcode) {
-        barcode = `SMP9-${String(row.id).replace(/[^A-Za-z0-9_-]/g, '-')}`;
-        repaired.push(`${row.id}: barcode kosong → ${barcode}`);
-      }
-
-      if (used.has(barcode.toLowerCase())) {
-        const base = barcode;
-        const safeId = String(row.id).replace(/[^A-Za-z0-9_-]/g, '-');
-        let candidate = `${base}-DUP-${safeId}`;
-        let n = 2;
-        while (used.has(candidate.toLowerCase())) {
-          candidate = `${base}-DUP-${safeId}-${n++}`;
-        }
-        barcode = candidate;
-        repaired.push(`${row.id}: barcode duplikat "${base}" → ${barcode}`);
-      }
-
-      used.add(barcode.toLowerCase());
-      return { ...row, kode_barcode: barcode };
+  // kode_barcode adalah peninggalan sistem lama.
+  // Sinkronisasi master baru tidak lagi mengirim kolom ini ke Supabase.
+  // Identitas siswa untuk sistem QR/absensi saat ini menggunakan NISN.
+  // Dengan tidak mengirim kode_barcode, UNIQUE constraint lama di database
+  // tidak akan menghalangi migrasi data siswa yang valid.
+  function prepareSiswaForSupabase(rows: Siswa[]) {
+    return rows.map((row) => {
+      const { kode_barcode: _legacyBarcode, ...rest } = row;
+      return rest;
     });
-
-    return { rows: result, repaired };
   }
 
   // Migrasi master lokal -> Supabase secara eksplisit.
@@ -631,9 +606,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // jika dua baris dalam satu batch memiliki ID yang sama.
       const kelasDeduped = dedupeRowsById(kelasList);
       const siswaDeduped = dedupeRowsById(siswaList);
-      const siswaBarcodePrepared = ensureUniqueSiswaBarcode(siswaDeduped.rows);
       const kelasPrepared = { ...kelasDeduped, rows: ensureCreatedAt(kelasDeduped.rows) };
-      const siswaPrepared = { ...siswaDeduped, rows: ensureCreatedAt(siswaBarcodePrepared.rows) };
+      const siswaPrepared = {
+        ...siswaDeduped,
+        rows: ensureCreatedAt(prepareSiswaForSupabase(siswaDeduped.rows)),
+      };
 
       if (kelasPrepared.invalidCount > 0) {
         throw new Error(`Ditemukan ${kelasPrepared.invalidCount} data kelas tanpa ID. Periksa master kelas sebelum sinkronisasi.`);
@@ -670,18 +647,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         siswaPrepared.duplicateIds.length > 0
           ? `${siswaPrepared.duplicateIds.length} ID siswa duplikat dibersihkan`
           : '',
-        siswaBarcodePrepared.repaired.length > 0
-          ? `${siswaBarcodePrepared.repaired.length} barcode siswa diperbaiki karena kosong/duplikat`
-          : '',
       ].filter(Boolean).join('; ');
 
       const message = duplicateSummary
-        ? `Sinkronisasi master berhasil: ${kelasCount} kelas dan ${siswaCount} siswa tersimpan di Supabase. ${duplicateSummary}.${siswaBarcodePrepared.repaired.length > 0 ? ' Beberapa barcode berubah dan kartu siswa terkait perlu dicetak ulang.' : ''}`
+        ? `Sinkronisasi master berhasil: ${kelasCount} kelas dan ${siswaCount} siswa tersimpan di Supabase. ${duplicateSummary}.`
         : `Sinkronisasi master berhasil: ${kelasCount} kelas dan ${siswaCount} siswa tersimpan di Supabase.`;
 
-      if (siswaBarcodePrepared.repaired.length > 0) {
-        console.warn('Perbaikan barcode siswa saat sinkronisasi:', siswaBarcodePrepared.repaired);
-      }
       setSyncBanner({ type: 'sync_success', message });
       return { success: true, message, kelas: kelasCount, siswa: siswaCount };
     } catch (err) {
@@ -1097,10 +1068,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const pushSiswaUpsert = (rows: Siswa[]) => {
     const supabase = getSupabaseClient(supabaseConfig);
     if (!supabase || rows.length === 0) return;
-    const prepared = ensureUniqueSiswaBarcode(dedupeRowsById(rows).rows);
+    const prepared = prepareSiswaForSupabase(dedupeRowsById(rows).rows);
     supabase
       .from('siswa')
-      .upsert(ensureCreatedAt(prepared.rows), { onConflict: 'id' })
+      .upsert(ensureCreatedAt(prepared), { onConflict: 'id' })
       .then(({ error }) => {
         if (error) {
           setSyncBanner({ type: 'sync_error', message: `Gagal menyinkronkan siswa: ${error.message}` });
