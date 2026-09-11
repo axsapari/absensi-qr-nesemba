@@ -1199,6 +1199,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // 7. Try to persist the attendance immediately when online. We pass the new
     // snapshot explicitly so this does not depend on React state having re-rendered.
+    let absensiForNotification = newAbsensi;
+
     if (isOnlineNow) {
       const syncResult = await processSyncToDatabase(
         nextAbsensiList,
@@ -1211,6 +1213,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setLogNotifikasiList(syncResult.updatedLogNotifikasiList);
         setLastSyncTime(syncResult.result.timestamp);
         localStorage.setItem(STORAGE_KEYS.LAST_SYNC, syncResult.result.timestamp);
+
+        // processSyncToDatabase may reconcile the local generated ID with an
+        // existing Supabase absensi.id. Use that canonical ID for the WA log.
+        absensiForNotification =
+          syncResult.updatedAbsensiList.find(
+            (a) =>
+              a.siswa_id === newAbsensi.siswa_id &&
+              a.tanggal === newAbsensi.tanggal &&
+              a.jenis === newAbsensi.jenis &&
+              a.synced
+          ) || newAbsensi;
       } else {
         console.warn('Presensi disimpan lokal, sinkronisasi awal gagal:', syncResult.result.message);
       }
@@ -1221,7 +1234,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!isOnlineNow) {
       const offlineWALog: LogNotifikasiWA = {
         id: 'log_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
-        absensi_id: newAbsensi.id,
+        absensi_id: absensiForNotification.id,
         siswa_id: student.id,
         nomor_tujuan: student.nomor_wa_ortu,
         jenis_pesan: status === 'terlambat' ? 'terlambat' : jenis,
@@ -1247,7 +1260,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         waConfig,
         student,
         studentClass,
-        newAbsensi,
+        absensiForNotification,
         getSupabaseClient(supabaseConfig)
       );
       setLogNotifikasiList((prev) => [logEntry, ...prev]);
