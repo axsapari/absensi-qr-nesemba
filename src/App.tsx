@@ -35,9 +35,11 @@ function MainApp() {
   // jadi otomatis kembali ke layar login juga kalau pengguna logout.
   const needsLogin = PROTECTED_VIEWS.includes(currentView) && !currentUser;
 
-  // Bootstrap hanya muncul jika konfigurasi Supabase belum tersedia. Ini memutus
-  // circular lock pada perangkat baru tanpa membuat Settings menjadi publik.
-  if (!supabaseConfig.url || !supabaseConfig.anonKey) {
+  // Bootstrap hanya muncul untuk halaman yang memang butuh Supabase (di luar layar
+  // scan). Layar Pos Gerbang (kiosk) TIDAK BOLEH terkunci oleh ini -- itu bertentangan
+  // dengan desain awal aplikasi (kiosk tetap harus bisa jalan/offline walau perangkat
+  // itu belum pernah diisi pengaturan Supabase-nya sendiri).
+  if ((!supabaseConfig.url || !supabaseConfig.anonKey) && currentView !== 'kiosk') {
     return <BootstrapSupabase />;
   }
 

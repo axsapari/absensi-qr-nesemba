@@ -290,6 +290,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // dan data privat benar-benar diverifikasi server, bukan sekadar dicek di browser.
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
+  // Menandakan ADA sesi Supabase aktif (staf ATAU akun kiosk) -- beda dengan currentUser
+  // yang HANYA terisi untuk staf. Dipakai untuk memicu pengambilan data master siswa/kelas
+  // supaya PC pos gerbang (yang cuma login sebagai kiosk, bukan staf) tetap dapat data terbaru.
+  const [activeSessionEmail, setActiveSessionEmail] = useState<string | null>(null);
 
   const [localSnapshots, setLocalSnapshots] = useState<LocalSnapshot[]>(() => {
     try {
@@ -433,6 +437,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const resolveUserFromSession = (email: string | undefined) => {
+      setActiveSessionEmail(email || null);
       if (!email) {
         setCurrentUser(null);
         setIsAdminLoggedIn(false);
@@ -493,7 +498,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Jika cloud kosong, data lokal tidak otomatis ditimpa dan tidak otomatis
   // di-seed agar perangkat baru tidak tanpa sengaja mengirim INITIAL_DATA.
   useEffect(() => {
-    if (!currentUser) return;
+    if (!activeSessionEmail) return;
     const supabase = getSupabaseClient(supabaseConfig);
     if (!supabase) return;
 
@@ -534,7 +539,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.error('Master sync check:', err);
       }
     })();
-  }, [currentUser?.id, supabaseConfig.url, supabaseConfig.anonKey]);
+  }, [activeSessionEmail, supabaseConfig.url, supabaseConfig.anonKey]);
 
   // Bersihkan payload berdasarkan primary key sebelum upsert.
   // PostgreSQL menolak satu statement upsert jika key yang sama muncul lebih dari sekali.
@@ -633,11 +638,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Lalu bersihkan juga duplikat NISN (lihat penjelasan di dedupeSiswaByNisn) --
       // ini yang menyebabkan error "duplicate key value violates unique constraint siswa_nisn_key"
       const siswaDedupedByNisn = dedupeSiswaByNisn(siswaDedupedById.rows);
-      const kelasPrepared = { ...kelasDeduped, rows: ensureCreatedAt(kelasDeduped.rows) };
+
+      // PENTING: percobaan sinkronisasi sebelumnya (termasuk dari sesi ChatGPT) mungkin
+      // sudah sempat memasukkan sebagian data ke Supabase dengan ID yang BEDA dari ID
+      // lokal saat ini (misal karena re-import yang membuat ID baru). Kalau kita upsert
+      // pakai onConflict "id" saja, baris ini dianggap "baris baru" dan bentrok dengan
+      // constraint unik NISN/nama_kelas milik baris lama itu. Solusinya: cek dulu data
+      // yang SUDAH ada di Supabase, lalu SAMAKAN id lokal dengan id remote-nya berdasarkan
+      // kunci bisnis yang sesungguhnya (NISN untuk siswa, nama_kelas untuk kelas).
+      const [{ data: remoteKelasRows, error: remoteKelasErr }, { data: remoteSiswaRows, error: remoteSiswaErr }] =
+        await Promise.all([
+          supabase.from('kelas').select('id, nama_kelas'),
+          supabase.from('siswa').select('id, nisn'),
+        ]);
+      if (remoteKelasErr) throw new Error(`Gagal membaca kelas Supabase: ${remoteKelasErr.message}`);
+      if (remoteSiswaErr) throw new Error(`Gagal membaca siswa Supabase: ${remoteSiswaErr.message}`);
+
+      const remoteKelasIdByNama = new Map(
+        (remoteKelasRows ?? []).map((r: { id: string; nama_kelas: string }) => [r.nama_kelas, r.id])
+      );
+      const remoteSiswaIdByNisn = new Map(
+        (remoteSiswaRows ?? []).map((r: { id: string; nisn: string }) => [r.nisn, r.id])
+      );
+
+      // Peta id-lama -> id-baru, dipakai untuk membetulkan referensi kelas_id di siswa,
+      // dan untuk membetulkan data lokal (siswaList/absensiList) setelah upload berhasil.
+      const kelasIdRemap = new Map<string, string>();
+      const kelasReconciled = kelasDeduped.rows.map((k) => {
+        const remoteId = remoteKelasIdByNama.get(k.nama_kelas);
+        if (remoteId && remoteId !== k.id) {
+          kelasIdRemap.set(k.id, remoteId);
+          return { ...k, id: remoteId };
+        }
+        return k;
+      });
+
+      const siswaIdRemap = new Map<string, string>();
+      const siswaWithFixedKelasId = siswaDedupedByNisn.rows.map((s) => ({
+        ...s,
+        kelas_id: kelasIdRemap.get(s.kelas_id) || s.kelas_id,
+      }));
+      const siswaReconciled = siswaWithFixedKelasId.map((s) => {
+        const remoteId = remoteSiswaIdByNisn.get(s.nisn);
+        if (remoteId && remoteId !== s.id) {
+          siswaIdRemap.set(s.id, remoteId);
+          return { ...s, id: remoteId };
+        }
+        return s;
+      });
+
+      const kelasPrepared = { ...kelasDeduped, rows: ensureCreatedAt(kelasReconciled) };
       const siswaPrepared = {
         duplicateIds: [...siswaDedupedById.duplicateIds, ...siswaDedupedByNisn.duplicateNisn],
         invalidCount: siswaDedupedById.invalidCount + siswaDedupedByNisn.invalidCount,
-        rows: ensureCreatedAt(prepareSiswaForSupabase(siswaDedupedByNisn.rows)),
+        rows: ensureCreatedAt(prepareSiswaForSupabase(siswaReconciled)),
       };
 
       if (kelasPrepared.invalidCount > 0) {
@@ -656,6 +710,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (siswaPrepared.rows.length > 0) {
         const { error } = await supabase.from('siswa').upsert(siswaPrepared.rows, { onConflict: 'id' });
         if (error) throw new Error(`Upload siswa gagal: ${error.message}`);
+      }
+
+      // Kalau ada ID yang disamakan (ikut ID remote), betulkan juga referensinya di
+      // data lokal supaya absensi & tampilan lain tetap terhubung ke siswa yang benar.
+      if (kelasIdRemap.size > 0 || siswaIdRemap.size > 0) {
+        if (kelasIdRemap.size > 0) {
+          setKelasList((prev) => prev.map((k) => ({ ...k, id: kelasIdRemap.get(k.id) || k.id })));
+        }
+        if (siswaIdRemap.size > 0 || kelasIdRemap.size > 0) {
+          setSiswaList((prev) =>
+            prev.map((s) => ({
+              ...s,
+              id: siswaIdRemap.get(s.id) || s.id,
+              kelas_id: kelasIdRemap.get(s.kelas_id) || s.kelas_id,
+            }))
+          );
+        }
+        if (siswaIdRemap.size > 0) {
+          setAbsensiList((prev) =>
+            prev.map((a) => ({ ...a, siswa_id: siswaIdRemap.get(a.siswa_id) || a.siswa_id }))
+          );
+        }
       }
 
       const verifyKelas = await supabase.from('kelas').select('*');
