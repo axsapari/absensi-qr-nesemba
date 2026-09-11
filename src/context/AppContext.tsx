@@ -217,7 +217,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [absensiList, setAbsensiList] = useState<Absensi[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.ABSENSI);
-      return saved ? JSON.parse(saved) : getInitialAttendance();
+      if (!saved) return getInitialAttendance();
+
+      const parsed = JSON.parse(saved) as Absensi[];
+      // Migrasi penting untuk versi aplikasi yang sebelumnya menandai scan online
+      // sebagai synced=true sebelum benar-benar masuk Supabase. ID scan nyata dibuat
+      // dengan prefix `abs_`, sedangkan data demo bawaan memakai `abs-001`, dst.
+      // Scan nyata lama dipaksa kembali ke antrean sinkronisasi agar bisa dipulihkan.
+      return parsed.map((item) =>
+        item.id.startsWith('abs_')
+          ? { ...item, synced: false, synced_at: undefined }
+          : item
+      );
     } catch {
       return getInitialAttendance();
     }
@@ -867,21 +878,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [supabaseConfig.url, supabaseConfig.anonKey, activeSessionEmail]);
 
   // Synchronization function
-  const syncData = async (isAuto = false): Promise<{ success: boolean; count: number; message: string }> => {
+  const syncData = async (isAuto = false, attendanceOverride?: Absensi[], logOverride?: LogNotifikasiWA[]): Promise<{ success: boolean; count: number; message: string }> => {
     if (isSyncing) {
       return { success: false, count: 0, message: 'Proses sinkronisasi sedang berjalan...' };
     }
 
     setIsSyncing(true);
     try {
-      const { updatedAbsensiList, result } = await processSyncToDatabase(
-        absensiList,
+      const { updatedAbsensiList, updatedLogNotifikasiList, result } = await processSyncToDatabase(
+        attendanceOverride ?? absensiList,
+        logOverride ?? logNotifikasiList,
         supabaseConfig,
         isSimulatedOffline
       );
 
       if (result.success) {
         setAbsensiList(updatedAbsensiList);
+        setLogNotifikasiList(updatedLogNotifikasiList);
         setLastSyncTime(result.timestamp);
         localStorage.setItem(STORAGE_KEYS.LAST_SYNC, result.timestamp);
 
@@ -891,20 +904,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ? `${result.message} (${result.timestamp})`
             : `Semua data (${absensiList.length} data) sudah tersinkron penuh dengan database (${result.timestamp}).`,
         });
-
-        // Update any pending WA logs to simulated/sent
-        setLogNotifikasiList((prev) =>
-          prev.map((log) => {
-            if (log.status_kirim === 'pending') {
-              return {
-                ...log,
-                status_kirim: waConfig.active && waConfig.apiToken ? 'terkirim' : 'simulasi',
-                response_payload: 'Tersinkronkan otomatis setelah internet terhubung kembali.',
-              };
-            }
-            return log;
-          })
-        );
 
         return { success: true, count: result.syncedCount, message: result.message };
       } else {
@@ -925,6 +924,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIsSyncing(false);
     }
   };
+
+  // Setelah sesi Supabase benar-benar tersedia (termasuk silent kiosk login),
+  // segera coba kirim antrean presensi/log yang tertunda. Ini menutup race condition
+  // saat scan terjadi ketika browser online tetapi Auth belum selesai login.
+  useEffect(() => {
+    if (!activeSessionEmail || isSimulatedOffline) return;
+    const timer = window.setTimeout(() => {
+      syncData(true);
+    }, 500);
+    return () => window.clearTimeout(timer);
+    // syncData sengaja tidak dimasukkan ke dependency karena didefinisikan ulang
+    // setiap render; trigger yang dibutuhkan di sini adalah perubahan sesi.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionEmail, isSimulatedOffline]);
 
   const toggleSimulatedOffline = () => {
     setIsSimulatedOffline((prev) => {
@@ -1164,8 +1177,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       jenis,
       status,
       catatan,
-      synced: isOnlineNow,
-      synced_at: isOnlineNow ? new Date().toISOString() : undefined,
+      // ONLINE tidak sama dengan SUDAH TERSIMPAN DI SUPABASE.
+      // Status baru menjadi true setelah Supabase mengembalikan success.
+      synced: false,
+      synced_at: undefined,
     };
 
     // 5. Sound trigger
@@ -1177,10 +1192,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       soundManager.playSuccess();
     }
 
-    // 6. Update attendance state
-    setAbsensiList((prev) => [newAbsensi, ...prev]);
+    // 6. Update attendance state. The record starts as PENDING regardless of
+    // browser connectivity. Only a successful Supabase response may mark it synced.
+    const nextAbsensiList = [newAbsensi, ...absensiList];
+    setAbsensiList(nextAbsensiList);
 
-    // 7. Dispatch or queue WhatsApp notification
+    // 7. Try to persist the attendance immediately when online. We pass the new
+    // snapshot explicitly so this does not depend on React state having re-rendered.
+    if (isOnlineNow) {
+      const syncResult = await processSyncToDatabase(
+        nextAbsensiList,
+        logNotifikasiList,
+        supabaseConfig,
+        isSimulatedOffline
+      );
+      if (syncResult.result.success) {
+        setAbsensiList(syncResult.updatedAbsensiList);
+        setLogNotifikasiList(syncResult.updatedLogNotifikasiList);
+        setLastSyncTime(syncResult.result.timestamp);
+        localStorage.setItem(STORAGE_KEYS.LAST_SYNC, syncResult.result.timestamp);
+      } else {
+        console.warn('Presensi disimpan lokal, sinkronisasi awal gagal:', syncResult.result.message);
+      }
+    }
+
+    // 8. Send/queue WhatsApp notification. The returned log is the source of truth:
+    // `terkirim` is used only when the Edge Function/gateway actually reports success.
     if (!isOnlineNow) {
       const offlineWALog: LogNotifikasiWA = {
         id: 'log_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
@@ -1191,17 +1228,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         pesan: `Presensi ${student.nama} (${studentClass?.nama_kelas || '-'}) tercatat ${status === 'terlambat' ? 'TERLAMBAT' : 'TEPAT WAKTU'} pukul ${nowTimeStr.substring(0, 5)} WIB.`,
         status_kirim: 'pending',
         waktu_kirim: new Date().toISOString(),
-        response_payload: 'Disimpan Offline di antrean perangkat. Akan dikirim otomatis saat online.',
+        response_payload: 'Disimpan offline. Menunggu koneksi untuk pengiriman WhatsApp.',
       };
-      setLogNotifikasiList((prev) => [offlineWALog, ...prev]);
+      const nextLogs = [offlineWALog, ...logNotifikasiList];
+      setLogNotifikasiList(nextLogs);
+
+      // Save the pending log to Supabase if connectivity/auth happens to be available.
+      // This never changes its status to "terkirim".
+      if (getSupabaseClient(supabaseConfig)) {
+        const logSync = await processSyncToDatabase(nextAbsensiList, nextLogs, supabaseConfig, false);
+        if (logSync.result.success) {
+          setAbsensiList(logSync.updatedAbsensiList);
+          setLogNotifikasiList(logSync.updatedLogNotifikasiList);
+        }
+      }
     } else {
-      sendWhatsAppNotification(waConfig, student, studentClass, newAbsensi, getSupabaseClient(supabaseConfig))
-        .then((logEntry) => {
-          setLogNotifikasiList((prev) => [logEntry, ...prev]);
-        })
-        .catch((err) => {
-          console.error('WhatsApp dispatch error:', err);
-        });
+      const logEntry = await sendWhatsAppNotification(
+        waConfig,
+        student,
+        studentClass,
+        newAbsensi,
+        getSupabaseClient(supabaseConfig)
+      );
+      setLogNotifikasiList((prev) => [logEntry, ...prev]);
+
+      // Persist the exact gateway result. A failed/simulated log remains locally
+      // available for diagnosis and can be retried explicitly later.
+      const supabase = getSupabaseClient(supabaseConfig);
+      if (supabase) {
+        const { error: logError } = await supabase.from('log_notifikasi_wa').upsert({
+          id: logEntry.id,
+          absensi_id: logEntry.absensi_id || null,
+          siswa_id: logEntry.siswa_id || null,
+          nomor_tujuan: logEntry.nomor_tujuan,
+          jenis_pesan: logEntry.jenis_pesan,
+          pesan: logEntry.pesan,
+          status_kirim: logEntry.status_kirim,
+          waktu_kirim: logEntry.waktu_kirim,
+          response_payload: logEntry.response_payload || null,
+        }, { onConflict: 'id' });
+        if (logError) {
+          console.error('Gagal menyimpan log WA ke Supabase:', logError);
+          setSyncBanner({ type: 'sync_error', message: `WA tercatat lokal, tetapi log gagal disimpan ke Supabase: ${logError.message}` });
+        }
+      }
     }
 
     // 8. Set last scan result for instant feedback
