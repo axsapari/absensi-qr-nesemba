@@ -127,6 +127,7 @@ interface AppContextType {
   users: UserAccount[];
   currentUser: UserAccount | null;
   authChecking: boolean;
+  kioskAuthStatus: 'idle' | 'checking' | 'success' | 'failed' | 'not_configured';
   isSuperAdmin: boolean;
   loginUser: (username: string, password: string) => Promise<{ success: boolean; message: string }>;
   logoutUser: () => void;
@@ -290,10 +291,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // dan data privat benar-benar diverifikasi server, bukan sekadar dicek di browser.
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
-  // Menandakan ADA sesi Supabase aktif (staf ATAU akun kiosk) -- beda dengan currentUser
-  // yang HANYA terisi untuk staf. Dipakai untuk memicu pengambilan data master siswa/kelas
-  // supaya PC pos gerbang (yang cuma login sebagai kiosk, bukan staf) tetap dapat data terbaru.
   const [activeSessionEmail, setActiveSessionEmail] = useState<string | null>(null);
+  // Status login akun kiosk -- supaya bisa ditampilkan di layar Pos Gerbang tanpa
+  // perlu buka DevTools untuk tahu kenapa absensi tidak tersinkron.
+  const [kioskAuthStatus, setKioskAuthStatus] = useState<
+    'idle' | 'checking' | 'success' | 'failed' | 'not_configured'
+  >('idle');
 
   const [localSnapshots, setLocalSnapshots] = useState<LocalSnapshot[]>(() => {
     try {
@@ -457,20 +460,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     };
 
-    let attemptedKioskLogin = false;
+    let kioskLoginInFlight = false;
 
     const trySilentKioskLogin = async () => {
-      if (attemptedKioskLogin) return;
-      attemptedKioskLogin = true;
-      if (supabaseConfig.kioskEmail && supabaseConfig.kioskPassword) {
-        try {
-          await supabase.auth.signInWithPassword({
-            email: supabaseConfig.kioskEmail,
-            password: supabaseConfig.kioskPassword,
-          });
-        } catch {
-          // Diamkan -- pos gerbang tetap bisa jalan pakai data lokal/cache kalau ini gagal
+      if (kioskLoginInFlight) return;
+      if (!supabaseConfig.kioskEmail || !supabaseConfig.kioskPassword) {
+        setKioskAuthStatus('not_configured');
+        return;
+      }
+      kioskLoginInFlight = true;
+      setKioskAuthStatus('checking');
+      try {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: supabaseConfig.kioskEmail,
+          password: supabaseConfig.kioskPassword,
+        });
+        if (error) {
+          // JANGAN dibisukan -- ini penyebab paling umum kiosk gagal akses data/tulis absensi.
+          // Tampilkan di console supaya bisa didiagnosis lewat DevTools (F12).
+          console.error('Auto-login akun kiosk GAGAL:', error.message);
+          setKioskAuthStatus('failed');
+        } else {
+          setKioskAuthStatus('success');
         }
+      } catch (err) {
+        console.error('Auto-login akun kiosk gagal (exception):', err);
+        setKioskAuthStatus('failed');
+      } finally {
+        kioskLoginInFlight = false;
       }
     };
 
@@ -485,6 +502,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       resolveUserFromSession(session?.user?.email);
+      // PENTING: kalau sesi jadi kosong KAPAN PUN (misalnya staf baru saja logout
+      // setelah mengisi kredensial kiosk di Pengaturan), langsung coba login kiosk
+      // lagi di sini -- sebelumnya ini HANYA dicoba sekali saat halaman pertama
+      // dibuka, jadi logout staf tanpa refresh manual membuat kiosk tidak pernah
+      // benar-benar login sampai halaman dimuat ulang.
+      if (!session) {
+        trySilentKioskLogin();
+      }
     });
 
     return () => {
@@ -1924,6 +1949,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         users,
         currentUser,
         authChecking,
+        kioskAuthStatus,
         isSuperAdmin,
         loginUser,
         logoutUser,

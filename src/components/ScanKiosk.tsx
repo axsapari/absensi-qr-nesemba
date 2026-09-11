@@ -43,6 +43,7 @@ export const ScanKiosk: React.FC = () => {
     effectiveOnline,
     pendingSyncCount,
     supabaseConfig,
+    kioskAuthStatus,
   } = useApp();
 
   const [inputVal, setInputVal] = useState('');
@@ -177,6 +178,22 @@ export const ScanKiosk: React.FC = () => {
         autoComplete="off"
         aria-label="USB Barcode Scanner Input"
       />
+
+      {(kioskAuthStatus === 'failed' || kioskAuthStatus === 'not_configured') && supabaseConfig.url && (
+        <div className="mb-4 bg-rose-950/80 border border-rose-800 rounded-xl px-4 py-3 text-sm text-rose-200 flex items-start gap-2.5">
+          <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+          <div>
+            <span className="font-bold">
+              {kioskAuthStatus === 'not_configured'
+                ? 'Akun kiosk belum diatur di perangkat ini.'
+                : 'Akun kiosk gagal login ke Supabase.'}
+            </span>{' '}
+            Absensi hanya tersimpan lokal di perangkat ini dan TIDAK akan tersinkron ke database
+            sampai ini diperbaiki. Buka Pengaturan {'>'} Supabase {'>'} Akun Kiosk Pos Gerbang
+            {kioskAuthStatus === 'failed' ? ', periksa kembali email/password-nya.' : '.'}
+          </div>
+        </div>
+      )}
 
       {/* TOP HEADER: Pos Status, Live Clock, Simulator */}
       <div className="flex flex-col md:flex-row items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
