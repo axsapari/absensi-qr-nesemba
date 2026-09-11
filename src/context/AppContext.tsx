@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useRef } from 'react';
 import {
   Siswa,
   Kelas,
@@ -167,12 +167,20 @@ const STORAGE_KEYS = {
   SNAPSHOTS: 'absensi_local_snapshots_v1',
   LAST_SYNC: 'absensi_last_sync_v1',
   SIMULATED_OFFLINE: 'absensi_simulated_offline_v1',
+  PENDING_MUTATIONS: 'absensi_pending_mutations_v1',
   PROFIL_SEKOLAH: 'absensi_profil_sekolah_v1',
   USERS: 'absensi_users_v1',
   CURRENT_USER: 'absensi_current_user_v1',
   NATIONAL_HOLIDAYS: 'absensi_national_holidays_v1',
   CUSTOM_SCHOOL_DAYS: 'absensi_custom_school_days_v1',
 };
+
+type PendingMutation =
+  | { type: 'siswa_upsert'; row: Siswa }
+  | { type: 'siswa_delete'; id: string }
+  | { type: 'kelas_upsert'; row: Kelas }
+  | { type: 'kelas_delete'; id: string }
+  | { type: 'absensi_delete'; id: string };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // 1. Initialize State with localStorage fallback
@@ -367,11 +375,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     message: string;
   } | null>(null);
 
+  // Refs prevent background/online-event handlers from using stale React state.
+  const syncInFlightRef = useRef(false);
+  const autoSyncTimerRef = useRef<number | null>(null);
+  const autoSyncRetryRef = useRef(0);
+  const [pendingMutationCount, setPendingMutationCount] = useState(0);
+
   const effectiveOnline = isOnline && !isSimulatedOffline;
 
+  const readPendingMutations = (): PendingMutation[] => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.PENDING_MUTATIONS);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const writePendingMutations = (items: PendingMutation[]) => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.PENDING_MUTATIONS, JSON.stringify(items));
+    } catch {}
+    setPendingMutationCount(items.length);
+  };
+
+  useEffect(() => {
+    setPendingMutationCount(readPendingMutations().length);
+  }, []);
+
   const pendingSyncCount = useMemo(() => {
-    return absensiList.filter((a) => !a.synced).length;
-  }, [absensiList]);
+    return absensiList.filter((a) => !a.synced).length + pendingMutationCount;
+  }, [absensiList, pendingMutationCount]);
 
   const [simulatedTime, setSimulatedTime] = useState<string | null>(null);
   const [realClock, setRealClock] = useState<Date>(new Date());
@@ -707,6 +741,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (sessionError) throw new Error(`Gagal memeriksa session: ${sessionError.message}`);
       if (!sessionData.session) throw new Error('Session Supabase tidak aktif. Silakan logout lalu login kembali.');
 
+      await syncPendingMutations();
+
       // Bersihkan duplicate primary key sebelum upsert.
       // Ini penting karena PostgreSQL menghasilkan: \"ON CONFLICT DO UPDATE command cannot affect row a second time\"
       // jika dua baris dalam satu batch memiliki ID yang sama.
@@ -1010,14 +1046,103 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
   };
 
+  const enqueueMutation = (mutation: PendingMutation) => {
+    const current = readPendingMutations();
+    const key = mutation.type === 'siswa_upsert' || mutation.type === 'kelas_upsert' ? mutation.row.id : mutation.id;
+    const sameEntity = (m: PendingMutation) => {
+      const mk = m.type === 'siswa_upsert' || m.type === 'kelas_upsert' ? m.row.id : m.id;
+      const family = mutation.type.startsWith('siswa_') ? 'siswa_' : mutation.type.startsWith('kelas_') ? 'kelas_' : 'absensi_';
+      return m.type.startsWith(family) && mk === key;
+    };
+    writePendingMutations([...current.filter((m) => !sameEntity(m)), mutation]);
+  };
+
+  const removeMutation = (mutation: PendingMutation) => {
+    const key = mutation.type === 'siswa_upsert' || mutation.type === 'kelas_upsert' ? mutation.row.id : mutation.id;
+    const next = readPendingMutations().filter((m) => {
+      const mk = m.type === 'siswa_upsert' || m.type === 'kelas_upsert' ? m.row.id : m.id;
+      return !(m.type === mutation.type && mk === key);
+    });
+    writePendingMutations(next);
+  };
+
+  const syncPendingMutations = async (): Promise<{ success: boolean; processed: number; failed: number }> => {
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (!supabase || isSimulatedOffline || !navigator.onLine) {
+      return { success: false, processed: 0, failed: readPendingMutations().length };
+    }
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData.session) return { success: false, processed: 0, failed: readPendingMutations().length };
+
+    const queue = readPendingMutations();
+    if (!queue.length) return { success: true, processed: 0, failed: 0 };
+
+    let processed = 0;
+    let failed = 0;
+    for (const mutation of queue) {
+      try {
+        if (mutation.type === 'siswa_upsert') {
+          const row = prepareSiswaForSupabase([mutation.row])[0];
+          // NISN is the stable business key. Reuse an existing remote ID if one exists.
+          const { data: remote, error: findError } = await supabase
+            .from('siswa').select('id,nisn').eq('nisn', row.nisn).maybeSingle();
+          if (findError) throw findError;
+          const canonicalId = remote?.id || row.id;
+          const { error } = await supabase.from('siswa')
+            .upsert(ensureCreatedAt([{ ...row, id: canonicalId }]), { onConflict: 'id' });
+          if (error) throw error;
+
+          if (canonicalId !== mutation.row.id) {
+            setSiswaIdAliases((prev) => ({ ...prev, [mutation.row.id]: String(row.nisn) }));
+            setSiswaList((prev) => prev.map((x) => x.id === mutation.row.id ? { ...x, id: canonicalId } : x));
+            setAbsensiList((prev) => prev.map((x) => x.siswa_id === mutation.row.id ? { ...x, siswa_id: canonicalId } : x));
+            setLogNotifikasiList((prev) => prev.map((x) => x.siswa_id === mutation.row.id ? { ...x, siswa_id: canonicalId } : x));
+          }
+        } else if (mutation.type === 'siswa_delete') {
+          const { error } = await supabase.from('siswa').delete().eq('id', mutation.id);
+          if (error) throw error;
+        } else if (mutation.type === 'kelas_upsert') {
+          const { error } = await supabase.from('kelas')
+            .upsert(ensureCreatedAt([mutation.row]), { onConflict: 'id' });
+          if (error) throw error;
+        } else if (mutation.type === 'kelas_delete') {
+          const { error } = await supabase.from('kelas').delete().eq('id', mutation.id);
+          if (error) throw error;
+        } else if (mutation.type === 'absensi_delete') {
+          // Remove dependent WA logs first so the remote database does not keep
+          // useless notification history after the attendance itself is deleted.
+          const { error: logError } = await supabase.from('log_notifikasi_wa').delete().eq('absensi_id', mutation.id);
+          if (logError) throw logError;
+          const { error } = await supabase.from('absensi').delete().eq('id', mutation.id);
+          if (error) throw error;
+          setLogNotifikasiList((prev) => prev.filter((log) => log.absensi_id !== mutation.id));
+        }
+        removeMutation(mutation);
+        processed++;
+      } catch (err) {
+        failed++;
+        console.error('Pending mutation gagal disinkronkan:', mutation, err);
+      }
+    }
+    return { success: failed === 0, processed, failed };
+  };
+
   // Synchronization function
   const syncData = async (isAuto = false, attendanceOverride?: Absensi[], logOverride?: LogNotifikasiWA[]): Promise<{ success: boolean; count: number; message: string }> => {
-    if (isSyncing) {
+    if (syncInFlightRef.current) {
       return { success: false, count: 0, message: 'Proses sinkronisasi sedang berjalan...' };
     }
+    if (isSimulatedOffline || !navigator.onLine) {
+      return { success: false, count: 0, message: 'Perangkat masih offline. Data akan disinkronkan otomatis saat koneksi pulih.' };
+    }
 
+    syncInFlightRef.current = true;
     setIsSyncing(true);
     try {
+      // Proses mutasi master + penghapusan terlebih dahulu agar cleanup tidak
+      // menghapus perubahan lokal yang memang baru dibuat saat offline.
+      const mutationResult = await syncPendingMutations();
+
       // Sebelum sinkron, buang siswa ujicoba lokal yang NISN-nya sudah tidak ada
       // di master Supabase. Ini menghilangkan sumber utama error absensi_siswa_id_fkey.
       const cleaned = await cleanupLocalStudentsMissingInSupabase();
@@ -1042,8 +1167,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         setSyncBanner({
           type: 'sync_success',
-          message: result.syncedCount > 0
-            ? `${result.message} (${result.timestamp})`
+          message: result.syncedCount > 0 || mutationResult.processed > 0
+            ? `${result.message}${mutationResult.processed > 0 ? ` + ${mutationResult.processed} perubahan master/penghapusan.` : ''} (${result.timestamp})`
             : `Semua data (${absensiList.length} data) sudah tersinkron penuh dengan database (${result.timestamp}).`,
         });
 
@@ -1063,6 +1188,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       return { success: false, count: 0, message: errMsg };
     } finally {
+      syncInFlightRef.current = false;
       setIsSyncing(false);
     }
   };
@@ -1109,37 +1235,72 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSyncBanner(null);
   };
 
-  // Listen to browser network changes & auto-sync upon reconnection
+  // Automatic sync is intentionally stronger than a single `online` event.
+  // Chrome can fire `online` before the internet/Supabase is actually reachable.
+  const scheduleAutoSync = (reason: string) => {
+    if (isSimulatedOffline || !navigator.onLine || !activeSessionEmail) return;
+    if (autoSyncTimerRef.current !== null) window.clearTimeout(autoSyncTimerRef.current);
+    const delays = [300, 1000, 2500, 5000, 10000];
+    const index = Math.min(autoSyncRetryRef.current, delays.length - 1);
+    autoSyncTimerRef.current = window.setTimeout(async () => {
+      autoSyncTimerRef.current = null;
+      const result = await syncData(true);
+      if (!result.success && navigator.onLine && !isSimulatedOffline) {
+        autoSyncRetryRef.current = Math.min(autoSyncRetryRef.current + 1, delays.length - 1);
+        scheduleAutoSync(reason);
+      } else {
+        autoSyncRetryRef.current = 0;
+      }
+    }, delays[index]);
+  };
+
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
-      if (!isSimulatedOffline) {
-        setSyncBanner({
-          type: 'online',
-          message: 'Koneksi internet terdeteksi pulih. Memulai sinkronisasi otomatis data presensi...',
-        });
-        setTimeout(() => {
-          syncData(true);
-        }, 1000);
-      }
+      autoSyncRetryRef.current = 0;
+      setSyncBanner({ type: 'online', message: 'Koneksi pulih. Sinkronisasi otomatis sedang dijalankan...' });
+      scheduleAutoSync('network-online');
     };
-
     const handleOffline = () => {
       setIsOnline(false);
-      setSyncBanner({
-        type: 'offline',
-        message: 'Koneksi internet terputus. Mode offline aktif — seluruh data scan tetap tersimpan aman di perangkat.',
-      });
+      if (autoSyncTimerRef.current !== null) {
+        window.clearTimeout(autoSyncTimerRef.current);
+        autoSyncTimerRef.current = null;
+      }
+      setSyncBanner({ type: 'offline', message: 'Koneksi internet terputus. Data tetap aman di perangkat.' });
     };
-
+    const handleActivity = () => {
+      if (document.visibilityState === 'visible' && navigator.onLine && !isSimulatedOffline) {
+        autoSyncRetryRef.current = 0;
+        scheduleAutoSync('tab-active');
+      }
+    };
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
-
+    window.addEventListener('focus', handleActivity);
+    document.addEventListener('visibilitychange', handleActivity);
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('focus', handleActivity);
+      document.removeEventListener('visibilitychange', handleActivity);
+      if (autoSyncTimerRef.current !== null) window.clearTimeout(autoSyncTimerRef.current);
     };
-  }, [absensiList, supabaseConfig, isSimulatedOffline]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionEmail, isSimulatedOffline, supabaseConfig.url, supabaseConfig.anonKey]);
+
+  // Watchdog handles cases where Chrome does not emit `online`, or the tab was
+  // backgrounded while the network returned. It only runs when work is pending.
+  useEffect(() => {
+    if (!activeSessionEmail || isSimulatedOffline) return;
+    const timer = window.setInterval(() => {
+      const pendingAttendance = absensiList.some((a) => !a.synced);
+      const pendingMutations = readPendingMutations().length > 0;
+      if (navigator.onLine && (pendingAttendance || pendingMutations)) scheduleAutoSync('watchdog');
+    }, 10000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionEmail, isSimulatedOffline, absensiList]);
 
   // Auto-dismiss banner after 5 seconds
   useEffect(() => {
@@ -1470,175 +1631,88 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setLastScanResult(null);
   };
 
-  // CRUD Siswa
-  // Helper CRUD tetap fire-and-forget; kegagalan juga diteruskan ke banner agar tidak tersembunyi di console.
-  // Tidak memblokir UI -- kalau gagal (misal sedang offline), perubahan tetap tersimpan
-  // lokal dan akan tersinkron lagi saat fetch berikutnya berhasil terhubung.
-  const pushSiswaUpsert = (rows: Siswa[]) => {
-    const supabase = getSupabaseClient(supabaseConfig);
-    if (!supabase || rows.length === 0) return;
-    const prepared = prepareSiswaForSupabase(dedupeRowsById(rows).rows);
-    supabase
-      .from('siswa')
-      .upsert(ensureCreatedAt(prepared), { onConflict: 'id' })
-      .then(({ error }) => {
-        if (error) {
-          setSyncBanner({ type: 'sync_error', message: `Gagal menyinkronkan siswa: ${error.message}` });
-          console.error('Gagal menyinkronkan data siswa ke Supabase:', error);
-        }
-      });
+  // CRUD Siswa/Kelas menggunakan durable mutation queue. Perubahan lokal selalu
+  // tersimpan dahulu; saat online langsung dicoba, saat offline menunggu otomatis.
+  const queueSiswaUpsert = (row: Siswa) => {
+    enqueueMutation({ type: 'siswa_upsert', row });
+    scheduleAutoSync('siswa-change');
   };
-
-  const deleteSiswaRemote = (id: string) => {
-    const supabase = getSupabaseClient(supabaseConfig);
-    if (!supabase) return;
-    supabase
-      .from('siswa')
-      .delete()
-      .eq('id', id)
-      .then(({ error }) => {
-        if (error) {
-          setSyncBanner({ type: 'sync_error', message: `Gagal menghapus siswa: ${error.message}` });
-          console.error('Gagal menghapus data siswa di Supabase:', error);
-        }
-      });
+  const queueSiswaDelete = (id: string) => {
+    enqueueMutation({ type: 'siswa_delete', id });
+    scheduleAutoSync('siswa-delete');
   };
-
-  const pushKelasUpsert = (rows: Kelas[]) => {
-    const supabase = getSupabaseClient(supabaseConfig);
-    if (!supabase || rows.length === 0) return;
-    supabase
-      .from('kelas')
-      .upsert(ensureCreatedAt(dedupeRowsById(rows).rows), { onConflict: 'id' })
-      .then(({ error }) => {
-        if (error) {
-          setSyncBanner({ type: 'sync_error', message: `Gagal menyinkronkan kelas: ${error.message}` });
-          console.error('Gagal menyinkronkan data kelas ke Supabase:', error);
-        }
-      });
+  const queueKelasUpsert = (row: Kelas) => {
+    enqueueMutation({ type: 'kelas_upsert', row });
+    scheduleAutoSync('kelas-change');
   };
-
-  const deleteKelasRemote = (id: string) => {
-    const supabase = getSupabaseClient(supabaseConfig);
-    if (!supabase) return;
-    supabase
-      .from('kelas')
-      .delete()
-      .eq('id', id)
-      .then(({ error }) => {
-        if (error) {
-          setSyncBanner({ type: 'sync_error', message: `Gagal menghapus kelas: ${error.message}` });
-          console.error('Gagal menghapus data kelas di Supabase:', error);
-        }
-      });
+  const queueKelasDelete = (id: string) => {
+    enqueueMutation({ type: 'kelas_delete', id });
+    scheduleAutoSync('kelas-delete');
   };
 
   const addSiswa = (data: Omit<Siswa, 'id'>) => {
-    const newSiswa: Siswa = {
-      ...data,
-      id: 's-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-    };
+    const newSiswa: Siswa = { ...data, id: 's-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6) };
     setSiswaList((prev) => [...prev, newSiswa]);
-    pushSiswaUpsert([newSiswa]);
+    queueSiswaUpsert(newSiswa);
   };
 
-  const importSiswaBatch = (
-    newStudents: Omit<Siswa, 'id'>[],
-    mode: 'append' | 'replace' = 'append'
-  ) => {
+  const importSiswaBatch = (newStudents: Omit<Siswa, 'id'>[], mode: 'append' | 'replace' = 'append') => {
     let added = 0;
     let updated = 0;
+    let changedRows: Siswa[];
 
     if (mode === 'replace') {
-      const generated: Siswa[] = newStudents.map((item, idx) => ({
-        ...item,
-        id: `s-${Date.now()}-${idx}`,
-      }));
-      setSiswaList(generated);
-      pushSiswaUpsert(generated);
-      return { added: generated.length, updated: 0 };
-    }
-
-    let finalList: Siswa[] = [];
-    setSiswaList((prev) => {
-      const updatedList = [...prev];
-      newStudents.forEach((newS, idx) => {
-        const existingIdx = updatedList.findIndex(
-          (curr) => curr.nisn && curr.nisn === newS.nisn
-        );
-
+      changedRows = newStudents.map((item, idx) => ({ ...item, id: `s-${Date.now()}-${idx}` }));
+      added = changedRows.length;
+    } else {
+      changedRows = [...siswaList];
+      for (const [idx, newS] of newStudents.entries()) {
+        const existingIdx = changedRows.findIndex((curr) => curr.nisn && curr.nisn === newS.nisn);
         if (existingIdx !== -1) {
-          // update existing
-          updatedList[existingIdx] = {
-            ...updatedList[existingIdx],
-            ...newS,
-          };
+          changedRows[existingIdx] = { ...changedRows[existingIdx], ...newS };
           updated++;
         } else {
-          // add new
-          updatedList.push({
-            ...newS,
-            id: `s-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 5)}`,
-          });
+          changedRows.push({ ...newS, id: `s-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 5)}` });
           added++;
         }
-      });
-      finalList = updatedList;
-      return updatedList;
-    });
+      }
+    }
 
-    // Dorong seluruh daftar terbaru ke Supabase (upsert aman dipanggil berulang)
-    pushSiswaUpsert(finalList);
-
+    setSiswaList(changedRows);
+    changedRows.forEach(queueSiswaUpsert);
     return { added, updated };
   };
 
   const updateSiswa = (id: string, data: Partial<Siswa>) => {
-    let updatedRow: Siswa | undefined;
-    setSiswaList((prev) =>
-      prev.map((s) => {
-        if (s.id === id) {
-          updatedRow = { ...s, ...data };
-          return updatedRow;
-        }
-        return s;
-      })
-    );
-    if (updatedRow) pushSiswaUpsert([updatedRow]);
+    const current = siswaList.find((s) => s.id === id);
+    if (!current) return;
+    const updatedRow = { ...current, ...data };
+    setSiswaList((prev) => prev.map((s) => s.id === id ? updatedRow : s));
+    queueSiswaUpsert(updatedRow);
   };
 
   const deleteSiswa = (id: string) => {
     setSiswaList((prev) => prev.filter((s) => s.id !== id));
-    deleteSiswaRemote(id);
+    queueSiswaDelete(id);
   };
 
-  // CRUD Kelas
   const addKelas = (data: Omit<Kelas, 'id'>) => {
-    const newKelas: Kelas = {
-      ...data,
-      id: 'k-' + Date.now(),
-    };
+    const newKelas: Kelas = { ...data, id: 'k-' + Date.now() };
     setKelasList((prev) => [...prev, newKelas]);
-    pushKelasUpsert([newKelas]);
+    queueKelasUpsert(newKelas);
   };
 
   const updateKelas = (id: string, data: Partial<Kelas>) => {
-    let updatedRow: Kelas | undefined;
-    setKelasList((prev) =>
-      prev.map((k) => {
-        if (k.id === id) {
-          updatedRow = { ...k, ...data };
-          return updatedRow;
-        }
-        return k;
-      })
-    );
-    if (updatedRow) pushKelasUpsert([updatedRow]);
+    const current = kelasList.find((k) => k.id === id);
+    if (!current) return;
+    const updatedRow = { ...current, ...data };
+    setKelasList((prev) => prev.map((k) => k.id === id ? updatedRow : k));
+    queueKelasUpsert(updatedRow);
   };
 
   const deleteKelas = (id: string) => {
     setKelasList((prev) => prev.filter((k) => k.id !== id));
-    deleteKelasRemote(id);
+    queueKelasDelete(id);
   };
 
   // Settings
@@ -1673,12 +1747,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteAbsensi = (id: string) => {
+    const target = absensiList.find((a) => a.id === id);
     setAbsensiList((prev) => prev.filter((a) => a.id !== id));
+    setLogNotifikasiList((prev) => prev.filter((log) => log.absensi_id !== id));
+    if (target?.synced) {
+      enqueueMutation({ type: 'absensi_delete', id });
+      scheduleAutoSync('absensi-delete');
+    } else {
+      writePendingMutations(readPendingMutations().filter((m) => !(m.type === 'absensi_delete' && m.id === id)));
+    }
   };
 
   const resetTodayAttendance = () => {
     const today = getTodayDateString();
+    const targets = absensiList.filter((a) => a.tanggal === today);
     setAbsensiList((prev) => prev.filter((a) => a.tanggal !== today));
+    setLogNotifikasiList((prev) => prev.filter((log) => !targets.some((a) => a.id === log.absensi_id)));
+    targets.filter((a) => a.synced).forEach((a) => enqueueMutation({ type: 'absensi_delete', id: a.id }));
+    if (targets.some((a) => a.synced)) scheduleAutoSync('reset-today-attendance');
     setLastScanResult(null);
   };
 
