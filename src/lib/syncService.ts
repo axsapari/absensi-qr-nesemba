@@ -26,7 +26,8 @@ export async function processSyncToDatabase(
   absensiList: Absensi[],
   logNotifikasiList: LogNotifikasiWA[],
   supabaseConfig: SupabaseConfig,
-  isSimulatedOffline: boolean
+  isSimulatedOffline: boolean,
+  siswaList: Array<{ id: string; nisn: string }> = []
 ): Promise<{
   updatedAbsensiList: Absensi[];
   updatedLogNotifikasiList: LogNotifikasiWA[];
@@ -140,19 +141,92 @@ export async function processSyncToDatabase(
   }
   const attendanceToSync = Array.from(attendanceByBusinessKey.values());
 
-  // Reconcile local attendance IDs with existing remote IDs. This is important
-  // because an earlier sync/re-import may have created the same attendance row
-  // in Supabase with a different TEXT primary key. WA logs must reference the
-  // actual remote absensi.id or the FK will fail.
-  const siswaIds = Array.from(new Set(attendanceToSync.map((a) => a.siswa_id)));
-  const tanggalValues = Array.from(new Set(attendanceToSync.map((a) => a.tanggal)));
+  // IMPORTANT: localStorage may contain old student IDs that no longer match
+  // the IDs in Supabase. The absensi.siswa_id column is a real FK, so reconcile
+  // student IDs by NISN before uploading any attendance or WA log.
+  const localSiswaById = new Map(siswaList.map((s) => [String(s.id), String(s.nisn).trim()]));
+  const remoteSiswaByNisn = new Map<string, string>();
+
+  if (pendingAbsensi.length > 0 || pendingLogs.length > 0) {
+    const { data: remoteSiswaRows, error: remoteSiswaError } = await supabase
+      .from('siswa')
+      .select('id,nisn');
+    if (remoteSiswaError) {
+      return {
+        updatedAbsensiList,
+        updatedLogNotifikasiList,
+        result: {
+          success: false,
+          syncedCount: 0,
+          syncedLogCount: 0,
+          message: `Gagal membaca master siswa Supabase: ${remoteSiswaError.message}`,
+          timestamp: nowStr,
+          error: remoteSiswaError.message,
+        },
+      };
+    }
+    for (const row of remoteSiswaRows ?? []) {
+      remoteSiswaByNisn.set(String(row.nisn).trim(), String(row.id));
+    }
+  }
+
+  const canonicalStudentId = (localId: string) => {
+    const nisn = localSiswaById.get(String(localId));
+    return (nisn && remoteSiswaByNisn.get(nisn)) || String(localId);
+  };
+
+  // Do not let PostgreSQL receive a student FK that does not exist remotely.
+  // We intentionally stop before the INSERT and explain what must be repaired.
+  const unresolvedStudentIds = Array.from(new Set(
+    attendanceToSync
+      .filter((item) => !remoteSiswaByNisn.has(localSiswaById.get(String(item.siswa_id)) || ''))
+      .map((item) => item.siswa_id)
+  ));
+  if (unresolvedStudentIds.length > 0) {
+    return {
+      updatedAbsensiList,
+      updatedLogNotifikasiList,
+      result: {
+        success: false,
+        syncedCount: 0,
+        syncedLogCount: 0,
+        message: `Sinkronisasi ditahan: ${unresolvedStudentIds.length} siswa lokal tidak ditemukan di Supabase berdasarkan NISN. Jalankan Sinkron Master Siswa lalu coba lagi.`,
+        timestamp: nowStr,
+        error: 'Student FK mapping unavailable',
+      },
+    };
+  }
+
+  // Collect all attendance business keys referenced by pending attendance AND logs.
+  // This is necessary when attendance has already been uploaded but the WA log is
+  // still pending: we still need the canonical remote absensi.id for the FK.
+  const localAbsensiById = new Map(absensiList.map((a) => [String(a.id), a]));
+  const attendanceLookupKeys = new Set<string>();
+  for (const item of attendanceToSync) {
+    attendanceLookupKeys.add(`${canonicalStudentId(item.siswa_id)}|${item.tanggal}|${item.jenis}`);
+  }
+  for (const log of pendingLogs) {
+    const localAttendance = localAbsensiById.get(String(log.absensi_id));
+    if (localAttendance) {
+      attendanceLookupKeys.add(
+        `${canonicalStudentId(localAttendance.siswa_id)}|${localAttendance.tanggal}|${localAttendance.jenis}`
+      );
+    }
+  }
+
+  const canonicalSiswaIds = Array.from(new Set(
+    Array.from(attendanceLookupKeys).map((key) => key.split('|')[0]).filter(Boolean)
+  ));
+  const tanggalValues = Array.from(new Set(
+    Array.from(attendanceLookupKeys).map((key) => key.split('|')[1]).filter(Boolean)
+  ));
   const remoteAbsensiByBusinessKey = new Map<string, { id: string; siswa_id: string; tanggal: string; jenis: string }>();
 
-  if (attendanceToSync.length > 0) {
+  if (canonicalSiswaIds.length > 0 && tanggalValues.length > 0) {
     const { data: remoteRows, error: remoteError } = await supabase
       .from('absensi')
       .select('id,siswa_id,tanggal,jenis')
-      .in('siswa_id', siswaIds)
+      .in('siswa_id', canonicalSiswaIds)
       .in('tanggal', tanggalValues)
       .in('jenis', ['masuk', 'pulang']);
 
@@ -170,35 +244,30 @@ export async function processSyncToDatabase(
         },
       };
     }
-
     for (const row of remoteRows ?? []) {
-      remoteAbsensiByBusinessKey.set(
-        `${row.siswa_id}|${row.tanggal}|${row.jenis}`,
-        row
-      );
+      remoteAbsensiByBusinessKey.set(`${row.siswa_id}|${row.tanggal}|${row.jenis}`, row);
     }
   }
 
-  // Build a local-id -> remote-id map. It is also used to repair WA log FK values.
+  // Local attendance ID -> canonical remote attendance ID.
   const absensiIdRemap = new Map<string, string>();
-  for (const item of pendingAbsensi) {
-    const key = `${item.siswa_id}|${item.tanggal}|${item.jenis}`;
+  for (const localAttendance of absensiList) {
+    const key = `${canonicalStudentId(localAttendance.siswa_id)}|${localAttendance.tanggal}|${localAttendance.jenis}`;
     const remote = remoteAbsensiByBusinessKey.get(key);
-    if (remote && remote.id !== item.id) {
-      absensiIdRemap.set(item.id, remote.id);
-    }
+    if (remote) absensiIdRemap.set(localAttendance.id, remote.id);
   }
 
   // 1) Attendance first because log_notifikasi_wa.absensi_id is an FK.
   if (attendanceToSync.length > 0) {
     const recordsToInsert = attendanceToSync.map((item) => {
-      const key = `${item.siswa_id}|${item.tanggal}|${item.jenis}`;
+      const key = `${canonicalStudentId(item.siswa_id)}|${item.tanggal}|${item.jenis}`;
       const remote = remoteAbsensiByBusinessKey.get(key);
       return {
         // Reuse the existing remote ID when the business key already exists.
-        // Otherwise keep the local generated ID.
+        // Otherwise keep the local generated attendance ID. The student ID is
+        // always the canonical Supabase FK ID.
         id: remote?.id || item.id,
-        siswa_id: item.siswa_id,
+        siswa_id: canonicalStudentId(item.siswa_id),
         tanggal: item.tanggal,
         waktu_scan: item.waktu_scan,
         timestamp: item.timestamp,
@@ -232,15 +301,16 @@ export async function processSyncToDatabase(
     // synced and remap their IDs in local state where needed.
     const nowIso = new Date().toISOString();
     const syncedBusinessKeys = new Set(
-      attendanceToSync.map((item) => `${item.siswa_id}|${item.tanggal}|${item.jenis}`)
+      attendanceToSync.map((item) => `${canonicalStudentId(item.siswa_id)}|${item.tanggal}|${item.jenis}`)
     );
     updatedAbsensiList = absensiList.map((item) => {
-      const key = `${item.siswa_id}|${item.tanggal}|${item.jenis}`;
-      if (!syncedBusinessKeys.has(key)) return item;
+      const key = `${canonicalStudentId(item.siswa_id)}|${item.tanggal}|${item.jenis}`;
+      if (!syncedBusinessKeys.has(`${canonicalStudentId(item.siswa_id)}|${item.tanggal}|${item.jenis}`)) return item;
       const remote = remoteAbsensiByBusinessKey.get(key);
       return {
         ...item,
         id: remote?.id || item.id,
+        siswa_id: canonicalStudentId(item.siswa_id),
         synced: true,
         synced_at: nowIso,
       };
@@ -248,16 +318,21 @@ export async function processSyncToDatabase(
     syncedCount = pendingAbsensi.length;
 
     // Repair every local WA log that points at a local/generated attendance ID.
-    if (absensiIdRemap.size > 0) {
-      updatedLogNotifikasiList = logNotifikasiList.map((log) => ({
-        ...log,
-        absensi_id: absensiIdRemap.get(log.absensi_id) || log.absensi_id,
-      }));
-    }
+    updatedLogNotifikasiList = updatedLogNotifikasiList.map((log) => ({
+      ...log,
+      absensi_id: absensiIdRemap.get(log.absensi_id) || log.absensi_id,
+      siswa_id: canonicalStudentId(log.siswa_id),
+    }));
   }
 
   // Recalculate logs after FK repair, so logs belonging to older local IDs are
-  // uploaded with the real Supabase attendance ID.
+  // uploaded with the real Supabase attendance ID and canonical student FK.
+  updatedLogNotifikasiList = updatedLogNotifikasiList.map((log) => ({
+    ...log,
+    siswa_id: canonicalStudentId(log.siswa_id),
+    absensi_id: absensiIdRemap.get(log.absensi_id) || log.absensi_id,
+  }));
+
   const logsForUpload = updatedLogNotifikasiList.filter(
     (log) =>
       log.status_kirim === 'pending' ||

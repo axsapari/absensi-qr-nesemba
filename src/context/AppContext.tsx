@@ -156,6 +156,7 @@ const AppContext = createContext<AppContextType | null>(null);
 
 const STORAGE_KEYS = {
   SISWA: 'absensi_siswa_v1',
+  SISWA_ID_ALIASES: 'absensi_siswa_id_aliases_v1',
   KELAS: 'absensi_kelas_v1',
   ABSENSI: 'absensi_records_v1',
   LOG_WA: 'absensi_log_wa_v1',
@@ -202,6 +203,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return INITIAL_SISWA;
     } catch {
       return INITIAL_SISWA;
+    }
+  });
+
+  // Historical local-student-ID -> NISN aliases. These are essential when a
+  // previous app version generated local student IDs and Supabase later assigned
+  // different IDs. Attendance stores only siswa_id, so without this alias an old
+  // attendance row cannot be converted back to the correct Supabase FK.
+  const [siswaIdAliases, setSiswaIdAliases] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.SISWA_ID_ALIASES);
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
     }
   });
 
@@ -388,6 +402,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [siswaList]);
 
   useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.SISWA_ID_ALIASES, JSON.stringify(siswaIdAliases));
+  }, [siswaIdAliases]);
+
+  useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.NATIONAL_HOLIDAYS, JSON.stringify(nationalHolidays));
   }, [nationalHolidays]);
 
@@ -572,7 +590,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
 
         if ((kelasResult.data?.length ?? 0) > 0) setKelasList(kelasResult.data as Kelas[]);
-        if ((siswaResult.data?.length ?? 0) > 0) setSiswaList(siswaResult.data as Siswa[]);
+        if ((siswaResult.data?.length ?? 0) > 0) {
+          // Preserve every local ID -> NISN relationship before replacing local
+          // master data with the canonical Supabase rows.
+          setSiswaIdAliases((prev) => {
+            const next = { ...prev };
+            for (const local of siswaList) {
+              if (local.id && local.nisn) next[local.id] = local.nisn;
+            }
+            for (const remote of siswaResult.data as Siswa[]) {
+              if (remote.id && remote.nisn) next[remote.id] = remote.nisn;
+            }
+            return next;
+          });
+          setSiswaList(siswaResult.data as Siswa[]);
+        }
 
         const kelasCount = kelasResult.data?.length ?? 0;
         const siswaCount = siswaResult.data?.length ?? 0;
@@ -705,6 +737,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const remoteSiswaIdByNisn = new Map(
         (remoteSiswaRows ?? []).map((r: { id: string; nisn: string }) => [r.nisn, r.id])
       );
+
+      // Keep historical local ID -> NISN aliases so pending attendance created
+      // by older app versions can still be repaired after master IDs are reconciled.
+      setSiswaIdAliases((prev) => {
+        const next = { ...prev };
+        for (const local of siswaList) {
+          if (local.id && local.nisn) next[local.id] = local.nisn;
+        }
+        for (const remote of remoteSiswaRows ?? []) {
+          if (remote.id && remote.nisn) next[remote.id] = remote.nisn;
+        }
+        return next;
+      });
 
       // Peta id-lama -> id-baru, dipakai untuk membetulkan referensi kelas_id di siswa,
       // dan untuk membetulkan data lokal (siswaList/absensiList) setelah upload berhasil.
@@ -889,7 +934,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         attendanceOverride ?? absensiList,
         logOverride ?? logNotifikasiList,
         supabaseConfig,
-        isSimulatedOffline
+        isSimulatedOffline,
+        [...siswaList.map((s) => ({ id: s.id, nisn: s.nisn })), ...Object.entries(siswaIdAliases).map(([id, nisn]) => ({ id, nisn }))]
       );
 
       if (result.success) {
@@ -1206,7 +1252,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         nextAbsensiList,
         logNotifikasiList,
         supabaseConfig,
-        isSimulatedOffline
+        isSimulatedOffline,
+        [...siswaList.map((s) => ({ id: s.id, nisn: s.nisn })), ...Object.entries(siswaIdAliases).map(([id, nisn]) => ({ id, nisn }))]
       );
       if (syncResult.result.success) {
         setAbsensiList(syncResult.updatedAbsensiList);
@@ -1249,7 +1296,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Save the pending log to Supabase if connectivity/auth happens to be available.
       // This never changes its status to "terkirim".
       if (getSupabaseClient(supabaseConfig)) {
-        const logSync = await processSyncToDatabase(nextAbsensiList, nextLogs, supabaseConfig, false);
+        const logSync = await processSyncToDatabase(
+          nextAbsensiList,
+          nextLogs,
+          supabaseConfig,
+          false,
+          [...siswaList.map((s) => ({ id: s.id, nisn: s.nisn })), ...Object.entries(siswaIdAliases).map(([id, nisn]) => ({ id, nisn }))]
+        );
         if (logSync.result.success) {
           setAbsensiList(logSync.updatedAbsensiList);
           setLogNotifikasiList(logSync.updatedLogNotifikasiList);
@@ -1268,7 +1321,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Persist the exact gateway result. A failed/simulated log remains locally
       // available for diagnosis and can be retried explicitly later.
       const supabase = getSupabaseClient(supabaseConfig);
-      if (supabase) {
+      if (supabase && absensiForNotification.synced) {
         const { error: logError } = await supabase.from('log_notifikasi_wa').upsert({
           id: logEntry.id,
           absensi_id: logEntry.absensi_id || null,
@@ -1284,6 +1337,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           console.error('Gagal menyimpan log WA ke Supabase:', logError);
           setSyncBanner({ type: 'sync_error', message: `WA tercatat lokal, tetapi log gagal disimpan ke Supabase: ${logError.message}` });
         }
+      } else if (supabase && !absensiForNotification.synced) {
+        // Attendance is still local/pending. Do not attempt the WA-log INSERT yet
+        // because log_notifikasi_wa.absensi_id is an FK to absensi.id. The next
+        // sync will upload attendance first, resolve the canonical ID, then upload
+        // this log.
+        setSyncBanner({
+          type: 'sync_error',
+          message: 'WA tercatat lokal. Log WA menunggu absensi berhasil tersinkron ke Supabase.',
+        });
       }
     }
 
