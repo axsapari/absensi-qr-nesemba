@@ -922,6 +922,94 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => { cancelled = true; };
   }, [supabaseConfig.url, supabaseConfig.anonKey, activeSessionEmail]);
 
+  // Bersihkan data siswa UJICOBA lokal yang sudah tidak ada di Supabase.
+  // Ini sengaja hanya menghapus data lokal yang NISN-nya tidak ditemukan di master
+  // Supabase. Data di Supabase TIDAK disentuh. Tujuannya membuang siswa percobaan
+  // lama beserta absensi/log lokalnya yang sekarang menjadi orphan FK.
+  const cleanupLocalStudentsMissingInSupabase = async (): Promise<{
+    siswaList: Siswa[];
+    absensiList: Absensi[];
+    logNotifikasiList: LogNotifikasiWA[];
+    siswaIdAliases: Record<string, string>;
+    removedCount: number;
+  }> => {
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (!supabase) {
+      return { siswaList, absensiList, logNotifikasiList, siswaIdAliases, removedCount: 0 };
+    }
+
+    const { data: remoteRows, error } = await supabase.from('siswa').select('id,nisn');
+    if (error || !remoteRows) {
+      console.warn('Cleanup siswa lokal dilewati karena master Supabase tidak dapat dibaca:', error?.message);
+      return { siswaList, absensiList, logNotifikasiList, siswaIdAliases, removedCount: 0 };
+    }
+
+    const remoteNisns = new Set(
+      remoteRows.map((row: { id: string; nisn: string }) => String(row.nisn ?? '').trim()).filter(Boolean)
+    );
+
+    // Satu peta identitas untuk data lama: ID siswa saat ini + alias ID lama -> NISN.
+    const nisnByStudentId = new Map<string, string>();
+    for (const student of siswaList) {
+      if (student.id && student.nisn) nisnByStudentId.set(String(student.id), String(student.nisn).trim());
+    }
+    for (const [id, nisn] of Object.entries(siswaIdAliases)) {
+      if (id && nisn) nisnByStudentId.set(String(id), String(nisn).trim());
+    }
+
+    // Hanya siswa lokal yang punya NISN dan NISN tersebut benar-benar tidak ada
+    // di master cloud yang dianggap siswa percobaan/orphan.
+    const removableStudentIds = new Set<string>();
+    for (const [id, nisn] of nisnByStudentId.entries()) {
+      if (nisn && !remoteNisns.has(nisn)) removableStudentIds.add(id);
+    }
+
+    const nextSiswaList = siswaList.filter((student) => !removableStudentIds.has(String(student.id)));
+
+    // Buang absensi lokal yang menunjuk ke siswa orphan. Ini penting karena absensi
+    // tersebut pasti gagal FK jika dicoba dikirim ke Supabase.
+    const removedAbsensiIds = new Set<string>();
+    const nextAbsensiList = absensiList.filter((attendance) => {
+      const studentNisn = nisnByStudentId.get(String(attendance.siswa_id));
+      const shouldRemove = !!studentNisn && !remoteNisns.has(studentNisn);
+      if (shouldRemove) removedAbsensiIds.add(String(attendance.id));
+      return !shouldRemove;
+    });
+
+    // Log WA yang menunjuk ke absensi yang baru dibuang juga harus dibuang dari
+    // localStorage agar tidak kembali memicu FK log_notifikasi_wa_absensi_id_fkey.
+    const nextLogNotifikasiList = logNotifikasiList.filter(
+      (log) => !removedAbsensiIds.has(String(log.absensi_id)) && !removableStudentIds.has(String(log.siswa_id))
+    );
+
+    const nextAliases = { ...siswaIdAliases };
+    for (const id of removableStudentIds) delete nextAliases[id];
+
+    if (removableStudentIds.size > 0 || removedAbsensiIds.size > 0 || nextLogNotifikasiList.length !== logNotifikasiList.length) {
+      setSiswaList(nextSiswaList);
+      setAbsensiList(nextAbsensiList);
+      setLogNotifikasiList(nextLogNotifikasiList);
+      setSiswaIdAliases(nextAliases);
+      localStorage.setItem(STORAGE_KEYS.SISWA, JSON.stringify(nextSiswaList));
+      localStorage.setItem(STORAGE_KEYS.ABSENSI, JSON.stringify(nextAbsensiList));
+      localStorage.setItem(STORAGE_KEYS.LOG_WA, JSON.stringify(nextLogNotifikasiList));
+      localStorage.setItem(STORAGE_KEYS.SISWA_ID_ALIASES, JSON.stringify(nextAliases));
+
+      console.info(
+        `Cleanup lokal: ${removableStudentIds.size} siswa, ${removedAbsensiIds.size} absensi, ` +
+        `${logNotifikasiList.length - nextLogNotifikasiList.length} log WA dihapus karena NISN tidak ada di Supabase.`
+      );
+    }
+
+    return {
+      siswaList: nextSiswaList,
+      absensiList: nextAbsensiList,
+      logNotifikasiList: nextLogNotifikasiList,
+      siswaIdAliases: nextAliases,
+      removedCount: removableStudentIds.size,
+    };
+  };
+
   // Synchronization function
   const syncData = async (isAuto = false, attendanceOverride?: Absensi[], logOverride?: LogNotifikasiWA[]): Promise<{ success: boolean; count: number; message: string }> => {
     if (isSyncing) {
@@ -930,12 +1018,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setIsSyncing(true);
     try {
+      // Sebelum sinkron, buang siswa ujicoba lokal yang NISN-nya sudah tidak ada
+      // di master Supabase. Ini menghilangkan sumber utama error absensi_siswa_id_fkey.
+      const cleaned = await cleanupLocalStudentsMissingInSupabase();
+      const sourceAbsensi = attendanceOverride ?? cleaned.absensiList;
+      const sourceLogs = logOverride ?? cleaned.logNotifikasiList;
+      const sourceStudents = cleaned.siswaList;
+      const sourceAliases = cleaned.siswaIdAliases;
+
       const { updatedAbsensiList, updatedLogNotifikasiList, result } = await processSyncToDatabase(
-        attendanceOverride ?? absensiList,
-        logOverride ?? logNotifikasiList,
+        sourceAbsensi,
+        sourceLogs,
         supabaseConfig,
         isSimulatedOffline,
-        [...siswaList.map((s) => ({ id: s.id, nisn: s.nisn })), ...Object.entries(siswaIdAliases).map(([id, nisn]) => ({ id, nisn }))]
+        [...sourceStudents.map((s) => ({ id: s.id, nisn: s.nisn })), ...Object.entries(sourceAliases).map(([id, nisn]) => ({ id, nisn }))]
       );
 
       if (result.success) {
