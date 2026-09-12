@@ -377,9 +377,88 @@ export async function processSyncToDatabase(
       log.status_kirim === 'simulasi'
   );
 
+  // A previous version could leave WA logs in localStorage after their attendance
+  // was deleted. Such a log carries a now-nonexistent absensi_id and will always
+  // fail the FK constraint when upserted. Validate the referenced attendance IDs
+  // before uploading logs and discard only these stale LOCAL log records.
+  // This also makes the sync self-healing for data produced by older versions.
+  let validatedLogsForUpload = logsForUpload;
   if (logsForUpload.length > 0) {
+    const referencedAttendanceIds = Array.from(new Set(
+      logsForUpload
+        .map((log) => log.absensi_id ? String(log.absensi_id) : '')
+        .filter(Boolean)
+    ));
+
+    if (referencedAttendanceIds.length > 0) {
+      const { data: existingAttendanceRows, error: attendanceCheckError } = await supabase
+        .from('absensi')
+        .select('id')
+        .in('id', referencedAttendanceIds);
+
+      if (attendanceCheckError) {
+        return {
+          updatedAbsensiList,
+          updatedLogNotifikasiList,
+          result: {
+            success: false,
+            syncedCount,
+            syncedLogCount: 0,
+            message: `Gagal memvalidasi relasi log WhatsApp: ${attendanceCheckError.message}`,
+            timestamp: nowStr,
+            error: attendanceCheckError.message,
+          },
+        };
+      }
+
+      const existingAttendanceIdSet = new Set(
+        (existingAttendanceRows ?? []).map((row) => String(row.id))
+      );
+      const staleLogIds = logsForUpload
+        .filter((log) => log.absensi_id && !existingAttendanceIdSet.has(String(log.absensi_id)))
+        .map((log) => String(log.id));
+
+      if (staleLogIds.length > 0) {
+        // If a stale local log already exists remotely under the same primary key,
+        // remove it too. It cannot be a valid FK-linked notification anymore.
+        const { error: staleRemoteDeleteError } = await supabase
+          .from('log_notifikasi_wa')
+          .delete()
+          .in('id', staleLogIds);
+
+        if (staleRemoteDeleteError) {
+          return {
+            updatedAbsensiList,
+            updatedLogNotifikasiList,
+            result: {
+              success: false,
+              syncedCount,
+              syncedLogCount: 0,
+              message: `Log WhatsApp lama gagal dibersihkan: ${staleRemoteDeleteError.message}`,
+              timestamp: nowStr,
+              error: staleRemoteDeleteError.message,
+            },
+          };
+        }
+
+        const staleSet = new Set(staleLogIds);
+        updatedLogNotifikasiList = updatedLogNotifikasiList.filter(
+          (log) => !staleSet.has(String(log.id))
+        );
+        validatedLogsForUpload = logsForUpload.filter(
+          (log) => !staleSet.has(String(log.id))
+        );
+        cleanedOrphanCount += staleLogIds.length;
+        console.warn(
+          `Membersihkan ${staleLogIds.length} log WhatsApp lokal yang menunjuk ke absensi yang sudah tidak ada.`
+        );
+      }
+    }
+  }
+
+  if (validatedLogsForUpload.length > 0) {
     const { error } = await supabase.from('log_notifikasi_wa').upsert(
-      logsForUpload.map((log) => ({
+      validatedLogsForUpload.map((log) => ({
         id: log.id,
         absensi_id: log.absensi_id || null,
         siswa_id: log.siswa_id || null,
@@ -401,7 +480,7 @@ export async function processSyncToDatabase(
           success: false,
           syncedCount,
           syncedLogCount: 0,
-          message: `Absensi tersinkron, tetapi log WhatsApp gagal disimpan (${logsForUpload.length} log): ${error.message}`,
+          message: `Absensi tersinkron, tetapi log WhatsApp gagal disimpan (${validatedLogsForUpload.length} log): ${error.message}`,
           timestamp: nowStr,
           error: error.message,
         },
