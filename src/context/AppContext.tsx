@@ -181,7 +181,8 @@ type PendingMutation =
   | { type: 'kelas_upsert'; row: Kelas }
   | { type: 'kelas_delete'; id: string }
   | { type: 'absensi_delete'; id: string; siswa_id?: string; tanggal?: string; jenis?: Absensi['jenis'] }
-  | { type: 'absensi_reset_today'; tanggal: string };
+  | { type: 'absensi_reset_today'; tanggal: string }
+  | { type: 'pengaturan_jam_upsert'; row: PengaturanJam };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // 1. Initialize State with localStorage fallback
@@ -959,6 +960,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => { cancelled = true; };
   }, [supabaseConfig.url, supabaseConfig.anonKey, activeSessionEmail]);
 
+  // Refresh settings from cloud when the app becomes active. If there is a local
+  // settings mutation waiting in the durable queue, do NOT overwrite it with an
+  // older remote snapshot; let the queue finish first.
+  const refreshPengaturanJamFromSupabase = async () => {
+    if (!supabaseConfig.url || !supabaseConfig.anonKey || !activeSessionEmail || isSimulatedOffline || !navigator.onLine) return;
+    const hasPendingSettings = readPendingMutations().some((m) => m.type === 'pengaturan_jam_upsert');
+    if (hasPendingSettings) return;
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (!supabase) return;
+    try {
+      const { data, error } = await supabase
+        .from('pengaturan_jam')
+        .select('*')
+        .eq('id', 'default_config')
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return;
+      setPengaturanJam((prev) => ({
+        ...prev,
+        jam_buka_pos: String(data.jam_buka_pos ?? prev.jam_buka_pos).slice(0, 5),
+        batas_tepat_waktu: String(data.batas_tepat_waktu ?? prev.batas_tepat_waktu).slice(0, 5),
+        batas_jam_masuk: String(data.batas_jam_masuk ?? prev.batas_jam_masuk).slice(0, 5),
+        batas_jam_pulang: String(data.batas_jam_pulang ?? prev.batas_jam_pulang).slice(0, 5),
+        batas_jam_pulang_jumat: String(data.batas_jam_pulang_jumat ?? prev.batas_jam_pulang_jumat).slice(0, 5),
+        hari_aktif_sekolah: Array.isArray(data.hari_aktif_sekolah) ? data.hari_aktif_sekolah : prev.hari_aktif_sekolah,
+        toleransi_duplikasi_menit: Number(data.toleransi_duplikasi_menit ?? prev.toleransi_duplikasi_menit),
+      }));
+    } catch (err) {
+      console.warn('Gagal memperbarui pengaturan jam dari Supabase:', err);
+    }
+  };
+
   // Non-destructive guard. Background sync MUST NOT delete local attendance merely
   // because a cached student/NISN mapping is temporarily unavailable. Legacy orphan
   // data is handled by the sync service without deleting valid local attendance.
@@ -978,31 +1011,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const enqueueMutation = (mutation: PendingMutation) => {
     const current = readPendingMutations();
-    const key = mutation.type === 'siswa_upsert' || mutation.type === 'kelas_upsert'
+    const key = mutation.type === 'siswa_upsert' || mutation.type === 'kelas_upsert' || mutation.type === 'pengaturan_jam_upsert'
       ? mutation.row.id
       : mutation.type === 'absensi_reset_today'
         ? mutation.tanggal
         : mutation.id;
     const sameEntity = (m: PendingMutation) => {
-      const mk = m.type === 'siswa_upsert' || m.type === 'kelas_upsert'
+      const mk = m.type === 'siswa_upsert' || m.type === 'kelas_upsert' || m.type === 'pengaturan_jam_upsert'
         ? m.row.id
         : m.type === 'absensi_reset_today'
           ? m.tanggal
           : m.id;
-      const family = mutation.type.startsWith('siswa_') ? 'siswa_' : mutation.type.startsWith('kelas_') ? 'kelas_' : 'absensi_';
+      const family = mutation.type.startsWith('siswa_') ? 'siswa_'
+        : mutation.type.startsWith('kelas_') ? 'kelas_'
+        : mutation.type.startsWith('pengaturan_jam_') ? 'pengaturan_jam_'
+        : 'absensi_';
       return m.type.startsWith(family) && mk === key;
     };
     writePendingMutations([...current.filter((m) => !sameEntity(m)), mutation]);
   };
 
   const removeMutation = (mutation: PendingMutation) => {
-    const key = mutation.type === 'siswa_upsert' || mutation.type === 'kelas_upsert'
+    const key = mutation.type === 'siswa_upsert' || mutation.type === 'kelas_upsert' || mutation.type === 'pengaturan_jam_upsert'
       ? mutation.row.id
       : mutation.type === 'absensi_reset_today'
         ? mutation.tanggal
         : mutation.id;
     const next = readPendingMutations().filter((m) => {
-      const mk = m.type === 'siswa_upsert' || m.type === 'kelas_upsert'
+      const mk = m.type === 'siswa_upsert' || m.type === 'kelas_upsert' || m.type === 'pengaturan_jam_upsert'
         ? m.row.id
         : m.type === 'absensi_reset_today'
           ? m.tanggal
@@ -1046,6 +1082,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setAbsensiList((prev) => prev.map((x) => x.siswa_id === mutation.row.id ? { ...x, siswa_id: canonicalId } : x));
             setLogNotifikasiList((prev) => prev.map((x) => x.siswa_id === mutation.row.id ? { ...x, siswa_id: canonicalId } : x));
           }
+        } else if (mutation.type === 'pengaturan_jam_upsert') {
+          const row = mutation.row;
+          const { error } = await supabase.from('pengaturan_jam').upsert({
+            id: 'default_config',
+            jam_buka_pos: row.jam_buka_pos,
+            batas_tepat_waktu: row.batas_tepat_waktu,
+            batas_jam_masuk: row.batas_jam_masuk,
+            batas_jam_pulang: row.batas_jam_pulang,
+            batas_jam_pulang_jumat: row.batas_jam_pulang_jumat,
+            hari_aktif_sekolah: row.hari_aktif_sekolah,
+            toleransi_duplikasi_menit: row.toleransi_duplikasi_menit,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'id' });
+          if (error) throw error;
+
+          // Read-back verification prevents a false-success notification.
+          const { data: verify, error: verifyError } = await supabase
+            .from('pengaturan_jam').select('*').eq('id', 'default_config').maybeSingle();
+          if (verifyError) throw verifyError;
+          if (!verify) throw new Error('Pengaturan jam tidak ditemukan setelah disimpan ke database.');
         } else if (mutation.type === 'siswa_delete') {
           const { error } = await supabase.from('siswa').delete().eq('id', mutation.id);
           if (error) throw error;
@@ -1364,6 +1420,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       autoSyncRetryRef.current = 0;
       setSyncBanner({ type: 'online', message: 'Koneksi pulih. Sinkronisasi otomatis sedang dijalankan...' });
       scheduleAutoSync('network-online');
+      void refreshPengaturanJamFromSupabase();
     };
     const handleOffline = () => {
       setIsOnline(false);
@@ -1377,6 +1434,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (document.visibilityState === 'visible' && navigator.onLine && !isSimulatedOffline) {
         autoSyncRetryRef.current = 0;
         scheduleAutoSync('tab-active');
+        void refreshPengaturanJamFromSupabase();
       }
     };
     window.addEventListener('online', handleOnline);
@@ -1823,21 +1881,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updatePengaturanJam = (data: Partial<PengaturanJam>) => {
     const next = { ...pengaturanJam, ...data };
     setPengaturanJam(next);
-    const supabase = getSupabaseClient(supabaseConfig);
-    if (!supabase || !activeSessionEmail) return;
-    supabase.from('pengaturan_jam').upsert({
-      id: 'default_config',
-      jam_buka_pos: next.jam_buka_pos,
-      batas_tepat_waktu: next.batas_tepat_waktu,
-      batas_jam_masuk: next.batas_jam_masuk,
-      batas_jam_pulang: next.batas_jam_pulang,
-      batas_jam_pulang_jumat: next.batas_jam_pulang_jumat,
-      hari_aktif_sekolah: next.hari_aktif_sekolah,
-      toleransi_duplikasi_menit: next.toleransi_duplikasi_menit,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'id' }).then(({ error }) => {
-      if (error) setSyncBanner({ type: 'sync_error', message: `Gagal menyimpan pengaturan ke Supabase: ${error.message}` });
-    });
+    // Settings follow the same durable queue as students/classes/attendance:
+    // local changes survive offline mode and are automatically retried online.
+    enqueueMutation({ type: 'pengaturan_jam_upsert', row: next });
+    scheduleAutoSync('pengaturan-jam-change');
   };
 
   const updateWAConfig = (data: Partial<WAGatewayConfig>) => {
