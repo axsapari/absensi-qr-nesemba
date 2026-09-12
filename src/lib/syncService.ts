@@ -230,12 +230,12 @@ export async function processSyncToDatabase(
   const tanggalValues = Array.from(new Set(
     Array.from(attendanceLookupKeys).map((key) => key.split('|')[1]).filter(Boolean)
   ));
-  const remoteAbsensiByBusinessKey = new Map<string, { id: string; siswa_id: string; tanggal: string; jenis: string }>();
+  const remoteAbsensiByBusinessKey = new Map<string, { id: string; siswa_id: string; tanggal: string; jenis: string; waktu_scan?: string; timestamp?: number; status?: string; catatan?: string | null }>();
 
   if (canonicalSiswaIds.length > 0 && tanggalValues.length > 0) {
     const { data: remoteRows, error: remoteError } = await supabase
       .from('absensi')
-      .select('id,siswa_id,tanggal,jenis')
+      .select('id,siswa_id,tanggal,jenis,waktu_scan,timestamp,status,catatan')
       .in('siswa_id', canonicalSiswaIds)
       .in('tanggal', tanggalValues)
       .in('jenis', ['masuk', 'pulang']);
@@ -268,15 +268,28 @@ export async function processSyncToDatabase(
   }
 
   // 1) Attendance first because log_notifikasi_wa.absensi_id is an FK.
+  // CONCURRENCY RULE: the UNIQUE(siswa_id,tanggal,jenis) constraint is the
+  // authoritative gate. Never use UPSERT here because a second kiosk scanning
+  // the same student at nearly the same time could overwrite the first scan.
+  // We INSERT only rows that do not already exist. If another kiosk wins the
+  // race, the unique violation is resolved as a duplicate instead of replacing
+  // the winner.
   if (attendanceToSync.length > 0) {
-    const recordsToInsert = attendanceToSync.map((item) => {
+    const existingAtStart = new Set<string>();
+    for (const item of attendanceToSync) {
       const key = `${canonicalStudentId(item.siswa_id)}|${item.tanggal}|${item.jenis}`;
-      const remote = remoteAbsensiByBusinessKey.get(key);
-      return {
-        // Reuse the existing remote ID when the business key already exists.
-        // Otherwise keep the local generated attendance ID. The student ID is
-        // always the canonical Supabase FK ID.
-        id: remote?.id || item.id,
+      if (remoteAbsensiByBusinessKey.has(key)) existingAtStart.add(key);
+    }
+
+    const candidateItems = attendanceToSync.filter((item) => {
+      const key = `${canonicalStudentId(item.siswa_id)}|${item.tanggal}|${item.jenis}`;
+      return !existingAtStart.has(key);
+    });
+
+    let insertError: any = null;
+    if (candidateItems.length > 0) {
+      const recordsToInsert = candidateItems.map((item) => ({
+        id: item.id,
         siswa_id: canonicalStudentId(item.siswa_id),
         tanggal: item.tanggal,
         waktu_scan: item.waktu_scan,
@@ -284,14 +297,46 @@ export async function processSyncToDatabase(
         jenis: item.jenis,
         status: item.status,
         catatan: item.catatan || null,
-      };
-    });
+      }));
+      const { error } = await supabase.from('absensi').insert(recordsToInsert);
+      insertError = error;
+    }
 
-    const { error } = await supabase.from('absensi').upsert(recordsToInsert, {
-      onConflict: 'siswa_id,tanggal,jenis',
-    });
+    // A concurrent kiosk may have inserted one of the same business keys after
+    // our initial SELECT. A 23505 is therefore not a generic sync failure: refresh
+    // the affected keys and resolve them as duplicates without overwriting data.
+    if (insertError) {
+      const duplicateRace = String(insertError.code || '') === '23505' || /duplicate|unique/i.test(String(insertError.message || ''));
+      if (!duplicateRace) {
+        return {
+          updatedAbsensiList,
+          updatedLogNotifikasiList,
+          result: {
+            success: false,
+            syncedCount: 0,
+            syncedLogCount: 0,
+            message: `Sinkronisasi absensi gagal (${attendanceToSync.length} data): ${insertError.message}`,
+            timestamp: nowStr,
+            error: insertError.message,
+          },
+        };
+      }
+    }
 
-    if (error) {
+    // Refresh all affected remote rows after INSERT. This is required both for
+    // normal inserts and for the race case, so the local state gets the canonical
+    // remote ID/time and never invents a second attendance row.
+    const affectedStudentIds = Array.from(new Set(
+      attendanceToSync.map((item) => canonicalStudentId(item.siswa_id))
+    ));
+    const affectedDates = Array.from(new Set(attendanceToSync.map((item) => item.tanggal)));
+    const { data: refreshedRows, error: refreshError } = await supabase
+      .from('absensi')
+      .select('id,siswa_id,tanggal,jenis,waktu_scan,timestamp,status,catatan')
+      .in('siswa_id', affectedStudentIds)
+      .in('tanggal', affectedDates)
+      .in('jenis', ['masuk', 'pulang']);
+    if (refreshError) {
       return {
         updatedAbsensiList,
         updatedLogNotifikasiList,
@@ -299,40 +344,80 @@ export async function processSyncToDatabase(
           success: false,
           syncedCount: 0,
           syncedLogCount: 0,
-          message: `Sinkronisasi absensi gagal (${attendanceToSync.length} data): ${error.message}`,
+          message: `Gagal memverifikasi absensi setelah sinkronisasi: ${refreshError.message}`,
           timestamp: nowStr,
-          error: error.message,
+          error: refreshError.message,
         },
       };
     }
+    for (const row of refreshedRows ?? []) {
+      remoteAbsensiByBusinessKey.set(`${row.siswa_id}|${row.tanggal}|${row.jenis}`, row);
+    }
 
-    // Every pending local row for a business key is now represented by the one
-    // database row allowed by the UNIQUE constraint. Mark all those local rows
-    // synced and remap their IDs in local state where needed.
     const nowIso = new Date().toISOString();
-    const syncedBusinessKeys = new Set(
-      attendanceToSync.map((item) => `${canonicalStudentId(item.siswa_id)}|${item.tanggal}|${item.jenis}`)
-    );
-    updatedAbsensiList = absensiList.map((item) => {
-      const key = `${canonicalStudentId(item.siswa_id)}|${item.tanggal}|${item.jenis}`;
-      if (!syncedBusinessKeys.has(`${canonicalStudentId(item.siswa_id)}|${item.tanggal}|${item.jenis}`)) return item;
+    const duplicateLocalIds = new Set<string>();
+    const successfulBusinessKeys = new Set<string>();
+    const sameIdBusinessKeys = new Set<string>();
+
+    for (const item of attendanceToSync) {
+      const canonicalId = canonicalStudentId(item.siswa_id);
+      const key = `${canonicalId}|${item.tanggal}|${item.jenis}`;
       const remote = remoteAbsensiByBusinessKey.get(key);
+      if (!remote) continue;
+      successfulBusinessKeys.add(key);
+      if (String(remote.id) === String(item.id)) {
+        sameIdBusinessKeys.add(key);
+      } else if (existingAtStart.has(key) || insertError) {
+        duplicateLocalIds.add(String(item.id));
+      }
+    }
+
+    // A collision means another kiosk already owns this attendance slot. Remove
+    // only the local duplicate and its pending WA log; do not send a second
+    // notification for the same attendance.
+    if (duplicateLocalIds.size > 0) {
+      updatedAbsensiList = updatedAbsensiList.filter((item) => !duplicateLocalIds.has(String(item.id)));
+      updatedLogNotifikasiList = updatedLogNotifikasiList.filter((log) => !duplicateLocalIds.has(String(log.absensi_id)));
+    }
+
+    updatedAbsensiList = updatedAbsensiList.map((item) => {
+      const key = `${canonicalStudentId(item.siswa_id)}|${item.tanggal}|${item.jenis}`;
+      if (!successfulBusinessKeys.has(key)) return item;
+      const remote = remoteAbsensiByBusinessKey.get(key);
+      if (!remote) return item;
       return {
         ...item,
-        id: remote?.id || item.id,
+        id: remote.id,
         siswa_id: canonicalStudentId(item.siswa_id),
+        tanggal: remote.tanggal,
+        waktu_scan: remote.waktu_scan || item.waktu_scan,
+        timestamp: Number(remote.timestamp ?? item.timestamp),
+        jenis: remote.jenis as Absensi['jenis'],
+        status: (remote.status || item.status) as Absensi['status'],
+        catatan: remote.catatan ?? item.catatan,
         synced: true,
         synced_at: nowIso,
       };
     });
-    syncedCount = attendanceToSync.length;
 
-    // Repair every local WA log that points at a local/generated attendance ID.
-    updatedLogNotifikasiList = updatedLogNotifikasiList.map((log) => ({
-      ...log,
-      absensi_id: absensiIdRemap.get(log.absensi_id) || log.absensi_id,
-      siswa_id: canonicalStudentId(log.siswa_id),
-    }));
+    // Remap logs only for attendance rows that actually belong to this local
+    // device's successful insert. Collision logs were removed above.
+    const remoteIdByKey = new Map<string, string>();
+    for (const key of sameIdBusinessKeys) {
+      const remote = remoteAbsensiByBusinessKey.get(key);
+      if (remote) remoteIdByKey.set(key, String(remote.id));
+    }
+    updatedLogNotifikasiList = updatedLogNotifikasiList.map((log) => {
+      const localAttendance = absensiList.find((a) => String(a.id) === String(log.absensi_id));
+      if (!localAttendance) return log;
+      const key = `${canonicalStudentId(localAttendance.siswa_id)}|${localAttendance.tanggal}|${localAttendance.jenis}`;
+      return {
+        ...log,
+        absensi_id: remoteIdByKey.get(key) || absensiIdRemap.get(log.absensi_id) || log.absensi_id,
+        siswa_id: canonicalStudentId(log.siswa_id),
+      };
+    });
+    syncedCount = attendanceToSync.length;
   }
 
   // Recalculate logs after FK repair, so logs belonging to older local IDs are

@@ -16,6 +16,7 @@ import {
   ProfilSekolah,
   HariKhusus,
   HariInfo,
+  DataAuditReport,
 } from '../types';
 import {
   INITIAL_KELAS,
@@ -39,6 +40,7 @@ import { soundManager } from '../lib/sound';
 import { DEFAULT_WA_CONFIG, sendWhatsAppNotification } from '../lib/whatsapp';
 import { processSyncToDatabase } from '../lib/syncService';
 import { getSupabaseClient, resetSupabaseClient } from '../lib/supabase';
+import { runDataAudit } from '../lib/dataAudit';
 
 interface RecentScanItem {
   absensi: Absensi;
@@ -96,6 +98,7 @@ interface AppContextType {
   updateWAConfig: (config: Partial<WAGatewayConfig>) => void;
   updateSupabaseConfig: (config: Partial<SupabaseConfig>) => void;
   syncMasterData: () => Promise<{ success: boolean; message: string; kelas: number; siswa: number }>;
+  auditDataIntegrity: () => Promise<DataAuditReport>;
 
   // Attendance Actions
   deleteAbsensi: (id: string) => void;
@@ -1502,7 +1505,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [absensiList, siswaList, kelasList]);
 
   // CORE LOGIC: Process NISN Scan
-  const processScanNisn = async (rawCode: string): Promise<ScanResult> => {
+  // A context-level queue protects the data path even if two scanners/components
+  // call processScanNisn at almost the same moment. ScanKiosk has its own UI queue,
+  // but this second guard is important because the database is shared by many posts.
+  const scanQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const processScanNisnCore = async (rawCode: string): Promise<ScanResult> => {
     const cleanCode = rawCode.trim();
     if (!cleanCode) {
       soundManager.playError();
@@ -1789,8 +1796,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return successResult;
   };
 
+  const processScanNisn = (rawCode: string): Promise<ScanResult> => {
+    const run = scanQueueRef.current
+      .catch(() => undefined)
+      .then(() => processScanNisnCore(rawCode));
+    scanQueueRef.current = run.catch(() => undefined);
+    return run;
+  };
+
   const clearLastScanResult = () => {
     setLastScanResult(null);
+  };
+
+  const auditDataIntegrity = async (): Promise<DataAuditReport> => {
+    return runDataAudit(
+      { siswa: siswaList, kelas: kelasList, absensi: absensiList, logs: logNotifikasiList },
+      supabaseConfig,
+      readPendingMutations().length,
+    );
   };
 
   // CRUD Siswa/Kelas menggunakan durable mutation queue. Perubahan lokal selalu
@@ -2471,6 +2494,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateWAConfig,
         updateSupabaseConfig,
         syncMasterData,
+        auditDataIntegrity,
         deleteAbsensi,
         resetTodayAttendance,
         reloadInitialData,

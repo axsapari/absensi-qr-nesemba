@@ -132,6 +132,35 @@ export interface LocalSnapshot {
   payload: AppBackupPayload;
 }
 
+
+export interface DataAuditReport {
+  timestamp: string;
+  online: boolean;
+  remote: {
+    siswa: number;
+    kelas: number;
+    absensi: number;
+    logNotifikasiWA: number;
+    orphanAbsensi: number;
+    orphanLogWA: number;
+    duplicateAttendanceKeys: number;
+  };
+  local: {
+    siswa: number;
+    kelas: number;
+    absensi: number;
+    logNotifikasiWA: number;
+    pendingMutations: number;
+    orphanAbsensi: number;
+    orphanLogWA: number;
+    duplicateAttendanceKeys: number;
+    todayLocalOnly: number;
+    todayRemoteOnly: number;
+  };
+  healthy: boolean;
+  issues: string[];
+}
+
 export interface SyncStatusInfo {
   isOnline: boolean;
   isSimulatedOffline: boolean;

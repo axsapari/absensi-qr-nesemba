@@ -28,6 +28,8 @@ import {
   UserPlus,
   Calendar,
   ShieldAlert,
+  Database,
+  AlertTriangle,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -46,6 +48,7 @@ export const AdminPanel: React.FC = () => {
     updatePengaturanJam,
     resetTodayAttendance,
     reloadInitialData,
+    auditDataIntegrity,
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<'logo' | 'profil' | 'users' | 'jam' | 'maintenance'>('logo');
@@ -55,6 +58,8 @@ export const AdminPanel: React.FC = () => {
   const [schoolForm, setSchoolForm] = useState(profilSekolah);
   const [jamForm, setJamForm] = useState(pengaturanJam);
   const [savedSuccess, setSavedSuccess] = useState<string | null>(null);
+  const [auditReport, setAuditReport] = useState<any>(null);
+  const [auditRunning, setAuditRunning] = useState(false);
 
   // New User Form State (Super Admin Only)
   const [showAddUserModal, setShowAddUserModal] = useState(false);
@@ -139,6 +144,16 @@ export const AdminPanel: React.FC = () => {
       setCustomCityLogo(null);
       setUploadFeedback('Logo daerah dikembalikan ke lambang vektor resmi Kota Banjar.');
       setTimeout(() => setUploadFeedback(null), 3000);
+    }
+  };
+
+  const handleRunAudit = async () => {
+    setAuditRunning(true);
+    try {
+      const report = await auditDataIntegrity();
+      setAuditReport(report);
+    } finally {
+      setAuditRunning(false);
     }
   };
 
@@ -558,6 +573,45 @@ export const AdminPanel: React.FC = () => {
             <p className="text-xs text-slate-500 mt-1">
               Data ini akan dicantumkan pada Kop Laporan, Surat Rekap Kehadiran, dan Kartu Pelajar Siswa.
             </p>
+          </div>
+
+          <div className="p-5 bg-slate-50 border border-slate-200 rounded-2xl space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Database className="w-4 h-4 text-blue-700" />
+                  Audit Integritas Data
+                </h3>
+                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                  Memeriksa siswa, kelas, absensi, log WhatsApp, data yatim, duplikasi, antrean sinkronisasi, dan perbedaan absensi hari ini. Audit ini hanya membaca data dan tidak menghapus apa pun.
+                </p>
+              </div>
+              <button type="button" onClick={handleRunAudit} disabled={auditRunning} className="shrink-0 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-bold rounded-xl flex items-center gap-2">
+                <RefreshCw className={`w-4 h-4 ${auditRunning ? 'animate-spin' : ''}`} />
+                {auditRunning ? 'Memeriksa...' : 'Jalankan Audit'}
+              </button>
+            </div>
+
+            {auditReport && (
+              <div className="border-t border-slate-200 pt-4 space-y-3">
+                <div className={`rounded-xl p-3 text-xs font-bold flex items-center gap-2 ${auditReport.healthy ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}>
+                  {auditReport.healthy ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                  {auditReport.healthy ? 'DATABASE SEHAT — tidak ditemukan masalah.' : `${auditReport.issues.length} temuan/peringatan ditemukan.`}
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                  <div className="bg-white border rounded-xl p-3"><div className="text-slate-500">Siswa</div><strong>{auditReport.remote.siswa}</strong></div>
+                  <div className="bg-white border rounded-xl p-3"><div className="text-slate-500">Kelas</div><strong>{auditReport.remote.kelas}</strong></div>
+                  <div className="bg-white border rounded-xl p-3"><div className="text-slate-500">Absensi</div><strong>{auditReport.remote.absensi}</strong></div>
+                  <div className="bg-white border rounded-xl p-3"><div className="text-slate-500">Log WA</div><strong>{auditReport.remote.logNotifikasiWA}</strong></div>
+                </div>
+                {auditReport.issues.length > 0 && !(auditReport.healthy && auditReport.issues.length === 1) && (
+                  <ul className="space-y-1 text-xs text-slate-700">
+                    {auditReport.issues.map((issue: string, i: number) => <li key={i} className="flex gap-2"><span>•</span><span>{issue}</span></li>)}
+                  </ul>
+                )}
+                <p className="text-[10px] text-slate-400">Audit terakhir: {new Date(auditReport.timestamp).toLocaleString('id-ID')}</p>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -1150,6 +1204,45 @@ export const AdminPanel: React.FC = () => {
             <p className="text-xs text-slate-500 mt-1">
               Tindakan administratif untuk keperluan pemeliharaan dan pengujian alur presensi.
             </p>
+          </div>
+
+          <div className="p-5 bg-slate-50 border border-slate-200 rounded-2xl space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Database className="w-4 h-4 text-blue-700" />
+                  Audit Integritas Data
+                </h3>
+                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                  Memeriksa siswa, kelas, absensi, log WhatsApp, data yatim, duplikasi, antrean sinkronisasi, dan perbedaan absensi hari ini. Audit ini hanya membaca data dan tidak menghapus apa pun.
+                </p>
+              </div>
+              <button type="button" onClick={handleRunAudit} disabled={auditRunning} className="shrink-0 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-bold rounded-xl flex items-center gap-2">
+                <RefreshCw className={`w-4 h-4 ${auditRunning ? 'animate-spin' : ''}`} />
+                {auditRunning ? 'Memeriksa...' : 'Jalankan Audit'}
+              </button>
+            </div>
+
+            {auditReport && (
+              <div className="border-t border-slate-200 pt-4 space-y-3">
+                <div className={`rounded-xl p-3 text-xs font-bold flex items-center gap-2 ${auditReport.healthy ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}>
+                  {auditReport.healthy ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                  {auditReport.healthy ? 'DATABASE SEHAT — tidak ditemukan masalah.' : `${auditReport.issues.length} temuan/peringatan ditemukan.`}
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                  <div className="bg-white border rounded-xl p-3"><div className="text-slate-500">Siswa</div><strong>{auditReport.remote.siswa}</strong></div>
+                  <div className="bg-white border rounded-xl p-3"><div className="text-slate-500">Kelas</div><strong>{auditReport.remote.kelas}</strong></div>
+                  <div className="bg-white border rounded-xl p-3"><div className="text-slate-500">Absensi</div><strong>{auditReport.remote.absensi}</strong></div>
+                  <div className="bg-white border rounded-xl p-3"><div className="text-slate-500">Log WA</div><strong>{auditReport.remote.logNotifikasiWA}</strong></div>
+                </div>
+                {auditReport.issues.length > 0 && !(auditReport.healthy && auditReport.issues.length === 1) && (
+                  <ul className="space-y-1 text-xs text-slate-700">
+                    {auditReport.issues.map((issue: string, i: number) => <li key={i} className="flex gap-2"><span>•</span><span>{issue}</span></li>)}
+                  </ul>
+                )}
+                <p className="text-[10px] text-slate-400">Audit terakhir: {new Date(auditReport.timestamp).toLocaleString('id-ID')}</p>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
