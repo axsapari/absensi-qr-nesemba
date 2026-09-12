@@ -176,11 +176,10 @@ export async function processSyncToDatabase(
     return (nisn && remoteSiswaByNisn.get(nisn)) || String(localId);
   };
 
-  // Older versions could leave attendance rows that point to student IDs which
-  // no longer exist locally AND cannot be mapped through the historical alias.
-  // Such rows are unrecoverable: there is no safe way to know which Supabase
-  // student they belonged to. Do not block the entire sync forever. Remove only
-  // these orphan LOCAL attendance/log records; Supabase data is never deleted.
+  // IMPORTANT: unresolved local student IDs are NEVER deleted automatically.
+  // A background sync must be non-destructive: a temporary NISN/ID mismatch,
+  // stale master cache, or formatting difference must not make attendance
+  // disappear from the kiosk. Keep such rows local and report them as pending.
   const unresolvedStudentIds = Array.from(new Set(
     attendanceToSync
       .filter((item) => !remoteSiswaByNisn.has(localSiswaById.get(String(item.siswa_id)) || ''))
@@ -189,47 +188,22 @@ export async function processSyncToDatabase(
 
   if (unresolvedStudentIds.length > 0) {
     const unresolvedSet = new Set(unresolvedStudentIds);
-    const orphanAttendanceIds = new Set(
-      absensiList
-        .filter((item) => unresolvedSet.has(String(item.siswa_id)))
-        .map((item) => String(item.id))
-    );
-
-    updatedAbsensiList = absensiList.filter(
+    const validAttendanceToSync = attendanceToSync.filter(
       (item) => !unresolvedSet.has(String(item.siswa_id))
     );
-    updatedLogNotifikasiList = logNotifikasiList.filter(
-      (log) =>
-        !orphanAttendanceIds.has(String(log.absensi_id)) &&
-        !unresolvedSet.has(String(log.siswa_id))
-    );
+    attendanceToSync.splice(0, attendanceToSync.length, ...validAttendanceToSync);
 
-    syncedCount = 0;
-    cleanedOrphanCount = orphanAttendanceIds.size;
+    // Do not discard unresolved attendance/log records. They remain in localStorage
+    // and can be retried after the master student mapping is corrected.
+    pendingLogs = pendingLogs.filter((log) => {
+      const localAttendance = absensiList.find((a) => String(a.id) === String(log.absensi_id));
+      if (!localAttendance) return true;
+      return !unresolvedSet.has(String(localAttendance.siswa_id));
+    });
 
-    // Persist the cleanup result in local state returned to AppContext. The
-    // caller will write it to localStorage/state. Then continue syncing all
-    // remaining valid attendance rows.
-    attendanceToSync.splice(
-      0,
-      attendanceToSync.length,
-      ...attendanceToSync.filter((item) => !unresolvedSet.has(String(item.siswa_id)))
-    );
-
-    // Recalculate pending logs after removing orphan attendance rows.
-    pendingLogs = updatedLogNotifikasiList.filter(
-      (log) =>
-        log.status_kirim === 'pending' ||
-        log.status_kirim === 'terkirim' ||
-        log.status_kirim === 'gagal' ||
-        log.status_kirim === 'simulasi'
-    );
-
-    // Do not return an error here. The unresolved records are explicitly local
-    // orphan test/legacy records, while valid records should still synchronize.
     console.warn(
-      `Membersihkan ${unresolvedStudentIds.length} siswa/ID lokal orphan dan ` +
-      `${orphanAttendanceIds.size} absensi lokal sebelum sinkronisasi.`
+      `Menunda ${unresolvedStudentIds.length} ID siswa lokal yang belum dapat dipetakan ke Supabase. ` +
+      'Data lokal dipertahankan dan tidak dihapus.'
     );
   }
 
@@ -351,7 +325,7 @@ export async function processSyncToDatabase(
         synced_at: nowIso,
       };
     });
-    syncedCount = pendingAbsensi.length;
+    syncedCount = attendanceToSync.length;
 
     // Repair every local WA log that points at a local/generated attendance ID.
     updatedLogNotifikasiList = updatedLogNotifikasiList.map((log) => ({
@@ -496,10 +470,12 @@ export async function processSyncToDatabase(
       updatedAbsensiList,
       updatedLogNotifikasiList,
       result: {
-        success: true,
+        success: unresolvedStudentIds.length === 0,
         syncedCount: 0,
         syncedLogCount: 0,
-        message: 'Tidak ada data lokal yang menunggu sinkronisasi.',
+        message: unresolvedStudentIds.length > 0
+          ? `Sinkronisasi ditunda: ${unresolvedStudentIds.length} ID siswa belum dapat dipetakan ke Supabase. Data lokal dipertahankan.`
+          : 'Tidak ada data lokal yang menunggu sinkronisasi.',
         timestamp: nowStr,
       },
     };
@@ -509,11 +485,11 @@ export async function processSyncToDatabase(
     updatedAbsensiList,
     updatedLogNotifikasiList,
     result: {
-      success: true,
+      success: unresolvedStudentIds.length === 0,
       syncedCount,
       syncedLogCount,
-      message: cleanedOrphanCount > 0
-        ? `Membersihkan ${cleanedOrphanCount} absensi lokal orphan, lalu menyinkronkan ${syncedCount} presensi dan ${syncedLogCount} log WhatsApp ke database.`
+      message: unresolvedStudentIds.length > 0
+        ? `Sebagian tersinkron. ${syncedCount} presensi dan ${syncedLogCount} log WhatsApp berhasil dikirim; ${unresolvedStudentIds.length} ID siswa belum dapat dipetakan dan tetap disimpan lokal untuk dicoba lagi.`
         : `Berhasil menyinkronkan ${syncedCount} presensi dan ${syncedLogCount} log WhatsApp ke database.`,
       timestamp: nowStr,
     },

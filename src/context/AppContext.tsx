@@ -959,93 +959,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => { cancelled = true; };
   }, [supabaseConfig.url, supabaseConfig.anonKey, activeSessionEmail]);
 
-  // Bersihkan data siswa UJICOBA lokal yang sudah tidak ada di Supabase.
-  // Ini sengaja hanya menghapus data lokal yang NISN-nya tidak ditemukan di master
-  // Supabase. Data di Supabase TIDAK disentuh. Tujuannya membuang siswa percobaan
-  // lama beserta absensi/log lokalnya yang sekarang menjadi orphan FK.
+  // Non-destructive guard. Background sync MUST NOT delete local attendance merely
+  // because a cached student/NISN mapping is temporarily unavailable. Legacy orphan
+  // data is handled by the sync service without deleting valid local attendance.
   const cleanupLocalStudentsMissingInSupabase = async (): Promise<{
     siswaList: Siswa[];
     absensiList: Absensi[];
     logNotifikasiList: LogNotifikasiWA[];
     siswaIdAliases: Record<string, string>;
     removedCount: number;
-  }> => {
-    const supabase = getSupabaseClient(supabaseConfig);
-    if (!supabase) {
-      return { siswaList, absensiList, logNotifikasiList, siswaIdAliases, removedCount: 0 };
-    }
-
-    const { data: remoteRows, error } = await supabase.from('siswa').select('id,nisn');
-    if (error || !remoteRows) {
-      console.warn('Cleanup siswa lokal dilewati karena master Supabase tidak dapat dibaca:', error?.message);
-      return { siswaList, absensiList, logNotifikasiList, siswaIdAliases, removedCount: 0 };
-    }
-
-    const remoteNisns = new Set(
-      remoteRows.map((row: { id: string; nisn: string }) => String(row.nisn ?? '').trim()).filter(Boolean)
-    );
-
-    // Satu peta identitas untuk data lama: ID siswa saat ini + alias ID lama -> NISN.
-    const nisnByStudentId = new Map<string, string>();
-    for (const student of siswaList) {
-      if (student.id && student.nisn) nisnByStudentId.set(String(student.id), String(student.nisn).trim());
-    }
-    for (const [id, nisn] of Object.entries(siswaIdAliases)) {
-      if (id && nisn) nisnByStudentId.set(String(id), String(nisn).trim());
-    }
-
-    // Hanya siswa lokal yang punya NISN dan NISN tersebut benar-benar tidak ada
-    // di master cloud yang dianggap siswa percobaan/orphan.
-    const removableStudentIds = new Set<string>();
-    for (const [id, nisn] of nisnByStudentId.entries()) {
-      if (nisn && !remoteNisns.has(nisn)) removableStudentIds.add(id);
-    }
-
-    const nextSiswaList = siswaList.filter((student) => !removableStudentIds.has(String(student.id)));
-
-    // Buang absensi lokal yang menunjuk ke siswa orphan. Ini penting karena absensi
-    // tersebut pasti gagal FK jika dicoba dikirim ke Supabase.
-    const removedAbsensiIds = new Set<string>();
-    const nextAbsensiList = absensiList.filter((attendance) => {
-      const studentNisn = nisnByStudentId.get(String(attendance.siswa_id));
-      const shouldRemove = !!studentNisn && !remoteNisns.has(studentNisn);
-      if (shouldRemove) removedAbsensiIds.add(String(attendance.id));
-      return !shouldRemove;
-    });
-
-    // Log WA yang menunjuk ke absensi yang baru dibuang juga harus dibuang dari
-    // localStorage agar tidak kembali memicu FK log_notifikasi_wa_absensi_id_fkey.
-    const nextLogNotifikasiList = logNotifikasiList.filter(
-      (log) => !removedAbsensiIds.has(String(log.absensi_id)) && !removableStudentIds.has(String(log.siswa_id))
-    );
-
-    const nextAliases = { ...siswaIdAliases };
-    for (const id of removableStudentIds) delete nextAliases[id];
-
-    if (removableStudentIds.size > 0 || removedAbsensiIds.size > 0 || nextLogNotifikasiList.length !== logNotifikasiList.length) {
-      setSiswaList(nextSiswaList);
-      setAbsensiList(nextAbsensiList);
-      setLogNotifikasiList(nextLogNotifikasiList);
-      setSiswaIdAliases(nextAliases);
-      localStorage.setItem(STORAGE_KEYS.SISWA, JSON.stringify(nextSiswaList));
-      localStorage.setItem(STORAGE_KEYS.ABSENSI, JSON.stringify(nextAbsensiList));
-      localStorage.setItem(STORAGE_KEYS.LOG_WA, JSON.stringify(nextLogNotifikasiList));
-      localStorage.setItem(STORAGE_KEYS.SISWA_ID_ALIASES, JSON.stringify(nextAliases));
-
-      console.info(
-        `Cleanup lokal: ${removableStudentIds.size} siswa, ${removedAbsensiIds.size} absensi, ` +
-        `${logNotifikasiList.length - nextLogNotifikasiList.length} log WA dihapus karena NISN tidak ada di Supabase.`
-      );
-    }
-
-    return {
-      siswaList: nextSiswaList,
-      absensiList: nextAbsensiList,
-      logNotifikasiList: nextLogNotifikasiList,
-      siswaIdAliases: nextAliases,
-      removedCount: removableStudentIds.size,
-    };
-  };
+  }> => ({
+    siswaList,
+    absensiList,
+    logNotifikasiList,
+    siswaIdAliases,
+    removedCount: 0,
+  });
 
   const enqueueMutation = (mutation: PendingMutation) => {
     const current = readPendingMutations();
@@ -1186,6 +1115,78 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: failed === 0, processed, failed };
   };
 
+  // Reconcile today's attendance from Supabase without deleting local history.
+  // This is a safety net for tab re-activation/background sync: cloud data can
+  // restore a local cache that was stale, while pending local rows remain intact.
+  const reconcileTodayAttendanceFromSupabase = async (baseList: Absensi[]): Promise<Absensi[]> => {
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (!supabase || !activeSessionEmail || isSimulatedOffline || !navigator.onLine) return baseList;
+
+    const today = getTodayDateString();
+    const [{ data: remoteRows, error: attendanceError }, { data: remoteStudents, error: studentError }] = await Promise.all([
+      supabase.from('absensi').select('id,siswa_id,tanggal,waktu_scan,timestamp,jenis,status,catatan').eq('tanggal', today),
+      supabase.from('siswa').select('id,nisn'),
+    ]);
+    if (attendanceError) throw new Error(`Gagal membaca absensi hari ini dari Supabase: ${attendanceError.message}`);
+    if (studentError) throw new Error(`Gagal membaca master siswa untuk rekonsiliasi: ${studentError.message}`);
+
+    const remoteNisnById = new Map<string, string>();
+    for (const row of remoteStudents ?? []) {
+      remoteNisnById.set(String(row.id), String(row.nisn ?? '').trim());
+    }
+
+    const localNisnById = new Map<string, string>();
+    for (const student of siswaList) {
+      localNisnById.set(String(student.id), String(student.nisn ?? '').trim());
+    }
+    for (const [id, nisn] of Object.entries(siswaIdAliases)) {
+      if (!localNisnById.has(String(id))) localNisnById.set(String(id), String(nisn ?? '').trim());
+    }
+
+    const businessKey = (studentId: string, tanggal: string, jenis: Absensi['jenis']) => {
+      const nisn = remoteNisnById.get(String(studentId)) || localNisnById.get(String(studentId));
+      return `${nisn || String(studentId)}|${tanggal}|${jenis}`;
+    };
+
+    const remoteByKey = new Map<string, Absensi>();
+    for (const row of remoteRows ?? []) {
+      const item: Absensi = {
+        id: String(row.id),
+        siswa_id: String(row.siswa_id),
+        tanggal: String(row.tanggal),
+        waktu_scan: String(row.waktu_scan ?? ''),
+        timestamp: Number(row.timestamp ?? 0),
+        jenis: row.jenis as Absensi['jenis'],
+        status: row.status as Absensi['status'],
+        catatan: row.catatan ?? undefined,
+        synced: true,
+        synced_at: new Date().toISOString(),
+      };
+      remoteByKey.set(businessKey(item.siswa_id, item.tanggal, item.jenis), item);
+    }
+
+    // Keep every non-today historical local record. For today, prefer the remote
+    // canonical row when it exists, but preserve unsynced local rows so a temporary
+    // network/master mismatch cannot make a fresh scan disappear.
+    const todayLocal = baseList.filter((a) => a.tanggal === today);
+    const historical = baseList.filter((a) => a.tanggal !== today);
+    const localByKey = new Map<string, Absensi>();
+    for (const item of todayLocal) {
+      localByKey.set(businessKey(item.siswa_id, item.tanggal, item.jenis), item);
+    }
+
+    const mergedToday = new Map<string, Absensi>();
+    for (const [key, remote] of remoteByKey) {
+      const local = localByKey.get(key);
+      mergedToday.set(key, local && !local.synced ? local : remote);
+    }
+    for (const [key, local] of localByKey) {
+      if (!mergedToday.has(key)) mergedToday.set(key, local);
+    }
+
+    return [...historical, ...Array.from(mergedToday.values())].sort((a, b) => a.timestamp - b.timestamp);
+  };
+
   // Synchronization function
   const syncData = async (isAuto = false, attendanceOverride?: Absensi[], logOverride?: LogNotifikasiWA[]): Promise<{ success: boolean; count: number; message: string }> => {
     if (syncInFlightRef.current) {
@@ -1204,11 +1205,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // Sebelum sinkron, buang siswa ujicoba lokal yang NISN-nya sudah tidak ada
       // di master Supabase. Ini menghilangkan sumber utama error absensi_siswa_id_fkey.
-      const cleaned = await cleanupLocalStudentsMissingInSupabase();
-      const sourceAbsensi = attendanceOverride ?? cleaned.absensiList;
-      const sourceLogs = logOverride ?? cleaned.logNotifikasiList;
-      const sourceStudents = cleaned.siswaList;
-      const sourceAliases = cleaned.siswaIdAliases;
+      // Background sync is non-destructive: never prune local attendance merely
+      // because a cached student mapping cannot be resolved at this moment.
+      const sourceAbsensi = attendanceOverride ?? absensiList;
+      const sourceLogs = logOverride ?? logNotifikasiList;
+      const sourceStudents = siswaList;
+      const sourceAliases = siswaIdAliases;
 
       const { updatedAbsensiList, updatedLogNotifikasiList, result } = await processSyncToDatabase(
         sourceAbsensi,
@@ -1219,7 +1221,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
 
       if (result.success && mutationResult.success) {
-        setAbsensiList(updatedAbsensiList);
+        let reconciledAbsensiList = updatedAbsensiList;
+        try {
+          reconciledAbsensiList = await reconcileTodayAttendanceFromSupabase(updatedAbsensiList);
+        } catch (reconcileError) {
+          // Reconciliation is a safety/read operation. Never discard local data if
+          // the read fails; keep the successfully synced local state instead.
+          console.warn('Rekonsiliasi absensi hari ini dilewati:', reconcileError);
+        }
+        setAbsensiList(reconciledAbsensiList);
         setLogNotifikasiList(updatedLogNotifikasiList);
         setLastSyncTime(result.timestamp);
         localStorage.setItem(STORAGE_KEYS.LAST_SYNC, result.timestamp);
