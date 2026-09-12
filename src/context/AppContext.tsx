@@ -1012,19 +1012,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     writePendingMutations(next);
   };
 
-  const syncPendingMutations = async (): Promise<{ success: boolean; processed: number; failed: number }> => {
+  const syncPendingMutations = async (): Promise<{ success: boolean; processed: number; failed: number; deletedAttendanceIds: string[]; resetDates: string[] }> => {
     const supabase = getSupabaseClient(supabaseConfig);
     if (!supabase || isSimulatedOffline || !navigator.onLine) {
-      return { success: false, processed: 0, failed: readPendingMutations().length };
+      return { success: false, processed: 0, failed: readPendingMutations().length, deletedAttendanceIds: [], resetDates: [] };
     }
     const { data: sessionData } = await supabase.auth.getSession();
-    if (!sessionData.session) return { success: false, processed: 0, failed: readPendingMutations().length };
+    if (!sessionData.session) return { success: false, processed: 0, failed: readPendingMutations().length, deletedAttendanceIds: [], resetDates: [] };
 
     const queue = readPendingMutations();
-    if (!queue.length) return { success: true, processed: 0, failed: 0 };
+    if (!queue.length) return { success: true, processed: 0, failed: 0, deletedAttendanceIds: [], resetDates: [] };
 
     let processed = 0;
     let failed = 0;
+    const deletedAttendanceIds: string[] = [];
+    const resetDates: string[] = [];
     for (const mutation of queue) {
       try {
         if (mutation.type === 'siswa_upsert') {
@@ -1066,9 +1068,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (remoteIds.length > 0) {
             const { error: logError } = await supabase.from('log_notifikasi_wa').delete().in('absensi_id', remoteIds);
             if (logError) throw logError;
-            const { data: deletedRows, error } = await supabase.from('absensi').delete().eq('id', mutation.id).select('id');
+            const { error } = await supabase.from('absensi').delete().eq('id', mutation.id);
             if (error) throw error;
-            if ((deletedRows ?? []).length === 0) throw new Error(`Absensi ${mutation.id} tidak terhapus di database.`);
+            const { data: verifyRows, error: verifyError } = await supabase
+              .from('absensi').select('id').eq('id', mutation.id);
+            if (verifyError) throw verifyError;
+            if ((verifyRows ?? []).length > 0) throw new Error(`Absensi ${mutation.id} masih ada di database setelah perintah hapus.`);
           } else if (mutation.siswa_id && mutation.tanggal && mutation.jenis) {
             const { data: matches, error: matchError } = await supabase
               .from('absensi').select('id').eq('siswa_id', mutation.siswa_id).eq('tanggal', mutation.tanggal).eq('jenis', mutation.jenis);
@@ -1077,13 +1082,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (remoteIds.length > 0) {
               const { error: logError } = await supabase.from('log_notifikasi_wa').delete().in('absensi_id', remoteIds);
               if (logError) throw logError;
-              const { data: deletedRows, error } = await supabase
-                .from('absensi').delete().eq('siswa_id', mutation.siswa_id).eq('tanggal', mutation.tanggal).eq('jenis', mutation.jenis).select('id');
+              const { error } = await supabase
+                .from('absensi').delete().eq('siswa_id', mutation.siswa_id).eq('tanggal', mutation.tanggal).eq('jenis', mutation.jenis);
               if (error) throw error;
-              if ((deletedRows ?? []).length !== remoteIds.length) throw new Error(`Tidak semua absensi cocok berhasil dihapus (${deletedRows?.length ?? 0}/${remoteIds.length}).`);
+              const { data: verifyRows, error: verifyError } = await supabase
+                .from('absensi').select('id').eq('siswa_id', mutation.siswa_id).eq('tanggal', mutation.tanggal).eq('jenis', mutation.jenis);
+              if (verifyError) throw verifyError;
+              if ((verifyRows ?? []).length > 0) throw new Error(`Absensi berdasarkan siswa/tanggal/jenis masih tersisa (${verifyRows?.length ?? 0} data).`);
             }
           }
           setLogNotifikasiList((prev) => prev.filter((log) => log.absensi_id !== mutation.id && !remoteIds.includes(String(log.absensi_id))));
+          // IMPORTANT: syncData runs immediately after this function and its React
+          // state closure can still contain the just-deleted row. Record the delete
+          // explicitly so the same sync pass cannot re-upload it.
+          deletedAttendanceIds.push(String(mutation.id), ...remoteIds);
         } else if (mutation.type === 'absensi_reset_today') {
           // Reset Hari Ini is a semantic operation: it means ALL attendance for
           // this date must disappear from the cloud, not merely rows whose local
@@ -1096,14 +1108,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           if (remoteIds.length > 0) {
             const { error: logError } = await supabase.from('log_notifikasi_wa').delete().in('absensi_id', remoteIds);
             if (logError) throw logError;
-            const { data: deletedRows, error } = await supabase
-              .from('absensi').delete().eq('tanggal', mutation.tanggal).select('id');
+            const { error } = await supabase
+              .from('absensi').delete().eq('tanggal', mutation.tanggal);
             if (error) throw error;
-            if ((deletedRows ?? []).length !== remoteIds.length) {
-              throw new Error(`Reset absensi ${mutation.tanggal} belum tuntas (${deletedRows?.length ?? 0}/${remoteIds.length} data terhapus).`);
+            const { data: verifyRows, error: verifyError } = await supabase
+              .from('absensi').select('id').eq('tanggal', mutation.tanggal);
+            if (verifyError) throw verifyError;
+            if ((verifyRows ?? []).length > 0) {
+              throw new Error(`Reset absensi ${mutation.tanggal} belum tuntas: ${verifyRows.length} data masih tersisa di database.`);
             }
           }
           setLogNotifikasiList((prev) => prev.filter((log) => !remoteIds.includes(String(log.absensi_id))));
+          // Same reason as individual delete: prevent the stale React closure used
+          // by the following processSyncToDatabase call from re-inserting today's
+          // records after we just deleted them from Supabase.
+          resetDates.push(mutation.tanggal);
+          deletedAttendanceIds.push(...remoteIds);
         }
         removeMutation(mutation);
         processed++;
@@ -1112,7 +1132,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.error('Pending mutation gagal disinkronkan:', mutation, err);
       }
     }
-    return { success: failed === 0, processed, failed };
+    return { success: failed === 0, processed, failed, deletedAttendanceIds, resetDates };
   };
 
   // Reconcile today's attendance from Supabase without deleting local history.
@@ -1207,8 +1227,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // di master Supabase. Ini menghilangkan sumber utama error absensi_siswa_id_fkey.
       // Background sync is non-destructive: never prune local attendance merely
       // because a cached student mapping cannot be resolved at this moment.
-      const sourceAbsensi = attendanceOverride ?? absensiList;
-      const sourceLogs = logOverride ?? logNotifikasiList;
+      // React state updates are asynchronous. Immediately after a DELETE/RESET
+      // mutation, absensiList/logNotifikasiList may still contain the old rows.
+      // If we pass that stale snapshot into processSyncToDatabase, the sync engine
+      // would correctly DELETE the remote row and then immediately UPSERT it again.
+      // Exclude the mutations that were successfully applied in this same pass.
+      const deletedIdSet = new Set(mutationResult.deletedAttendanceIds.map(String));
+      const resetDateSet = new Set(mutationResult.resetDates.map(String));
+      const sourceAbsensi = (attendanceOverride ?? absensiList).filter((a) =>
+        !deletedIdSet.has(String(a.id)) && !resetDateSet.has(String(a.tanggal))
+      );
+      const sourceLogs = (logOverride ?? logNotifikasiList).filter((log) =>
+        !deletedIdSet.has(String(log.absensi_id))
+      );
       const sourceStudents = siswaList;
       const sourceAliases = siswaIdAliases;
 
