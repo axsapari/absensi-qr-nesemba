@@ -180,7 +180,8 @@ type PendingMutation =
   | { type: 'siswa_delete'; id: string }
   | { type: 'kelas_upsert'; row: Kelas }
   | { type: 'kelas_delete'; id: string }
-  | { type: 'absensi_delete'; id: string };
+  | { type: 'absensi_delete'; id: string; siswa_id?: string; tanggal?: string; jenis?: Absensi['jenis'] }
+  | { type: 'absensi_reset_today'; tanggal: string };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // 1. Initialize State with localStorage fallback
@@ -1048,9 +1049,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const enqueueMutation = (mutation: PendingMutation) => {
     const current = readPendingMutations();
-    const key = mutation.type === 'siswa_upsert' || mutation.type === 'kelas_upsert' ? mutation.row.id : mutation.id;
+    const key = mutation.type === 'siswa_upsert' || mutation.type === 'kelas_upsert'
+      ? mutation.row.id
+      : mutation.type === 'absensi_reset_today'
+        ? mutation.tanggal
+        : mutation.id;
     const sameEntity = (m: PendingMutation) => {
-      const mk = m.type === 'siswa_upsert' || m.type === 'kelas_upsert' ? m.row.id : m.id;
+      const mk = m.type === 'siswa_upsert' || m.type === 'kelas_upsert'
+        ? m.row.id
+        : m.type === 'absensi_reset_today'
+          ? m.tanggal
+          : m.id;
       const family = mutation.type.startsWith('siswa_') ? 'siswa_' : mutation.type.startsWith('kelas_') ? 'kelas_' : 'absensi_';
       return m.type.startsWith(family) && mk === key;
     };
@@ -1058,9 +1067,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const removeMutation = (mutation: PendingMutation) => {
-    const key = mutation.type === 'siswa_upsert' || mutation.type === 'kelas_upsert' ? mutation.row.id : mutation.id;
+    const key = mutation.type === 'siswa_upsert' || mutation.type === 'kelas_upsert'
+      ? mutation.row.id
+      : mutation.type === 'absensi_reset_today'
+        ? mutation.tanggal
+        : mutation.id;
     const next = readPendingMutations().filter((m) => {
-      const mk = m.type === 'siswa_upsert' || m.type === 'kelas_upsert' ? m.row.id : m.id;
+      const mk = m.type === 'siswa_upsert' || m.type === 'kelas_upsert'
+        ? m.row.id
+        : m.type === 'absensi_reset_today'
+          ? m.tanggal
+          : m.id;
       return !(m.type === mutation.type && mk === key);
     });
     writePendingMutations(next);
@@ -1109,13 +1126,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const { error } = await supabase.from('kelas').delete().eq('id', mutation.id);
           if (error) throw error;
         } else if (mutation.type === 'absensi_delete') {
-          // Remove dependent WA logs first so the remote database does not keep
-          // useless notification history after the attendance itself is deleted.
-          const { error: logError } = await supabase.from('log_notifikasi_wa').delete().eq('absensi_id', mutation.id);
-          if (logError) throw logError;
-          const { error } = await supabase.from('absensi').delete().eq('id', mutation.id);
-          if (error) throw error;
-          setLogNotifikasiList((prev) => prev.filter((log) => log.absensi_id !== mutation.id));
+          // Prefer the canonical remote ID. For legacy local records whose ID was
+          // generated before the ID-reconciliation patch, fall back to the stable
+          // business key (siswa_id + tanggal + jenis) and verify the affected rows.
+          const { data: byId, error: byIdError } = await supabase
+            .from('absensi').select('id').eq('id', mutation.id);
+          if (byIdError) throw byIdError;
+
+          let remoteIds = (byId ?? []).map((row) => String(row.id));
+          if (remoteIds.length > 0) {
+            const { error: logError } = await supabase.from('log_notifikasi_wa').delete().in('absensi_id', remoteIds);
+            if (logError) throw logError;
+            const { data: deletedRows, error } = await supabase.from('absensi').delete().eq('id', mutation.id).select('id');
+            if (error) throw error;
+            if ((deletedRows ?? []).length === 0) throw new Error(`Absensi ${mutation.id} tidak terhapus di database.`);
+          } else if (mutation.siswa_id && mutation.tanggal && mutation.jenis) {
+            const { data: matches, error: matchError } = await supabase
+              .from('absensi').select('id').eq('siswa_id', mutation.siswa_id).eq('tanggal', mutation.tanggal).eq('jenis', mutation.jenis);
+            if (matchError) throw matchError;
+            remoteIds = (matches ?? []).map((row) => String(row.id));
+            if (remoteIds.length > 0) {
+              const { error: logError } = await supabase.from('log_notifikasi_wa').delete().in('absensi_id', remoteIds);
+              if (logError) throw logError;
+              const { data: deletedRows, error } = await supabase
+                .from('absensi').delete().eq('siswa_id', mutation.siswa_id).eq('tanggal', mutation.tanggal).eq('jenis', mutation.jenis).select('id');
+              if (error) throw error;
+              if ((deletedRows ?? []).length !== remoteIds.length) throw new Error(`Tidak semua absensi cocok berhasil dihapus (${deletedRows?.length ?? 0}/${remoteIds.length}).`);
+            }
+          }
+          setLogNotifikasiList((prev) => prev.filter((log) => log.absensi_id !== mutation.id && !remoteIds.includes(String(log.absensi_id))));
+        } else if (mutation.type === 'absensi_reset_today') {
+          // Reset Hari Ini is a semantic operation: it means ALL attendance for
+          // this date must disappear from the cloud, not merely rows whose local
+          // IDs happen to match. This repairs legacy ID mismatches as well.
+          const { data: remoteToday, error: findError } = await supabase
+            .from('absensi').select('id').eq('tanggal', mutation.tanggal);
+          if (findError) throw findError;
+          const remoteIds = (remoteToday ?? []).map((row) => String(row.id));
+
+          if (remoteIds.length > 0) {
+            const { error: logError } = await supabase.from('log_notifikasi_wa').delete().in('absensi_id', remoteIds);
+            if (logError) throw logError;
+            const { data: deletedRows, error } = await supabase
+              .from('absensi').delete().eq('tanggal', mutation.tanggal).select('id');
+            if (error) throw error;
+            if ((deletedRows ?? []).length !== remoteIds.length) {
+              throw new Error(`Reset absensi ${mutation.tanggal} belum tuntas (${deletedRows?.length ?? 0}/${remoteIds.length} data terhapus).`);
+            }
+          }
+          setLogNotifikasiList((prev) => prev.filter((log) => !remoteIds.includes(String(log.absensi_id))));
         }
         removeMutation(mutation);
         processed++;
@@ -1159,7 +1218,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         [...sourceStudents.map((s) => ({ id: s.id, nisn: s.nisn })), ...Object.entries(sourceAliases).map(([id, nisn]) => ({ id, nisn }))]
       );
 
-      if (result.success) {
+      if (result.success && mutationResult.success) {
         setAbsensiList(updatedAbsensiList);
         setLogNotifikasiList(updatedLogNotifikasiList);
         setLastSyncTime(result.timestamp);
@@ -1173,6 +1232,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
 
         return { success: true, count: result.syncedCount, message: result.message };
+      } else if (!mutationResult.success) {
+        const message = `Sinkronisasi sebagian: ${mutationResult.failed} perubahan/penghapusan gagal diproses. ${result.message}`;
+        setSyncBanner({ type: 'sync_error', message });
+        return { success: false, count: result.syncedCount, message };
       } else {
         setSyncBanner({
           type: 'sync_error',
@@ -1751,7 +1814,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAbsensiList((prev) => prev.filter((a) => a.id !== id));
     setLogNotifikasiList((prev) => prev.filter((log) => log.absensi_id !== id));
     if (target?.synced) {
-      enqueueMutation({ type: 'absensi_delete', id });
+      enqueueMutation({
+        type: 'absensi_delete',
+        id,
+        siswa_id: target.siswa_id,
+        tanggal: target.tanggal,
+        jenis: target.jenis,
+      });
       scheduleAutoSync('absensi-delete');
     } else {
       writePendingMutations(readPendingMutations().filter((m) => !(m.type === 'absensi_delete' && m.id === id)));
@@ -1763,8 +1832,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const targets = absensiList.filter((a) => a.tanggal === today);
     setAbsensiList((prev) => prev.filter((a) => a.tanggal !== today));
     setLogNotifikasiList((prev) => prev.filter((log) => !targets.some((a) => a.id === log.absensi_id)));
-    targets.filter((a) => a.synced).forEach((a) => enqueueMutation({ type: 'absensi_delete', id: a.id }));
-    if (targets.some((a) => a.synced)) scheduleAutoSync('reset-today-attendance');
+    // Reset is a date-level operation. Queue it even when the local list is
+    // already empty so Supabase is explicitly cleared for the same date.
+    enqueueMutation({ type: 'absensi_reset_today', tanggal: today });
+    scheduleAutoSync('reset-today-attendance');
     setLastScanResult(null);
   };
 
