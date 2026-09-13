@@ -100,7 +100,7 @@ interface AppContextType {
   updateWAConfig: (config: Partial<WAGatewayConfig>) => void;
   updateSupabaseConfig: (config: Partial<SupabaseConfig>) => void;
   syncMasterData: () => Promise<{ success: boolean; message: string; kelas: number; siswa: number }>;
-  auditDataIntegrity: () => Promise<DataAuditReport>;
+  auditDataIntegrity: (diagnosticNisn?: string) => Promise<DataAuditReport>;
 
   // Attendance Actions
   deleteAbsensi: (id: string) => void;
@@ -181,6 +181,24 @@ const STORAGE_KEYS = {
   NATIONAL_HOLIDAYS: 'absensi_national_holidays_v1',
   CUSTOM_SCHOOL_DAYS: 'absensi_custom_school_days_v1',
   CATATAN_KEHADIRAN: 'absensi_catatan_kehadiran_v1',
+};
+
+const DIAGNOSTIC_TRACE_KEY = 'absensi_audit_trace_v1';
+const appendDiagnosticTrace = (event: 'localstorage-write' | 'focus' | 'visibility' | 'audit', absensi: Absensi[], note?: string) => {
+  try {
+    const targetNisn = '0124203121';
+    const siswaRaw = localStorage.getItem(STORAGE_KEYS.SISWA);
+    const siswaRows: Array<{ id: string; nisn?: string }> = siswaRaw ? JSON.parse(siswaRaw) : [];
+    const targetIdsByNisn = new Set(siswaRows.filter(s => String(s.nisn ?? '').trim() === targetNisn).map(s => String(s.id)));
+    const aliasesRaw = localStorage.getItem(STORAGE_KEYS.SISWA_ID_ALIASES);
+    const aliases: Record<string, string> = aliasesRaw ? JSON.parse(aliasesRaw) : {};
+    Object.entries(aliases).forEach(([id, nisn]) => { if (String(nisn).trim() === targetNisn) targetIdsByNisn.add(String(id)); });
+    const targetIds = absensi.filter(a => targetIdsByNisn.has(String(a.siswa_id))).map(a => String(a.id));
+    const raw = localStorage.getItem(DIAGNOSTIC_TRACE_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    list.push({ at: new Date().toISOString(), event, targetPresent: targetIds.length > 0, targetIds, totalAttendance: absensi.length, note });
+    localStorage.setItem(DIAGNOSTIC_TRACE_KEY, JSON.stringify(list.slice(-80)));
+  } catch {}
 };
 
 type PendingMutation =
@@ -472,6 +490,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.ABSENSI, JSON.stringify(absensiList));
+    appendDiagnosticTrace('localstorage-write', absensiList, 'absensiList ditulis ke localStorage');
   }, [absensiList]);
 
   useEffect(() => {
@@ -1465,6 +1484,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setSyncBanner({ type: 'offline', message: 'Koneksi internet terputus. Data tetap aman di perangkat.' });
     };
     const handleActivity = () => {
+      appendDiagnosticTrace(document.visibilityState === 'visible' ? 'visibility' : 'focus', absensiList, `aktivitas tab: ${document.visibilityState}`);
       if (document.visibilityState === 'visible' && navigator.onLine && !isSimulatedOffline) {
         autoSyncRetryRef.current = 0;
         scheduleAutoSync('tab-active');
@@ -1839,11 +1859,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setLastScanResult(null);
   };
 
-  const auditDataIntegrity = async (): Promise<DataAuditReport> => {
+  const auditDataIntegrity = async (diagnosticNisn = '0124203121'): Promise<DataAuditReport> => {
+    appendDiagnosticTrace('audit', absensiList, `audit target ${diagnosticNisn}`);
     return runDataAudit(
       { siswa: siswaList, kelas: kelasList, absensi: absensiList, logs: logNotifikasiList },
       supabaseConfig,
       readPendingMutations().length,
+      diagnosticNisn,
     );
   };
 

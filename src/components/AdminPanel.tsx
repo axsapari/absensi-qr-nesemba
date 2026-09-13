@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import type { DataAuditReport } from '../types';
 import { useApp } from '../context/AppContext';
 import { SchoolLogo, LogoSMPN9Banjar, CityLogo, LogoKotaBanjar } from './SchoolLogos';
 import { ChangePasswordModal } from './ChangePasswordModal';
@@ -58,7 +59,8 @@ export const AdminPanel: React.FC = () => {
   const [schoolForm, setSchoolForm] = useState(profilSekolah);
   const [jamForm, setJamForm] = useState(pengaturanJam);
   const [savedSuccess, setSavedSuccess] = useState<string | null>(null);
-  const [auditReport, setAuditReport] = useState<any>(null);
+  const [auditReport, setAuditReport] = useState<DataAuditReport | null>(null);
+  const [diagnosticNisn, setDiagnosticNisn] = useState('0124203121');
   const [auditRunning, setAuditRunning] = useState(false);
 
   // New User Form State (Super Admin Only)
@@ -150,7 +152,7 @@ export const AdminPanel: React.FC = () => {
   const handleRunAudit = async () => {
     setAuditRunning(true);
     try {
-      const report = await auditDataIntegrity();
+      const report = await auditDataIntegrity(diagnosticNisn);
       setAuditReport(report);
     } finally {
       setAuditRunning(false);
@@ -592,6 +594,14 @@ export const AdminPanel: React.FC = () => {
               </button>
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2 items-end bg-white border border-slate-200 rounded-xl p-3">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">NISN yang dilacak</label>
+                <input value={diagnosticNisn} onChange={e => setDiagnosticNisn(e.target.value.replace(/\D/g, '').slice(0, 20))} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs font-mono" placeholder="0124203121" />
+              </div>
+              <div className="text-[10px] text-slate-500">Default: <strong>Alip Yoga Permana</strong> — 0124203121</div>
+            </div>
+
             {auditReport && (
               <div className="border-t border-slate-200 pt-4 space-y-3">
                 <div className={`rounded-xl p-3 text-xs font-bold flex items-center gap-2 ${auditReport.healthy ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}>
@@ -608,6 +618,33 @@ export const AdminPanel: React.FC = () => {
                   <ul className="space-y-1 text-xs text-slate-700">
                     {auditReport.issues.map((issue: string, i: number) => <li key={i} className="flex gap-2"><span>•</span><span>{issue}</span></li>)}
                   </ul>
+                )}
+                {auditReport.diagnosticTarget && (
+                  <div className="bg-slate-900 text-slate-100 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-bold text-xs">Diagnostic Trace — NISN {auditReport.diagnosticTarget.nisn}</div>
+                      <div className="text-[10px] text-slate-400">LocalStorage absensi: {auditReport.diagnosticTarget.localStorageAbsensiBytes.toLocaleString('id-ID')} byte</div>
+                    </div>
+                    <div className="text-[10px] text-slate-300">
+                      Lokal: {auditReport.diagnosticTarget.localStudents.map(s => `${s.nama} [${s.id}]`).join(', ') || 'tidak ditemukan'} · Supabase: {auditReport.diagnosticTarget.remoteStudents.map(s => `${s.nama || '-'} [${s.id}]`).join(', ') || 'tidak ditemukan'}
+                    </div>
+                    {auditReport.diagnosticTarget.items.length === 0 ? (
+                      <div className="text-[10px] text-emerald-300">Tidak ada absensi lokal yang saat ini terhubung ke NISN target.</div>
+                    ) : auditReport.diagnosticTarget.items.map(item => (
+                      <div key={item.id} className="bg-slate-800 rounded-lg p-3 text-[10px] space-y-1">
+                        <div><strong>{item.nama}</strong> · {item.tanggal} · {item.jenis} · {item.waktuScan} · local ID <span className="font-mono">{item.id}</span></div>
+                        <div>local siswa_id: <span className="font-mono">{item.siswaId}</span> · synced: {item.synced ? 'YA' : 'TIDAK'}</div>
+                        <div>cache siswa: {item.localStudentFound ? 'YA' : 'TIDAK'} · remote siswa: {item.remoteStudentFound ? `YA [${item.remoteStudentId}]` : 'TIDAK'}</div>
+                        <div>remote absensi: {item.remoteAttendanceFound ? `YA [${item.remoteAttendanceId}]` : 'TIDAK'}</div>
+                        {item.aliasNisn && <div>alias: <span className="font-mono">{item.siswaId}</span> → {item.aliasNisn}</div>}
+                        <div className="text-amber-300">{item.sourceHints.join(' · ')}</div>
+                      </div>
+                    ))}
+                    <div className="border-t border-slate-700 pt-2">
+                      <div className="text-[10px] font-bold mb-1">Trace terakhir</div>
+                      {auditReport.diagnosticTarget.trace.slice(-12).map((t, i) => <div key={`${t.at}-${i}`} className="text-[9px] text-slate-400">{new Date(t.at).toLocaleTimeString('id-ID')} · {t.event} · target={t.targetPresent ? 'ADA' : 'tidak ada'} · total={t.totalAttendance}{t.note ? ` · ${t.note}` : ''}</div>)}
+                    </div>
+                  </div>
                 )}
                 <p className="text-[10px] text-slate-400">Audit terakhir: {new Date(auditReport.timestamp).toLocaleString('id-ID')}</p>
               </div>
@@ -1223,6 +1260,14 @@ export const AdminPanel: React.FC = () => {
               </button>
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2 items-end bg-white border border-slate-200 rounded-xl p-3">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">NISN yang dilacak</label>
+                <input value={diagnosticNisn} onChange={e => setDiagnosticNisn(e.target.value.replace(/\D/g, '').slice(0, 20))} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs font-mono" placeholder="0124203121" />
+              </div>
+              <div className="text-[10px] text-slate-500">Default: <strong>Alip Yoga Permana</strong> — 0124203121</div>
+            </div>
+
             {auditReport && (
               <div className="border-t border-slate-200 pt-4 space-y-3">
                 <div className={`rounded-xl p-3 text-xs font-bold flex items-center gap-2 ${auditReport.healthy ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}>
@@ -1239,6 +1284,33 @@ export const AdminPanel: React.FC = () => {
                   <ul className="space-y-1 text-xs text-slate-700">
                     {auditReport.issues.map((issue: string, i: number) => <li key={i} className="flex gap-2"><span>•</span><span>{issue}</span></li>)}
                   </ul>
+                )}
+                {auditReport.diagnosticTarget && (
+                  <div className="bg-slate-900 text-slate-100 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-bold text-xs">Diagnostic Trace — NISN {auditReport.diagnosticTarget.nisn}</div>
+                      <div className="text-[10px] text-slate-400">LocalStorage absensi: {auditReport.diagnosticTarget.localStorageAbsensiBytes.toLocaleString('id-ID')} byte</div>
+                    </div>
+                    <div className="text-[10px] text-slate-300">
+                      Lokal: {auditReport.diagnosticTarget.localStudents.map(s => `${s.nama} [${s.id}]`).join(', ') || 'tidak ditemukan'} · Supabase: {auditReport.diagnosticTarget.remoteStudents.map(s => `${s.nama || '-'} [${s.id}]`).join(', ') || 'tidak ditemukan'}
+                    </div>
+                    {auditReport.diagnosticTarget.items.length === 0 ? (
+                      <div className="text-[10px] text-emerald-300">Tidak ada absensi lokal yang saat ini terhubung ke NISN target.</div>
+                    ) : auditReport.diagnosticTarget.items.map(item => (
+                      <div key={item.id} className="bg-slate-800 rounded-lg p-3 text-[10px] space-y-1">
+                        <div><strong>{item.nama}</strong> · {item.tanggal} · {item.jenis} · {item.waktuScan} · local ID <span className="font-mono">{item.id}</span></div>
+                        <div>local siswa_id: <span className="font-mono">{item.siswaId}</span> · synced: {item.synced ? 'YA' : 'TIDAK'}</div>
+                        <div>cache siswa: {item.localStudentFound ? 'YA' : 'TIDAK'} · remote siswa: {item.remoteStudentFound ? `YA [${item.remoteStudentId}]` : 'TIDAK'}</div>
+                        <div>remote absensi: {item.remoteAttendanceFound ? `YA [${item.remoteAttendanceId}]` : 'TIDAK'}</div>
+                        {item.aliasNisn && <div>alias: <span className="font-mono">{item.siswaId}</span> → {item.aliasNisn}</div>}
+                        <div className="text-amber-300">{item.sourceHints.join(' · ')}</div>
+                      </div>
+                    ))}
+                    <div className="border-t border-slate-700 pt-2">
+                      <div className="text-[10px] font-bold mb-1">Trace terakhir</div>
+                      {auditReport.diagnosticTarget.trace.slice(-12).map((t, i) => <div key={`${t.at}-${i}`} className="text-[9px] text-slate-400">{new Date(t.at).toLocaleTimeString('id-ID')} · {t.event} · target={t.targetPresent ? 'ADA' : 'tidak ada'} · total={t.totalAttendance}{t.note ? ` · ${t.note}` : ''}</div>)}
+                    </div>
+                  </div>
                 )}
                 <p className="text-[10px] text-slate-400">Audit terakhir: {new Date(auditReport.timestamp).toLocaleString('id-ID')}</p>
               </div>

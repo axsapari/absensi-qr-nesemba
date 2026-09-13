@@ -145,9 +145,50 @@ export interface LocalSnapshot {
 }
 
 
+export interface DataAuditDiagnosticItem {
+  id: string;
+  siswaId: string;
+  nisn: string;
+  nama: string;
+  tanggal: string;
+  jenis: JenisAbsensi;
+  waktuScan: string;
+  timestamp: number;
+  synced: boolean;
+  syncedAt?: string;
+  localStudentFound: boolean;
+  localStudentId?: string;
+  remoteStudentFound: boolean;
+  remoteStudentId?: string;
+  remoteAttendanceFound: boolean;
+  remoteAttendanceId?: string;
+  remoteAttendanceKey?: string;
+  aliasNisn?: string;
+  pendingMutationMatches: string[];
+  sourceHints: string[];
+}
+
+export interface DataAuditTraceEvent {
+  at: string;
+  event: 'localstorage-write' | 'focus' | 'visibility' | 'audit';
+  targetPresent: boolean;
+  targetIds: string[];
+  totalAttendance: number;
+  note?: string;
+}
+
 export interface DataAuditReport {
   timestamp: string;
   online: boolean;
+  diagnosticTarget?: {
+    nisn: string;
+    localStudents: { id: string; nama: string; nisn: string }[];
+    remoteStudents: { id: string; nama?: string; nisn: string }[];
+    items: DataAuditDiagnosticItem[];
+    pendingMutations: string[];
+    localStorageAbsensiBytes: number;
+    trace: DataAuditTraceEvent[];
+  };
   remote: {
     siswa: number;
     kelas: number;
