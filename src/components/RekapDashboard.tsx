@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useApp } from '../context/AppContext';
+import { Siswa, CatatanKehadiran } from '../types';
 import { getTodayDateString } from '../data/initialData';
 import {
   Calendar,
@@ -29,6 +30,7 @@ import {
   FileText,
   Cloud,
   HardDrive,
+  ClipboardList,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { SchoolLogo, LogoTutWuri, CityLogo } from './SchoolLogos';
@@ -37,7 +39,18 @@ import { getFotoSiswaUrl, getFotoPlaceholder } from '../lib/fotoHelper';
 type FilterMode = 'harian' | 'bulanan' | 'rentang';
 
 export const RekapDashboard: React.FC = () => {
-  const { absensiList, siswaList, kelasList, logNotifikasiList, deleteAbsensi, profilSekolah, supabaseConfig } = useApp();
+  const {
+    absensiList,
+    catatanKehadiranList,
+    siswaList,
+    kelasList,
+    logNotifikasiList,
+    deleteAbsensi,
+    setCatatanIzinSakit,
+    deleteCatatanKehadiran,
+    profilSekolah,
+    supabaseConfig,
+  } = useApp();
 
   // Mode Tarik Data
   const [filterMode, setFilterMode] = useState<FilterMode>('harian');
@@ -56,6 +69,7 @@ export const RekapDashboard: React.FC = () => {
   // Class & Status Filter
   const [selectedKelasId, setSelectedKelasId] = useState<string>('all');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('all');
+  const [izinSakitTarget, setIzinSakitTarget] = useState<{ siswa: Siswa; catatan?: CatatanKehadiran } | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Active view tab
@@ -133,10 +147,15 @@ export const RekapDashboard: React.FC = () => {
         const scanPulang = absensiList.find(
           (a) => a.siswa_id === siswa.id && a.tanggal === selectedDate && a.jenis === 'pulang'
         );
+        const catatan = catatanKehadiranList.find(
+          (c) => c.siswa_id === siswa.id && c.tanggal === selectedDate
+        );
 
-        let overallStatus: 'tepat_waktu' | 'terlambat' | 'belum_absen' = 'belum_absen';
+        let overallStatus: 'tepat_waktu' | 'terlambat' | 'izin' | 'sakit' | 'alpa' | 'belum_absen' = 'belum_absen';
         if (scanMasuk) {
           overallStatus = scanMasuk.status;
+        } else if (catatan) {
+          overallStatus = catatan.status;
         }
 
         return {
@@ -144,6 +163,7 @@ export const RekapDashboard: React.FC = () => {
           kelas: studentClass,
           scanMasuk,
           scanPulang,
+          catatan,
           overallStatus,
         };
       })
@@ -152,10 +172,13 @@ export const RekapDashboard: React.FC = () => {
         if (selectedStatusFilter === 'tepat_waktu') return item.overallStatus === 'tepat_waktu';
         if (selectedStatusFilter === 'terlambat') return item.overallStatus === 'terlambat';
         if (selectedStatusFilter === 'belum_absen') return item.overallStatus === 'belum_absen';
+        if (selectedStatusFilter === 'izin') return item.overallStatus === 'izin';
+        if (selectedStatusFilter === 'sakit') return item.overallStatus === 'sakit';
+        if (selectedStatusFilter === 'alpa') return item.overallStatus === 'alpa';
         if (selectedStatusFilter === 'pulang') return !!item.scanPulang;
         return true;
       });
-  }, [siswaList, kelasList, absensiList, selectedDate, selectedKelasId, searchQuery, selectedStatusFilter]);
+  }, [siswaList, kelasList, absensiList, catatanKehadiranList, selectedDate, selectedKelasId, searchQuery, selectedStatusFilter]);
 
   // 2. BULANAN & RENTANG: Aggregated Student Metrics across the period
   const periodicStudentMetrics = useMemo(() => {
@@ -192,6 +215,13 @@ export const RekapDashboard: React.FC = () => {
         const totalTanpaKeterangan = Math.max(0, totalDaysRecorded - totalHadir);
         const persentase = Math.round((totalHadir / totalDaysRecorded) * 100);
 
+        const periodCatatan = catatanKehadiranList.filter(
+          (c) => c.siswa_id === siswa.id && isDateInActiveFilter(c.tanggal)
+        );
+        const totalIzin = periodCatatan.filter((c) => c.status === 'izin').length;
+        const totalSakit = periodCatatan.filter((c) => c.status === 'sakit').length;
+        const totalAlpa = periodCatatan.filter((c) => c.status === 'alpa').length;
+
         let predikat = 'Sangat Baik';
         if (persentase >= 90) predikat = 'Sangat Disiplin';
         else if (persentase >= 75) predikat = 'Baik';
@@ -206,13 +236,16 @@ export const RekapDashboard: React.FC = () => {
           totalTerlambat,
           totalPulang,
           totalTanpaKeterangan,
+          totalIzin,
+          totalSakit,
+          totalAlpa,
           totalDaysRecorded,
           persentase,
           predikat,
         };
       })
       .sort((a, b) => b.persentase - a.persentase);
-  }, [siswaList, kelasList, absensiList, selectedKelasId, searchQuery, distinctAttendanceDates, filterMode, selectedMonth, selectedYear, startDate, endDate]);
+  }, [siswaList, kelasList, absensiList, catatanKehadiranList, selectedKelasId, searchQuery, distinctAttendanceDates, filterMode, selectedMonth, selectedYear, startDate, endDate]);
 
   // Overall Period KPIs
   const periodKpi = useMemo(() => {
@@ -356,7 +389,13 @@ export const RekapDashboard: React.FC = () => {
           ? item.scanMasuk.status === 'terlambat'
             ? 'Terlambat'
             : 'Tepat Waktu'
-          : 'Belum Hadir / Alfa',
+          : item.catatan?.status === 'izin'
+          ? 'Izin'
+          : item.catatan?.status === 'sakit'
+          ? 'Sakit'
+          : item.catatan?.status === 'alpa'
+          ? 'Alpa'
+          : 'Belum Hadir',
         'Jam Pulang': item.scanPulang ? item.scanPulang.waktu_scan : '-',
         'No WA Ortu': item.siswa.nomor_wa_ortu,
         'Nama Ortu': item.siswa.nama_ortu,
@@ -377,8 +416,11 @@ export const RekapDashboard: React.FC = () => {
         'Hadir (H)': item.totalHadir,
         'Tepat Waktu (T)': item.totalTepatWaktu,
         'Terlambat (TL)': item.totalTerlambat,
+        'Izin (I)': item.totalIzin,
+        'Sakit (S)': item.totalSakit,
+        'Alpa (A)': item.totalAlpa,
         'Pulang Tercatat (P)': item.totalPulang,
-        'Tanpa Keterangan (A)': item.totalTanpaKeterangan,
+        'Tanpa Keterangan': item.totalTanpaKeterangan,
         'Persentase Kehadiran (%)': `${item.persentase}%`,
         Predikat: item.predikat,
         'No WA Wali': item.siswa.nomor_wa_ortu,
@@ -417,6 +459,12 @@ export const RekapDashboard: React.FC = () => {
           ? item.scanMasuk.status === 'terlambat'
             ? 'Terlambat'
             : 'Tepat Waktu'
+          : item.catatan?.status === 'izin'
+          ? 'Izin'
+          : item.catatan?.status === 'sakit'
+          ? 'Sakit'
+          : item.catatan?.status === 'alpa'
+          ? 'Alpa'
           : 'Belum Hadir',
         item.scanPulang ? item.scanPulang.waktu_scan : '-',
         `"${item.siswa.nomor_wa_ortu}"`,
@@ -442,7 +490,9 @@ export const RekapDashboard: React.FC = () => {
         'Hadir (H)',
         'Tepat Waktu (T)',
         'Terlambat (TL)',
-        'Alfa (A)',
+        'Izin (I)',
+        'Sakit (S)',
+        'Alpa (A)',
         '% Kehadiran',
         'Predikat',
       ];
@@ -455,7 +505,9 @@ export const RekapDashboard: React.FC = () => {
         item.totalHadir,
         item.totalTepatWaktu,
         item.totalTerlambat,
-        item.totalTanpaKeterangan,
+        item.totalIzin,
+        item.totalSakit,
+        item.totalAlpa,
         `"${item.persentase}%"`,
         `"${item.predikat}"`,
       ]);
@@ -678,6 +730,9 @@ export const RekapDashboard: React.FC = () => {
                 <option value="tepat_waktu">Tepat Waktu</option>
                 <option value="terlambat">Terlambat</option>
                 <option value="pulang">Sudah Pulang</option>
+                <option value="izin">Izin</option>
+                <option value="sakit">Sakit</option>
+                <option value="alpa">Alpa</option>
                 <option value="belum_absen">Belum Hadir</option>
               </select>
             </div>
@@ -948,6 +1003,18 @@ export const RekapDashboard: React.FC = () => {
                                   Tepat Waktu
                                 </span>
                               )
+                            ) : item.catatan?.status === 'izin' ? (
+                              <span className="inline-flex items-center gap-1 bg-sky-100 text-sky-800 font-bold px-2.5 py-1 rounded-full text-xs">
+                                Izin
+                              </span>
+                            ) : item.catatan?.status === 'sakit' ? (
+                              <span className="inline-flex items-center gap-1 bg-violet-100 text-violet-800 font-bold px-2.5 py-1 rounded-full text-xs">
+                                Sakit
+                              </span>
+                            ) : item.catatan?.status === 'alpa' ? (
+                              <span className="inline-flex items-center gap-1 bg-slate-800 text-white font-bold px-2.5 py-1 rounded-full text-xs">
+                                Alpa
+                              </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-700 font-bold px-2.5 py-1 rounded-full text-xs">
                                 Belum Hadir
@@ -990,6 +1057,28 @@ export const RekapDashboard: React.FC = () => {
                               >
                                 <Eye className="w-4 h-4" />
                               </button>
+                              {!item.scanMasuk && (
+                                <button
+                                  title="Tandai Izin/Sakit"
+                                  onClick={() => setIzinSakitTarget({ siswa: item.siswa, catatan: item.catatan })}
+                                  className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition cursor-pointer"
+                                >
+                                  <ClipboardList className="w-4 h-4" />
+                                </button>
+                              )}
+                              {item.catatan && (
+                                <button
+                                  title={`Hapus catatan ${item.catatan.status}`}
+                                  onClick={() => {
+                                    if (confirm(`Hapus catatan ${item.catatan!.status} untuk ${item.siswa.nama}?`)) {
+                                      deleteCatatanKehadiran(item.catatan!.id);
+                                    }
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
                               {item.scanMasuk && (
                                 <button
                                   title="Hapus record absensi ini"
@@ -1701,6 +1790,9 @@ export const RekapDashboard: React.FC = () => {
                             <th className="border border-black p-1.5 text-center">Hadir</th>
                             <th className="border border-black p-1.5 text-center">Tepat</th>
                             <th className="border border-black p-1.5 text-center">Terlambat</th>
+                            <th className="border border-black p-1.5 text-center">Izin</th>
+                            <th className="border border-black p-1.5 text-center">Sakit</th>
+                            <th className="border border-black p-1.5 text-center">Alpa</th>
                             <th className="border border-black p-1.5 text-center">% Kehadiran</th>
                           </>
                         )}
@@ -1722,7 +1814,13 @@ export const RekapDashboard: React.FC = () => {
                                   ? item.scanMasuk.status === 'terlambat'
                                     ? 'Terlambat'
                                     : 'Tepat Waktu'
-                                  : 'Alfa'}
+                                  : item.catatan?.status === 'izin'
+                                  ? 'Izin'
+                                  : item.catatan?.status === 'sakit'
+                                  ? 'Sakit'
+                                  : item.catatan?.status === 'alpa'
+                                  ? 'Alpa'
+                                  : 'Belum Hadir'}
                               </td>
                               <td className="border border-black p-1.5 text-center">
                                 {item.scanPulang ? item.scanPulang.waktu_scan : '-'}
@@ -1738,6 +1836,9 @@ export const RekapDashboard: React.FC = () => {
                               <td className="border border-black p-1.5 text-center">{item.totalHadir} Hari</td>
                               <td className="border border-black p-1.5 text-center">{item.totalTepatWaktu}</td>
                               <td className="border border-black p-1.5 text-center">{item.totalTerlambat}</td>
+                              <td className="border border-black p-1.5 text-center">{item.totalIzin}</td>
+                              <td className="border border-black p-1.5 text-center">{item.totalSakit}</td>
+                              <td className="border border-black p-1.5 text-center">{item.totalAlpa}</td>
                               <td className="border border-black p-1.5 text-center font-bold">
                                 {item.persentase}%
                               </td>
@@ -1774,6 +1875,104 @@ export const RekapDashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {izinSakitTarget && (
+        <IzinSakitModal
+          siswa={izinSakitTarget.siswa}
+          catatan={izinSakitTarget.catatan}
+          tanggal={selectedDate}
+          onClose={() => setIzinSakitTarget(null)}
+          onSave={(status, keterangan) => {
+            setCatatanIzinSakit(izinSakitTarget.siswa.id, selectedDate, status, keterangan);
+            setIzinSakitTarget(null);
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+// =========================================================================
+// MODAL INPUT IZIN/SAKIT
+// =========================================================================
+const IzinSakitModal: React.FC<{
+  siswa: Siswa;
+  catatan?: CatatanKehadiran;
+  tanggal: string;
+  onClose: () => void;
+  onSave: (status: 'izin' | 'sakit', keterangan: string) => void;
+}> = ({ siswa, catatan, tanggal, onClose, onSave }) => {
+  const [status, setStatus] = useState<'izin' | 'sakit'>(
+    catatan?.status === 'sakit' ? 'sakit' : 'izin'
+  );
+  const [keterangan, setKeterangan] = useState(catatan?.keterangan || '');
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+        <h3 className="text-lg font-bold text-slate-900">Tandai Izin / Sakit</h3>
+        <p className="text-sm text-slate-500 mt-1">
+          {siswa.nama} &bull; {new Date(tanggal).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+        </p>
+
+        <div className="mt-5">
+          <label className="block text-xs font-bold text-slate-700 uppercase mb-2">Status</label>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setStatus('izin')}
+              className={`py-2.5 rounded-xl font-bold text-sm border-2 transition ${
+                status === 'izin'
+                  ? 'border-sky-500 bg-sky-50 text-sky-700'
+                  : 'border-slate-200 text-slate-500 hover:border-slate-300'
+              }`}
+            >
+              Izin
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatus('sakit')}
+              className={`py-2.5 rounded-xl font-bold text-sm border-2 transition ${
+                status === 'sakit'
+                  ? 'border-violet-500 bg-violet-50 text-violet-700'
+                  : 'border-slate-200 text-slate-500 hover:border-slate-300'
+              }`}
+            >
+              Sakit
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <label className="block text-xs font-bold text-slate-700 uppercase mb-2">
+            Keterangan <span className="normal-case font-normal text-slate-400">(opsional)</span>
+          </label>
+          <textarea
+            value={keterangan}
+            onChange={(e) => setKeterangan(e.target.value)}
+            placeholder="Contoh: Surat dari orang tua, demam sejak semalam"
+            rows={3}
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-sky-500"
+          />
+        </div>
+
+        <div className="mt-6 flex items-center justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 cursor-pointer"
+          >
+            Batal
+          </button>
+          <button
+            type="button"
+            onClick={() => onSave(status, keterangan)}
+            className="px-5 py-2 bg-sky-600 hover:bg-sky-700 text-white text-sm font-bold rounded-xl shadow-xs cursor-pointer"
+          >
+            Simpan
+          </button>
+        </div>
+      </div>
     </div>
   );
 };

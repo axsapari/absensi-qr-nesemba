@@ -3,6 +3,7 @@ import {
   Siswa,
   Kelas,
   Absensi,
+  CatatanKehadiran,
   PengaturanJam,
   LogNotifikasiWA,
   WAGatewayConfig,
@@ -52,6 +53,7 @@ interface AppContextType {
   siswaList: Siswa[];
   kelasList: Kelas[];
   absensiList: Absensi[];
+  catatanKehadiranList: CatatanKehadiran[];
   logNotifikasiList: LogNotifikasiWA[];
   pengaturanJam: PengaturanJam;
   waConfig: WAGatewayConfig;
@@ -102,6 +104,8 @@ interface AppContextType {
 
   // Attendance Actions
   deleteAbsensi: (id: string) => void;
+  setCatatanIzinSakit: (siswaId: string, tanggal: string, status: 'izin' | 'sakit', keterangan: string) => void;
+  deleteCatatanKehadiran: (id: string) => void;
   resetTodayAttendance: () => void;
   reloadInitialData: () => void;
 
@@ -176,6 +180,7 @@ const STORAGE_KEYS = {
   CURRENT_USER: 'absensi_current_user_v1',
   NATIONAL_HOLIDAYS: 'absensi_national_holidays_v1',
   CUSTOM_SCHOOL_DAYS: 'absensi_custom_school_days_v1',
+  CATATAN_KEHADIRAN: 'absensi_catatan_kehadiran_v1',
 };
 
 type PendingMutation =
@@ -258,6 +263,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
     } catch {
       return getInitialAttendance();
+    }
+  });
+
+  const [catatanKehadiranList, setCatatanKehadiranList] = useState<CatatanKehadiran[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.CATATAN_KEHADIRAN);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
     }
   });
 
@@ -461,6 +475,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [absensiList]);
 
   useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.CATATAN_KEHADIRAN, JSON.stringify(catatanKehadiranList));
+  }, [catatanKehadiranList]);
+
+  useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.LOG_WA, JSON.stringify(logNotifikasiList));
   }, [logNotifikasiList]);
 
@@ -647,6 +665,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const kelasCount = kelasResult.data?.length ?? 0;
         const siswaCount = siswaResult.data?.length ?? 0;
+
+        // Catatan kehadiran (Izin/Sakit/Alpa) -- selalu ambil yang terbaru dari
+        // Supabase (termasuk Alpa yang ditandai otomatis oleh penjadwalan di server),
+        // supaya semua perangkat melihat status yang sama.
+        const catatanResult = await supabase.from('catatan_kehadiran').select('*');
+        if (catatanResult.error) {
+          // Tidak fatal -- mungkin tabel ini belum dibuat (fitur belum dipasang).
+          // Jangan blokir sinkronisasi siswa/kelas yang sudah berhasil di atas.
+          console.error('Supabase catatan_kehadiran SELECT:', catatanResult.error);
+        } else if (catatanResult.data) {
+          setCatatanKehadiranList(catatanResult.data as CatatanKehadiran[]);
+        }
+
         setSyncBanner({
           type: 'sync_success',
           message: `Terhubung ke Supabase. Master cloud: ${kelasCount} kelas, ${siswaCount} siswa.`,
@@ -1938,6 +1969,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // CATATAN KEHADIRAN (Izin/Sakit) -- Alpa dibuat otomatis oleh penjadwalan
+  // di Supabase (fungsi proses_alpa_otomatis), bukan dari sini.
+  const setCatatanIzinSakit = (
+    siswaId: string,
+    tanggal: string,
+    status: 'izin' | 'sakit',
+    keterangan: string
+  ) => {
+    const id = `catatan-${siswaId}-${tanggal}`;
+    const record: CatatanKehadiran = {
+      id,
+      siswa_id: siswaId,
+      tanggal,
+      status,
+      keterangan: keterangan.trim() || undefined,
+      diinput_oleh: currentUser?.email || currentUser?.name || 'staf',
+      created_at: new Date().toISOString(),
+    };
+
+    setCatatanKehadiranList((prev) => {
+      const exists = prev.some((c) => c.siswa_id === siswaId && c.tanggal === tanggal);
+      return exists
+        ? prev.map((c) => (c.siswa_id === siswaId && c.tanggal === tanggal ? record : c))
+        : [...prev, record];
+    });
+
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (supabase) {
+      supabase
+        .from('catatan_kehadiran')
+        .upsert([record], { onConflict: 'siswa_id,tanggal' })
+        .then(({ error }) => {
+          if (error) {
+            console.error('Gagal menyimpan catatan izin/sakit ke Supabase:', error.message);
+            setSyncBanner({
+              type: 'sync_error',
+              message: `Catatan Izin/Sakit tersimpan lokal tapi GAGAL disinkron: ${error.message}`,
+            });
+          }
+        });
+    }
+  };
+
+  const deleteCatatanKehadiran = (id: string) => {
+    setCatatanKehadiranList((prev) => prev.filter((c) => c.id !== id));
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (supabase) {
+      supabase
+        .from('catatan_kehadiran')
+        .delete()
+        .eq('id', id)
+        .then(({ error }) => {
+          if (error) console.error('Gagal menghapus catatan kehadiran di Supabase:', error.message);
+        });
+    }
+  };
+
   const resetTodayAttendance = () => {
     const today = getTodayDateString();
     const targets = absensiList.filter((a) => a.tanggal === today);
@@ -2457,6 +2545,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         siswaList,
         kelasList,
         absensiList,
+        catatanKehadiranList,
         logNotifikasiList,
         pengaturanJam,
         waConfig,
@@ -2496,6 +2585,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         syncMasterData,
         auditDataIntegrity,
         deleteAbsensi,
+        setCatatanIzinSakit,
+        deleteCatatanKehadiran,
         resetTodayAttendance,
         reloadInitialData,
         getBackupPayload,

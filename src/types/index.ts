@@ -39,6 +39,18 @@ export interface Absensi {
   synced_at?: string; // waktu sinkronisasi
 }
 
+export type StatusKehadiran = 'izin' | 'sakit' | 'alpa';
+
+export interface CatatanKehadiran {
+  id: string;
+  siswa_id: string;
+  tanggal: string; // YYYY-MM-DD
+  status: StatusKehadiran;
+  keterangan?: string;
+  diinput_oleh?: string; // email/nama staf, atau 'system' kalau otomatis (Alpa)
+  created_at?: string;
+}
+
 export type StatusKirimWA = 'pending' | 'terkirim' | 'gagal' | 'simulasi';
 
 export interface LogNotifikasiWA {
