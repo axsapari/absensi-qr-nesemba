@@ -181,10 +181,11 @@ const STORAGE_KEYS = {
   NATIONAL_HOLIDAYS: 'absensi_national_holidays_v1',
   CUSTOM_SCHOOL_DAYS: 'absensi_custom_school_days_v1',
   CATATAN_KEHADIRAN: 'absensi_catatan_kehadiran_v1',
+  ABSENSI_TOMBSTONES: 'absensi_attendance_tombstones_v1',
 };
 
 const DIAGNOSTIC_TRACE_KEY = 'absensi_audit_trace_v1';
-const appendDiagnosticTrace = (event: 'localstorage-write' | 'focus' | 'visibility' | 'audit', absensi: Absensi[], note?: string) => {
+const appendDiagnosticTrace = (event: 'localstorage-write' | 'focus' | 'visibility' | 'audit' | 'delete' | 'reset' | 'reconcile', absensi: Absensi[], note?: string) => {
   try {
     const targetNisn = '0124203121';
     const siswaRaw = localStorage.getItem(STORAGE_KEYS.SISWA);
@@ -199,6 +200,16 @@ const appendDiagnosticTrace = (event: 'localstorage-write' | 'focus' | 'visibili
     list.push({ at: new Date().toISOString(), event, targetPresent: targetIds.length > 0, targetIds, totalAttendance: absensi.length, note });
     localStorage.setItem(DIAGNOSTIC_TRACE_KEY, JSON.stringify(list.slice(-80)));
   } catch {}
+};
+
+type AttendanceTombstone = {
+  key?: string;
+  siswa_id?: string;
+  tanggal: string;
+  jenis?: Absensi['jenis'];
+  deletedAt: string;
+  reason: 'delete' | 'reset';
+  id?: string;
 };
 
 type PendingMutation =
@@ -434,6 +445,65 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem(STORAGE_KEYS.PENDING_MUTATIONS, JSON.stringify(items));
     } catch {}
     setPendingMutationCount(items.length);
+  };
+
+  const readAttendanceTombstones = (): AttendanceTombstone[] => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEYS.ABSENSI_TOMBSTONES);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const writeAttendanceTombstones = (items: AttendanceTombstone[]) => {
+    try {
+      // Keep the list bounded. Tombstones are intentionally durable, but there is
+      // no reason for an attendance kiosk to accumulate an unbounded history.
+      localStorage.setItem(STORAGE_KEYS.ABSENSI_TOMBSTONES, JSON.stringify(items.slice(-1000)));
+    } catch {}
+  };
+
+  const localAttendanceKey = (item: Pick<Absensi, 'siswa_id' | 'tanggal' | 'jenis'>): string => {
+    const student = siswaList.find((s) => String(s.id) === String(item.siswa_id));
+    const aliasNisn = siswaIdAliases[String(item.siswa_id)];
+    const stableStudent = String(student?.nisn || aliasNisn || item.siswa_id).trim();
+    return `${stableStudent}|${item.tanggal}|${item.jenis}`;
+  };
+
+  const addAttendanceTombstone = (item: Pick<Absensi, 'id' | 'siswa_id' | 'tanggal' | 'jenis'>, reason: 'delete' | 'reset') => {
+    const current = readAttendanceTombstones();
+    const key = localAttendanceKey(item);
+    const next = current.filter((t) => {
+      if (reason === 'reset') return t.tanggal !== item.tanggal || t.reason !== 'reset';
+      return !(t.reason === 'delete' && t.key === key);
+    });
+    next.push({ key, siswa_id: String(item.siswa_id), tanggal: item.tanggal, jenis: item.jenis, deletedAt: new Date().toISOString(), reason, id: String(item.id) });
+    writeAttendanceTombstones(next);
+  };
+
+  const addResetTombstone = (tanggal: string) => {
+    const current = readAttendanceTombstones().filter((t) => !(t.reason === 'reset' && t.tanggal === tanggal));
+    current.push({ tanggal, deletedAt: new Date().toISOString(), reason: 'reset' });
+    writeAttendanceTombstones(current);
+  };
+
+  const clearAttendanceTombstonesForScan = (item: Pick<Absensi, 'siswa_id' | 'tanggal' | 'jenis'>) => {
+    const key = localAttendanceKey(item);
+    const next = readAttendanceTombstones().filter((t) => {
+      if (t.reason === 'reset' && t.tanggal === item.tanggal) return false;
+      if (t.reason === 'delete' && t.key === key) return false;
+      return true;
+    });
+    writeAttendanceTombstones(next);
+  };
+
+  const isAttendanceTombstoned = (item: Pick<Absensi, 'siswa_id' | 'tanggal' | 'jenis'>): boolean => {
+    const key = localAttendanceKey(item);
+    return readAttendanceTombstones().some((t) =>
+      (t.reason === 'reset' && t.tanggal === item.tanggal) ||
+      (t.reason === 'delete' && t.key === key)
+    );
   };
 
   useEffect(() => {
@@ -1184,18 +1254,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (verifyError) throw verifyError;
             if ((verifyRows ?? []).length > 0) throw new Error(`Absensi ${mutation.id} masih ada di database setelah perintah hapus.`);
           } else if (mutation.siswa_id && mutation.tanggal && mutation.jenis) {
+            // Legacy/local IDs may differ from Supabase IDs. Resolve the student
+            // through the local NISN/alias before using the business-key fallback.
+            const localStudent = siswaList.find((s) => String(s.id) === String(mutation.siswa_id));
+            const nisn = String(localStudent?.nisn || siswaIdAliases[String(mutation.siswa_id)] || '').trim();
+            let canonicalSiswaId = String(mutation.siswa_id);
+            if (nisn) {
+              const { data: remoteStudent, error: remoteStudentError } = await supabase
+                .from('siswa').select('id').eq('nisn', nisn).maybeSingle();
+              if (remoteStudentError) throw remoteStudentError;
+              if (remoteStudent?.id) canonicalSiswaId = String(remoteStudent.id);
+            }
+
             const { data: matches, error: matchError } = await supabase
-              .from('absensi').select('id').eq('siswa_id', mutation.siswa_id).eq('tanggal', mutation.tanggal).eq('jenis', mutation.jenis);
+              .from('absensi').select('id').eq('siswa_id', canonicalSiswaId).eq('tanggal', mutation.tanggal).eq('jenis', mutation.jenis);
             if (matchError) throw matchError;
             remoteIds = (matches ?? []).map((row) => String(row.id));
             if (remoteIds.length > 0) {
               const { error: logError } = await supabase.from('log_notifikasi_wa').delete().in('absensi_id', remoteIds);
               if (logError) throw logError;
               const { error } = await supabase
-                .from('absensi').delete().eq('siswa_id', mutation.siswa_id).eq('tanggal', mutation.tanggal).eq('jenis', mutation.jenis);
+                .from('absensi').delete().eq('siswa_id', canonicalSiswaId).eq('tanggal', mutation.tanggal).eq('jenis', mutation.jenis);
               if (error) throw error;
               const { data: verifyRows, error: verifyError } = await supabase
-                .from('absensi').select('id').eq('siswa_id', mutation.siswa_id).eq('tanggal', mutation.tanggal).eq('jenis', mutation.jenis);
+                .from('absensi').select('id').eq('siswa_id', canonicalSiswaId).eq('tanggal', mutation.tanggal).eq('jenis', mutation.jenis);
               if (verifyError) throw verifyError;
               if ((verifyRows ?? []).length > 0) throw new Error(`Absensi berdasarkan siswa/tanggal/jenis masih tersisa (${verifyRows?.length ?? 0} data).`);
             }
@@ -1278,6 +1360,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     const remoteByKey = new Map<string, Absensi>();
+    const tombstones = readAttendanceTombstones();
+    const tombstoneKeySet = new Set(tombstones.filter(t => t.reason === 'delete' && t.key).map(t => String(t.key)));
+    const resetDateSet = new Set(tombstones.filter(t => t.reason === 'reset').map(t => String(t.tanggal)));
     for (const row of remoteRows ?? []) {
       const item: Absensi = {
         id: String(row.id),
@@ -1291,13 +1376,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         synced: true,
         synced_at: new Date().toISOString(),
       };
-      remoteByKey.set(businessKey(item.siswa_id, item.tanggal, item.jenis), item);
+      const key = businessKey(item.siswa_id, item.tanggal, item.jenis);
+      if (resetDateSet.has(item.tanggal) || tombstoneKeySet.has(key)) continue;
+      remoteByKey.set(key, item);
     }
 
-    // Keep every non-today historical local record. For today, prefer the remote
+    // Keep every non-today historical local record. A durable tombstone is an
+    // explicit operator deletion, so it has precedence over remote reconciliation.
+    // For today, prefer the remote
     // canonical row when it exists, but preserve unsynced local rows so a temporary
     // network/master mismatch cannot make a fresh scan disappear.
-    const todayLocal = baseList.filter((a) => a.tanggal === today);
+    const todayLocal = baseList.filter((a) => a.tanggal === today && !isAttendanceTombstoned(a));
     const historical = baseList.filter((a) => a.tanggal !== today);
     const localByKey = new Map<string, Absensi>();
     for (const item of todayLocal) {
@@ -1313,7 +1402,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!mergedToday.has(key)) mergedToday.set(key, local);
     }
 
-    return [...historical, ...Array.from(mergedToday.values())].sort((a, b) => a.timestamp - b.timestamp);
+    const result = [...historical, ...Array.from(mergedToday.values())].sort((a, b) => a.timestamp - b.timestamp);
+    appendDiagnosticTrace('reconcile', result, `remote=${remoteRows?.length ?? 0}, tombstones=${tombstones.length}, hasil=${result.length}`);
+    return result;
   };
 
   // Synchronization function
@@ -1706,6 +1797,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       synced_at: undefined,
     };
 
+    // A fresh scan is an explicit new attendance event. It releases a prior
+    // deletion/reset tombstone for the same business key/date.
+    clearAttendanceTombstonesForScan(newAbsensi);
+
     // 5. Sound trigger
     if (status === 'terlambat') {
       soundManager.playLate();
@@ -1975,20 +2070,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteAbsensi = (id: string) => {
     const target = absensiList.find((a) => a.id === id);
+    if (!target) return;
+    // Tombstone is written BEFORE the local state change so a focus/visibility
+    // event cannot reconcile the just-deleted row back from Supabase.
+    addAttendanceTombstone(target, 'delete');
+    appendDiagnosticTrace('delete', absensiList.filter((a) => a.id !== id), `hapus absensi ${id} (${target.tanggal}/${target.jenis})`);
     setAbsensiList((prev) => prev.filter((a) => a.id !== id));
     setLogNotifikasiList((prev) => prev.filter((log) => log.absensi_id !== id));
-    if (target?.synced) {
-      enqueueMutation({
-        type: 'absensi_delete',
-        id,
-        siswa_id: target.siswa_id,
-        tanggal: target.tanggal,
-        jenis: target.jenis,
-      });
-      scheduleAutoSync('absensi-delete');
-    } else {
-      writePendingMutations(readPendingMutations().filter((m) => !(m.type === 'absensi_delete' && m.id === id)));
-    }
+    // Queue the remote delete even when the local row was marked unsynced. This is
+    // intentionally defensive: if a previous race left a remote row behind, the
+    // business-key fallback in the mutation handler can still remove it.
+    enqueueMutation({
+      type: 'absensi_delete',
+      id,
+      siswa_id: target.siswa_id,
+      tanggal: target.tanggal,
+      jenis: target.jenis,
+    });
+    scheduleAutoSync('absensi-delete');
   };
 
   // CATATAN KEHADIRAN (Izin/Sakit) -- Alpa dibuat otomatis oleh penjadwalan
@@ -2051,6 +2150,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const resetTodayAttendance = () => {
     const today = getTodayDateString();
     const targets = absensiList.filter((a) => a.tanggal === today);
+    // Date-level tombstone prevents focus/reconciliation from restoring any
+    // attendance that the operator intentionally reset today.
+    addResetTombstone(today);
+    appendDiagnosticTrace('reset', absensiList.filter((a) => a.tanggal !== today), `reset absensi tanggal ${today}, target=${targets.length}`);
     setAbsensiList((prev) => prev.filter((a) => a.tanggal !== today));
     setLogNotifikasiList((prev) => prev.filter((log) => !targets.some((a) => a.id === log.absensi_id)));
     // Reset is a date-level operation. Queue it even when the local list is

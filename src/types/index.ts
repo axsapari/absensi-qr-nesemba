@@ -170,7 +170,7 @@ export interface DataAuditDiagnosticItem {
 
 export interface DataAuditTraceEvent {
   at: string;
-  event: 'localstorage-write' | 'focus' | 'visibility' | 'audit';
+  event: 'localstorage-write' | 'focus' | 'visibility' | 'audit' | 'delete' | 'reset' | 'reconcile';
   targetPresent: boolean;
   targetIds: string[];
   totalAttendance: number;
@@ -188,6 +188,7 @@ export interface DataAuditReport {
     pendingMutations: string[];
     localStorageAbsensiBytes: number;
     trace: DataAuditTraceEvent[];
+    tombstones: { key?: string; siswa_id?: string; tanggal: string; jenis?: JenisAbsensi; deletedAt: string; reason: 'delete' | 'reset'; id?: string }[];
   };
   remote: {
     siswa: number;
@@ -209,6 +210,7 @@ export interface DataAuditReport {
     duplicateAttendanceKeys: number;
     todayLocalOnly: number;
     todayRemoteOnly: number;
+    tombstones: number;
   };
   healthy: boolean;
   issues: string[];

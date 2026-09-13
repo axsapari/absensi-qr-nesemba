@@ -3,6 +3,9 @@ import { getSupabaseClient } from './supabase';
 
 const keyOf = (siswaId: string, tanggal: string, jenis: string) => `${siswaId}|${tanggal}|${jenis}`;
 const normalizeNisn = (value: unknown) => String(value ?? '').trim();
+const readTombstones = (): NonNullable<DataAuditReport['diagnosticTarget']>['tombstones'] => {
+  try { return JSON.parse(localStorage.getItem('absensi_attendance_tombstones_v1') || '[]'); } catch { return []; }
+};
 const readTrace = (): DataAuditTraceEvent[] => {
   try {
     const raw = localStorage.getItem('absensi_audit_trace_v1');
@@ -24,10 +27,10 @@ export async function runDataAudit(
     diagnosticTarget: {
       nisn: target,
       localStudents: local.siswa.filter(s => normalizeNisn(s.nisn) === target).map(s => ({ id: String(s.id), nama: s.nama, nisn: normalizeNisn(s.nisn) })),
-      remoteStudents: [], items: [], pendingMutations: [], localStorageAbsensiBytes: (() => { try { return new Blob([localStorage.getItem('absensi_records_v1') || '']).size; } catch { return 0; } })(), trace: readTrace(),
+      remoteStudents: [], items: [], pendingMutations: [], localStorageAbsensiBytes: (() => { try { return new Blob([localStorage.getItem('absensi_records_v1') || '']).size; } catch { return 0; } })(), trace: readTrace(), tombstones: readTombstones(),
     },
     remote: { siswa: 0, kelas: 0, absensi: 0, logNotifikasiWA: 0, orphanAbsensi: 0, orphanLogWA: 0, duplicateAttendanceKeys: 0 },
-    local: { siswa: local.siswa.length, kelas: local.kelas.length, absensi: local.absensi.length, logNotifikasiWA: local.logs.length, pendingMutations, orphanAbsensi: 0, orphanLogWA: 0, duplicateAttendanceKeys: 0, todayLocalOnly: 0, todayRemoteOnly: 0 },
+    local: { siswa: local.siswa.length, kelas: local.kelas.length, absensi: local.absensi.length, logNotifikasiWA: local.logs.length, pendingMutations, orphanAbsensi: 0, orphanLogWA: 0, duplicateAttendanceKeys: 0, todayLocalOnly: 0, todayRemoteOnly: 0, tombstones: readTombstones().length },
     healthy: false, issues: ['Belum dapat terhubung ke Supabase untuk audit.'],
   });
 
@@ -49,6 +52,7 @@ export async function runDataAudit(
     report.diagnosticTarget.pendingMutations = pendingRows
       .filter(m => JSON.stringify(m).includes(target))
       .map(m => String(m.type || 'mutation'));
+    report.diagnosticTarget.tombstones = readTombstones().filter(t => JSON.stringify(t).includes(target));
     const targetLocalIds = new Set(report.diagnosticTarget.localStudents.map(s => s.id));
     let aliasMapLocal: Record<string, string> = {};
     try { aliasMapLocal = JSON.parse(localStorage.getItem('absensi_siswa_id_aliases_v1') || '{}'); } catch {}

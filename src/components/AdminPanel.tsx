@@ -640,6 +640,16 @@ export const AdminPanel: React.FC = () => {
                         <div className="text-amber-300">{item.sourceHints.join(' · ')}</div>
                       </div>
                     ))}
+                    {auditReport.diagnosticTarget.tombstones.length > 0 && (
+                      <div className="border-t border-slate-700 pt-2">
+                        <div className="text-[10px] font-bold mb-1 text-amber-300">Deletion Tombstone aktif</div>
+                        {auditReport.diagnosticTarget.tombstones.slice(-8).map((t, i) => (
+                          <div key={`${t.deletedAt}-${i}`} className="text-[9px] text-slate-400">
+                            {new Date(t.deletedAt).toLocaleString('id-ID')} · {t.reason === 'reset' ? `RESET ${t.tanggal}` : `DELETE ${t.tanggal}/${t.jenis || '-'} · ${t.key || t.siswa_id || '-'}`}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div className="border-t border-slate-700 pt-2">
                       <div className="text-[10px] font-bold mb-1">Trace terakhir</div>
                       {auditReport.diagnosticTarget.trace.slice(-12).map((t, i) => <div key={`${t.at}-${i}`} className="text-[9px] text-slate-400">{new Date(t.at).toLocaleTimeString('id-ID')} · {t.event} · target={t.targetPresent ? 'ADA' : 'tidak ada'} · total={t.totalAttendance}{t.note ? ` · ${t.note}` : ''}</div>)}
@@ -1306,6 +1316,16 @@ export const AdminPanel: React.FC = () => {
                         <div className="text-amber-300">{item.sourceHints.join(' · ')}</div>
                       </div>
                     ))}
+                    {auditReport.diagnosticTarget.tombstones.length > 0 && (
+                      <div className="border-t border-slate-700 pt-2">
+                        <div className="text-[10px] font-bold mb-1 text-amber-300">Deletion Tombstone aktif</div>
+                        {auditReport.diagnosticTarget.tombstones.slice(-8).map((t, i) => (
+                          <div key={`${t.deletedAt}-${i}`} className="text-[9px] text-slate-400">
+                            {new Date(t.deletedAt).toLocaleString('id-ID')} · {t.reason === 'reset' ? `RESET ${t.tanggal}` : `DELETE ${t.tanggal}/${t.jenis || '-'} · ${t.key || t.siswa_id || '-'}`}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div className="border-t border-slate-700 pt-2">
                       <div className="text-[10px] font-bold mb-1">Trace terakhir</div>
                       {auditReport.diagnosticTarget.trace.slice(-12).map((t, i) => <div key={`${t.at}-${i}`} className="text-[9px] text-slate-400">{new Date(t.at).toLocaleTimeString('id-ID')} · {t.event} · target={t.targetPresent ? 'ADA' : 'tidak ada'} · total={t.totalAttendance}{t.note ? ` · ${t.note}` : ''}</div>)}
