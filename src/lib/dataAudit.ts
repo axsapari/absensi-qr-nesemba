@@ -139,7 +139,7 @@ export async function runDataAudit(
   const localToday = new Set(local.absensi.filter(a => a.tanggal === today && a.synced).map(a => keyOf(String(a.siswa_id), a.tanggal, a.jenis)));
   const remoteToday = new Set(remoteAttendance.filter(a => a.tanggal === today).map(a => keyOf(String(a.siswa_id), a.tanggal, a.jenis)));
   report.local.todayLocalOnly = [...localToday].filter(k => !remoteToday.has(k)).length;
-  report.local.todayRemoteOnly = [...remoteToday].filter(k => !localToday.has(k)).length;
+  report.local.todayRemoteOnly = Array.from(remoteToday).filter(k => !localToday.has(k)).length;
   if (report.local.todayLocalOnly) issues.push(`${report.local.todayLocalOnly} absensi hari ini tercatat lokal tetapi belum terlihat di Supabase.`);
   if (report.local.todayRemoteOnly) issues.push(`${report.local.todayRemoteOnly} absensi hari ini ada di Supabase tetapi belum terlihat di lokal.`);
   report.issues = issues; report.healthy = report.online && issues.length === 0; if (report.healthy) report.issues = ['Tidak ditemukan masalah integritas data.'];

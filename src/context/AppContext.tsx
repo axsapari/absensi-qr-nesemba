@@ -219,7 +219,9 @@ type PendingMutation =
   | { type: 'kelas_delete'; id: string }
   | { type: 'absensi_delete'; id: string; siswa_id?: string; tanggal?: string; jenis?: Absensi['jenis'] }
   | { type: 'absensi_reset_today'; tanggal: string }
-  | { type: 'pengaturan_jam_upsert'; row: PengaturanJam };
+  | { type: 'pengaturan_jam_upsert'; row: PengaturanJam }
+  | { type: 'catatan_kehadiran_upsert'; row: CatatanKehadiran }
+  | { type: 'catatan_kehadiran_delete'; id: string; siswa_id?: string; tanggal?: string };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // 1. Initialize State with localStorage fallback
@@ -764,7 +766,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           // Jangan blokir sinkronisasi siswa/kelas yang sudah berhasil di atas.
           console.error('Supabase catatan_kehadiran SELECT:', catatanResult.error);
         } else if (catatanResult.data) {
-          setCatatanKehadiranList(catatanResult.data as CatatanKehadiran[]);
+          // Never let a focus/login refresh overwrite a local Izin/Sakit mutation
+          // that is still waiting in the durable queue. Remote data is authoritative
+          // only for keys without a pending local mutation.
+          const pendingCatatan = readPendingMutations().filter((m) => m.type.startsWith('catatan_kehadiran_'));
+          const pendingKeys = new Set(
+            pendingCatatan.flatMap((m) => {
+              if (m.type === 'catatan_kehadiran_upsert') return [`${m.row.siswa_id}|${m.row.tanggal}`];
+              return [`${m.siswa_id ?? ''}|${m.tanggal ?? ''}`, `delete-id|${m.id}`];
+            })
+          );
+          setCatatanKehadiranList((prev) => {
+            const remoteRows = catatanResult.data as CatatanKehadiran[];
+            const localPendingRows = prev.filter((local) => {
+              const key = `${local.siswa_id}|${local.tanggal}`;
+              const matchingDelete = pendingCatatan.some((m) => m.type === 'catatan_kehadiran_delete' && (m.id === local.id || (m.siswa_id === local.siswa_id && m.tanggal === local.tanggal)));
+              return pendingKeys.has(key) || pendingKeys.has(`delete-id|${local.id}`) || matchingDelete;
+            });
+            const protectedKeys = new Set(localPendingRows.map((x) => `${x.siswa_id}|${x.tanggal}`));
+            const merged = [
+              ...remoteRows.filter((r) => !protectedKeys.has(`${r.siswa_id}|${r.tanggal}`) && !pendingCatatan.some((m) => m.type === 'catatan_kehadiran_delete' && (m.id === r.id || (m.siswa_id === r.siswa_id && m.tanggal === r.tanggal)))),
+              ...localPendingRows,
+            ];
+            return merged;
+          });
         }
 
         setSyncBanner({
@@ -1134,13 +1159,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const enqueueMutation = (mutation: PendingMutation) => {
     const current = readPendingMutations();
-    const key = mutation.type === 'siswa_upsert' || mutation.type === 'kelas_upsert' || mutation.type === 'pengaturan_jam_upsert'
+    const key = mutation.type === 'siswa_upsert' || mutation.type === 'kelas_upsert' || mutation.type === 'pengaturan_jam_upsert' || mutation.type === 'catatan_kehadiran_upsert'
       ? mutation.row.id
       : mutation.type === 'absensi_reset_today'
         ? mutation.tanggal
         : mutation.id;
     const sameEntity = (m: PendingMutation) => {
-      const mk = m.type === 'siswa_upsert' || m.type === 'kelas_upsert' || m.type === 'pengaturan_jam_upsert'
+      const mk = m.type === 'siswa_upsert' || m.type === 'kelas_upsert' || m.type === 'pengaturan_jam_upsert' || m.type === 'catatan_kehadiran_upsert'
         ? m.row.id
         : m.type === 'absensi_reset_today'
           ? m.tanggal
@@ -1148,6 +1173,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const family = mutation.type.startsWith('siswa_') ? 'siswa_'
         : mutation.type.startsWith('kelas_') ? 'kelas_'
         : mutation.type.startsWith('pengaturan_jam_') ? 'pengaturan_jam_'
+        : mutation.type.startsWith('catatan_kehadiran_') ? 'catatan_kehadiran_'
         : 'absensi_';
       return m.type.startsWith(family) && mk === key;
     };
@@ -1155,13 +1181,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const removeMutation = (mutation: PendingMutation) => {
-    const key = mutation.type === 'siswa_upsert' || mutation.type === 'kelas_upsert' || mutation.type === 'pengaturan_jam_upsert'
+    const key = mutation.type === 'siswa_upsert' || mutation.type === 'kelas_upsert' || mutation.type === 'pengaturan_jam_upsert' || mutation.type === 'catatan_kehadiran_upsert'
       ? mutation.row.id
       : mutation.type === 'absensi_reset_today'
         ? mutation.tanggal
         : mutation.id;
     const next = readPendingMutations().filter((m) => {
-      const mk = m.type === 'siswa_upsert' || m.type === 'kelas_upsert' || m.type === 'pengaturan_jam_upsert'
+      const mk = m.type === 'siswa_upsert' || m.type === 'kelas_upsert' || m.type === 'pengaturan_jam_upsert' || m.type === 'catatan_kehadiran_upsert'
         ? m.row.id
         : m.type === 'absensi_reset_today'
           ? m.tanggal
@@ -1225,6 +1251,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             .from('pengaturan_jam').select('*').eq('id', 'default_config').maybeSingle();
           if (verifyError) throw verifyError;
           if (!verify) throw new Error('Pengaturan jam tidak ditemukan setelah disimpan ke database.');
+        } else if (mutation.type === 'catatan_kehadiran_upsert') {
+          const row = mutation.row;
+          const { error } = await supabase.from('catatan_kehadiran')
+            .upsert([row], { onConflict: 'siswa_id,tanggal' });
+          if (error) throw error;
+
+          // Read-back verification prevents local UI from reporting success when
+          // the server rejected/ignored the mutation.
+          const { data: verify, error: verifyError } = await supabase
+            .from('catatan_kehadiran')
+            .select('*')
+            .eq('siswa_id', row.siswa_id)
+            .eq('tanggal', row.tanggal)
+            .maybeSingle();
+          if (verifyError) throw verifyError;
+          if (!verify || String(verify.status) !== String(row.status)) {
+            throw new Error(`Catatan ${row.status} ${row.tanggal} tidak ditemukan/berbeda setelah disimpan ke database.`);
+          }
+          setCatatanKehadiranList((prev) => {
+            const without = prev.filter((c) => !(c.siswa_id === row.siswa_id && c.tanggal === row.tanggal));
+            return [...without, verify as CatatanKehadiran];
+          });
+        } else if (mutation.type === 'catatan_kehadiran_delete') {
+          const { error } = await supabase.from('catatan_kehadiran').delete().eq('id', mutation.id);
+          if (error) throw error;
+          const { data: verifyRows, error: verifyError } = await supabase
+            .from('catatan_kehadiran').select('id').eq('id', mutation.id);
+          if (verifyError) throw verifyError;
+          if ((verifyRows ?? []).length > 0) {
+            throw new Error(`Catatan kehadiran ${mutation.id} masih ada di database setelah perintah hapus.`);
+          }
         } else if (mutation.type === 'siswa_delete') {
           const { error } = await supabase.from('siswa').delete().eq('id', mutation.id);
           if (error) throw error;
@@ -2091,7 +2148,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // CATATAN KEHADIRAN (Izin/Sakit) -- Alpa dibuat otomatis oleh penjadwalan
-  // di Supabase (fungsi proses_alpa_otomatis), bukan dari sini.
+  // di Supabase. Izin/Sakit memakai durable mutation queue agar aman offline,
+  // sama seperti absensi, siswa, kelas, dan pengaturan jam.
   const setCatatanIzinSakit = (
     siswaId: string,
     tanggal: string,
@@ -2099,6 +2157,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     keterangan: string
   ) => {
     const id = `catatan-${siswaId}-${tanggal}`;
+    const previous = catatanKehadiranList.find((c) => c.siswa_id === siswaId && c.tanggal === tanggal);
     const record: CatatanKehadiran = {
       id,
       siswa_id: siswaId,
@@ -2106,45 +2165,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status,
       keterangan: keterangan.trim() || undefined,
       diinput_oleh: currentUser?.email || currentUser?.name || 'staf',
-      created_at: new Date().toISOString(),
+      created_at: previous?.created_at || new Date().toISOString(),
     };
 
     setCatatanKehadiranList((prev) => {
-      const exists = prev.some((c) => c.siswa_id === siswaId && c.tanggal === tanggal);
-      return exists
-        ? prev.map((c) => (c.siswa_id === siswaId && c.tanggal === tanggal ? record : c))
-        : [...prev, record];
+      const without = prev.filter((c) => !(c.siswa_id === siswaId && c.tanggal === tanggal));
+      return [...without, record];
     });
 
-    const supabase = getSupabaseClient(supabaseConfig);
-    if (supabase) {
-      supabase
-        .from('catatan_kehadiran')
-        .upsert([record], { onConflict: 'siswa_id,tanggal' })
-        .then(({ error }) => {
-          if (error) {
-            console.error('Gagal menyimpan catatan izin/sakit ke Supabase:', error.message);
-            setSyncBanner({
-              type: 'sync_error',
-              message: `Catatan Izin/Sakit tersimpan lokal tapi GAGAL disinkron: ${error.message}`,
-            });
-          }
-        });
-    }
+    enqueueMutation({ type: 'catatan_kehadiran_upsert', row: record });
+    scheduleAutoSync('catatan-kehadiran-change');
   };
 
   const deleteCatatanKehadiran = (id: string) => {
     setCatatanKehadiranList((prev) => prev.filter((c) => c.id !== id));
-    const supabase = getSupabaseClient(supabaseConfig);
-    if (supabase) {
-      supabase
-        .from('catatan_kehadiran')
-        .delete()
-        .eq('id', id)
-        .then(({ error }) => {
-          if (error) console.error('Gagal menghapus catatan kehadiran di Supabase:', error.message);
-        });
-    }
+    const target = catatanKehadiranList.find((c) => c.id === id);
+    enqueueMutation({ type: 'catatan_kehadiran_delete', id, siswa_id: target?.siswa_id, tanggal: target?.tanggal });
+    scheduleAutoSync('catatan-kehadiran-delete');
   };
 
   const resetTodayAttendance = () => {
