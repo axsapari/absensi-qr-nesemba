@@ -50,6 +50,7 @@ export const RekapDashboard: React.FC = () => {
     deleteCatatanKehadiran,
     profilSekolah,
     supabaseConfig,
+    getDateHariInfo,
   } = useApp();
 
   // Mode Tarik Data
@@ -127,6 +128,8 @@ export const RekapDashboard: React.FC = () => {
   }, [absensiList, filterMode, selectedDate, selectedMonth, selectedYear, startDate, endDate]);
 
   // 1. HARIAN: Filtered Daily List
+  const selectedDateHariInfo = useMemo(() => getDateHariInfo(selectedDate), [selectedDate, getDateHariInfo]);
+
   const dailyAttendanceList = useMemo(() => {
     return siswaList
       .filter((siswa) => {
@@ -395,7 +398,9 @@ export const RekapDashboard: React.FC = () => {
           ? 'Sakit'
           : item.catatan?.status === 'alpa'
           ? 'Alpa'
-          : 'Belum Hadir',
+          : selectedDateHariInfo.isHariEfektif
+          ? 'Belum Hadir'
+          : 'Libur',
         'Jam Pulang': item.scanPulang ? item.scanPulang.waktu_scan : '-',
         'No WA Ortu': item.siswa.nomor_wa_ortu,
         'Nama Ortu': item.siswa.nama_ortu,
@@ -465,7 +470,9 @@ export const RekapDashboard: React.FC = () => {
           ? 'Sakit'
           : item.catatan?.status === 'alpa'
           ? 'Alpa'
-          : 'Belum Hadir',
+          : selectedDateHariInfo.isHariEfektif
+          ? 'Belum Hadir'
+          : 'Libur',
         item.scanPulang ? item.scanPulang.waktu_scan : '-',
         `"${item.siswa.nomor_wa_ortu}"`,
       ]);
@@ -914,6 +921,15 @@ export const RekapDashboard: React.FC = () => {
           {/* HARIAN VIEW */}
           {filterMode === 'harian' ? (
             <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+              {!selectedDateHariInfo.isHariEfektif && (
+                <div className="bg-amber-50 border-b border-amber-200 px-4 py-3 flex items-center gap-2.5 text-sm text-amber-800">
+                  <CalendarDays className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>
+                    <strong>{selectedDateHariInfo.catatanStatus}</strong> — tanggal ini bukan hari
+                    efektif KBM, jadi seluruh siswa wajar tidak memiliki catatan presensi (bukan Alpa).
+                  </span>
+                </div>
+              )}
               <div className="p-4 border-b border-slate-100 flex items-center justify-between">
                 <span className="font-bold text-sm text-slate-800">
                   Data Presensi Tanggal: {selectedDate} ({dailyAttendanceList.length} Siswa)
@@ -1015,9 +1031,13 @@ export const RekapDashboard: React.FC = () => {
                               <span className="inline-flex items-center gap-1 bg-slate-800 text-white font-bold px-2.5 py-1 rounded-full text-xs">
                                 Alpa
                               </span>
-                            ) : (
+                            ) : selectedDateHariInfo.isHariEfektif ? (
                               <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-700 font-bold px-2.5 py-1 rounded-full text-xs">
                                 Belum Hadir
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-500 font-bold px-2.5 py-1 rounded-full text-xs">
+                                Libur
                               </span>
                             )}
                           </td>
@@ -1768,6 +1788,11 @@ export const RekapDashboard: React.FC = () => {
                       Rombel: Kelas {activeClassObj.nama_kelas} (Wali Kelas: {activeClassObj.wali_kelas})
                     </div>
                   )}
+                  {filterMode === 'harian' && !selectedDateHariInfo.isHariEfektif && (
+                    <div className="text-xs text-amber-700 font-bold mt-1">
+                      Catatan: {selectedDateHariInfo.catatanStatus} -- bukan hari efektif KBM
+                    </div>
+                  )}
                 </div>
 
                 {/* TABEL DATA FORMAL */}
@@ -1820,7 +1845,9 @@ export const RekapDashboard: React.FC = () => {
                                   ? 'Sakit'
                                   : item.catatan?.status === 'alpa'
                                   ? 'Alpa'
-                                  : 'Belum Hadir'}
+                                  : selectedDateHariInfo.isHariEfektif
+                                  ? 'Belum Hadir'
+                                  : 'Libur'}
                               </td>
                               <td className="border border-black p-1.5 text-center">
                                 {item.scanPulang ? item.scanPulang.waktu_scan : '-'}
