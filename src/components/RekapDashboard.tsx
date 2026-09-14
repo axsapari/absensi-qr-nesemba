@@ -1727,10 +1727,10 @@ export const RekapDashboard: React.FC = () => {
 
       {/* MODAL CETAK LAPORAN RESMI (A4 PRINTABLE PREVIEW) */}
       {isPrintModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
+        <div id="print-report-modal" className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+            <div className="print-report-toolbar px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
               <div className="flex items-center gap-2 font-bold text-slate-800 text-sm">
                 <Printer className="w-4 h-4 text-emerald-600" />
                 <span>Pratinjau Cetak Laporan Presensi Resmi</span>
@@ -1753,30 +1753,27 @@ export const RekapDashboard: React.FC = () => {
             </div>
 
             {/* Printable Paper Canvas */}
-            <div className="p-8 overflow-y-auto bg-slate-200/50 flex-1 flex justify-center">
+            <div className="print-report-stage p-8 overflow-y-auto bg-slate-200/50 flex-1 flex justify-center">
               <div className="bg-white w-full max-w-[800px] p-8 rounded-lg shadow-sm border border-slate-300 text-slate-900 font-serif printable-report">
-                {/* KOP SURAT RESMI */}
-                <div className="flex items-center justify-between border-b-4 border-double border-black pb-3 mb-6">
-                  <div className="w-16 h-16 flex items-center justify-center shrink-0" title="Logo Pemerintah Kota Banjar">
-                    <CityLogo className="w-14 h-14" />
+                {/* KOP SURAT RESMI - mengikuti referensi kop sekolah */}
+                <div className="report-letterhead flex items-center justify-between border-b-4 border-double border-black pb-3 mb-6">
+                  <div className="w-20 h-20 flex items-center justify-center shrink-0" title="Logo Pemerintah Kota Banjar">
+                    <CityLogo className="w-[72px] h-[72px]" />
                   </div>
-                  <div className="text-center flex-1 px-4">
-                    <div className="text-sm uppercase tracking-wider font-bold">Pemerintah Kota Banjar</div>
-                    <div className="text-xs uppercase font-bold">Dinas Pendidikan dan Kebudayaan</div>
-                    <div className="text-lg font-black uppercase tracking-tight text-emerald-950 font-sans mt-0.5">
-                      {profilSekolah.nama || 'SMP NEGERI 9 BANJAR'}
-                    </div>
-                    <div className="text-[11px] text-slate-600 font-sans">
-                      {profilSekolah.alamat}, {profilSekolah.kota} • NPSN: {profilSekolah.npsn}
-                    </div>
+                  <div className="text-center flex-1 px-3 font-sans leading-tight">
+                    <div className="text-[15px] uppercase font-bold tracking-wide">PEMERINTAH KOTA BANJAR</div>
+                    <div className="text-[14px] uppercase font-bold">DINAS PENDIDIKAN DAN KEBUDAYAAN</div>
+                    <div className="text-[17px] uppercase font-black mt-0.5">UPTD SEKOLAH MENENGAH PERTAMA NEGERI 9 BANJAR</div>
+                    <div className="text-[11px] font-semibold mt-1">Desa Batulawang Kecamatan Pataruman Kota Banjar 46326</div>
+                    <div className="text-[10px] mt-0.5">Email : info.smpn9bjr@gmail.com &nbsp;&nbsp; Website : smpn9kotabanjar.sch.id</div>
                   </div>
-                  <div className="w-16 h-16 flex items-center justify-center shrink-0" title="Logo SMP Negeri 9 Banjar">
-                    <SchoolLogo className="w-14 h-14" />
+                  <div className="w-20 h-20 flex items-center justify-center shrink-0" title="Logo SMP Negeri 9 Banjar">
+                    <SchoolLogo className="w-[72px] h-[72px]" />
                   </div>
                 </div>
 
                 {/* JUDUL LAPORAN */}
-                <div className="text-center mb-6 font-sans">
+                <div className="text-center mb-5 font-sans report-title-block">
                   <h2 className="text-base font-bold uppercase tracking-wider underline">
                     LAPORAN REKAPITULASI PRESENSI SISWA
                   </h2>

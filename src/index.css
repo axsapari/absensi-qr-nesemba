@@ -1,1 +1,121 @@
 @import "tailwindcss";
+
+/* Cetak laporan resmi: hanya kertas laporan yang dicetak, tanpa modal/frame/pratinjau. */
+@page {
+  size: A4 portrait;
+  margin: 12mm 12mm 14mm 12mm;
+}
+
+@media print {
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  body {
+    overflow: visible !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  #print-report-modal,
+  #print-report-modal .print-report-stage,
+  #print-report-modal .printable-report,
+  #print-report-modal .printable-report * {
+    visibility: visible !important;
+  }
+
+  #print-report-modal {
+    position: static !important;
+    inset: auto !important;
+    display: block !important;
+    width: auto !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #fff !important;
+    overflow: visible !important;
+  }
+
+  #print-report-modal > div {
+    display: block !important;
+    position: static !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+  }
+
+  #print-report-modal .print-report-toolbar {
+    display: none !important;
+  }
+
+  #print-report-modal .print-report-stage {
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #fff !important;
+    overflow: visible !important;
+  }
+
+  #print-report-modal .printable-report {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #fff !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    color: #000 !important;
+  }
+
+  #print-report-modal .report-letterhead {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  #print-report-modal .report-title-block {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  #print-report-modal table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    page-break-inside: auto;
+  }
+
+  #print-report-modal thead {
+    display: table-header-group;
+  }
+
+  #print-report-modal tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  #print-report-modal th,
+  #print-report-modal td {
+    color: #000 !important;
+    border-color: #000 !important;
+  }
+
+  #print-report-modal .report-letterhead + .report-title-block {
+    margin-bottom: 5mm !important;
+  }
+}
