@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useApp } from '../context/AppContext';
 import { Siswa, CatatanKehadiran } from '../types';
 import { getTodayDateString } from '../data/initialData';
@@ -1725,8 +1726,8 @@ export const RekapDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL CETAK LAPORAN RESMI (A4 PRINTABLE PREVIEW) */}
-      {isPrintModalOpen && (
+      {/* MODAL CETAK LAPORAN RESMI (F4 PRINTABLE PREVIEW) */}
+      {isPrintModalOpen && typeof document !== 'undefined' ? createPortal((
         <div id="print-report-modal" className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
             {/* Modal Header */}
@@ -1878,8 +1879,8 @@ export const RekapDashboard: React.FC = () => {
                     <div>Mengetahui,</div>
                     <div className="font-bold">Kepala SMP Negeri 9 Banjar</div>
                     <div className="h-20" />
-                    <div className="font-bold underline">H. DEDI SUPRIYADI, M.Pd.</div>
-                    <div className="text-[11px] text-slate-600">NIP. 19740315 199802 1 004</div>
+                    <div className="font-bold underline">{profilSekolah.kepalaSekolah || 'Kepala SMP Negeri 9 Banjar'}</div>
+                    <div className="text-[11px] text-slate-600">{profilSekolah.nipKepalaSekolah ? `NIP. ${profilSekolah.nipKepalaSekolah}` : ''}</div>
                   </div>
 
                   <div className="text-center w-64">
@@ -1898,7 +1899,7 @@ export const RekapDashboard: React.FC = () => {
             </div>
           </div>
         </div>
-      )}
+      ), document.body) : null}
 
       {izinSakitTarget && (
         <IzinSakitModal

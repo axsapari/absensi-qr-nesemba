@@ -41,7 +41,7 @@ const VIEW_TITLES: Record<AppView, { title: string; subtitle: string; icon: Reac
   },
   kartu: {
     title: 'Cetak Kartu Pelajar',
-    subtitle: 'Generator Kartu Siswa QR/NISN Siap Cetak A4',
+    subtitle: 'Generator Kartu Siswa QR/NISN Siap Cetak F4',
     icon: CreditCard,
   },
   backup: {

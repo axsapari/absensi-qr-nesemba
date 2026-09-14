@@ -84,7 +84,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       id: 'kartu',
       label: 'Cetak Kartu Pelajar',
-      description: 'Kartu QR/NISN siap print A4',
+      description: 'Kartu QR/NISN siap print F4',
       icon: CreditCard,
     },
     {

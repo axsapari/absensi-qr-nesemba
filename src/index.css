@@ -2,7 +2,8 @@
 
 /* Cetak laporan resmi: hanya kertas laporan yang dicetak, tanpa modal/frame/pratinjau. */
 @page {
-  size: A4 portrait;
+  /* F4 / Folio: 215.9 x 330.2 mm, portrait */
+  size: 215.9mm 330.2mm;
   margin: 12mm 12mm 14mm 12mm;
 }
 
@@ -117,5 +118,50 @@
 
   #print-report-modal .report-letterhead + .report-title-block {
     margin-bottom: 5mm !important;
+  }
+}
+
+/* v18: render print preview as a document portal so the application's
+   normal page layout cannot consume print pages before the report. */
+@media print {
+  body > #root {
+    display: none !important;
+  }
+
+  body > #print-report-modal {
+    display: block !important;
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  #print-report-modal .printable-report {
+    width: 100% !important;
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  #print-report-modal .report-letterhead {
+    margin-bottom: 4mm !important;
+    padding-bottom: 2.5mm !important;
+    border-bottom-width: 2px !important;
+  }
+
+  #print-report-modal .report-title-block {
+    margin-bottom: 4mm !important;
+  }
+
+  #print-report-modal .printable-report > div:last-child {
+    margin-top: 4mm !important;
+    padding-top: 2mm !important;
   }
 }
