@@ -360,17 +360,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
-  // User Accounts (agus, moch, alia, feby)
+  // User Accounts (agus, moch, alia, tri)
   const [users, setUsers] = useState<UserAccount[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.USERS);
       if (saved) {
         const parsed: UserAccount[] = JSON.parse(saved);
         const merged = [...parsed];
+        // Migrasi akun lama: username 'feby' sekarang menjadi 'tri'.
+        const legacyFeby = merged.find((u) => u.username.toLowerCase() === 'feby');
+        if (legacyFeby && !merged.some((u) => u.username.toLowerCase() === 'tri')) {
+          legacyFeby.username = 'tri';
+          legacyFeby.name = 'Tri Feby Adinsyah';
+          legacyFeby.id = 'u-tri';
+        }
         for (const defUser of INITIAL_USERS) {
           const existing = merged.find((u) => u.username.toLowerCase() === defUser.username.toLowerCase());
           if (!existing) merged.push(defUser);
-          else if (!existing.email && defUser.email) existing.email = defUser.email;
+          else {
+            existing.name = defUser.name;
+            if (!existing.email && defUser.email) existing.email = defUser.email;
+          }
         }
         return merged;
       }
@@ -555,6 +565,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.CUSTOM_SCHOOL_DAYS, JSON.stringify(customSchoolDays));
   }, [customSchoolDays]);
+
+  // v16: jadwal khusus juga dibawa dalam konfigurasi jam agar dua perangkat pos
+  // memakai kalender pulang cepat yang sama.
+  useEffect(() => {
+    if (Array.isArray(pengaturanJam.hari_khusus)) {
+      const remoteLike = pengaturanJam.hari_khusus;
+      if (JSON.stringify(remoteLike) !== JSON.stringify(customSchoolDays)) {
+        setCustomSchoolDays(remoteLike);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pengaturanJam.hari_khusus]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.KELAS, JSON.stringify(kelasList));
@@ -1098,8 +1120,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           jam_buka_pos: String(data.jam_buka_pos ?? prev.jam_buka_pos).slice(0, 5),
           batas_tepat_waktu: String(data.batas_tepat_waktu ?? prev.batas_tepat_waktu).slice(0, 5),
           batas_jam_masuk: String(data.batas_jam_masuk ?? prev.batas_jam_masuk).slice(0, 5),
+          batas_jam_pulang_senin: String(data.batas_jam_pulang_senin ?? prev.batas_jam_pulang_senin ?? '14:00').slice(0, 5),
           batas_jam_pulang: String(data.batas_jam_pulang ?? prev.batas_jam_pulang).slice(0, 5),
           batas_jam_pulang_jumat: String(data.batas_jam_pulang_jumat ?? prev.batas_jam_pulang_jumat).slice(0, 5),
+        hari_khusus: Array.isArray(data.hari_khusus) ? data.hari_khusus : (prev.hari_khusus || []),
           hari_aktif_sekolah: Array.isArray(data.hari_aktif_sekolah) ? data.hari_aktif_sekolah : prev.hari_aktif_sekolah,
           toleransi_duplikasi_menit: Number(data.toleransi_duplikasi_menit ?? prev.toleransi_duplikasi_menit),
         }));
@@ -1130,8 +1154,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         jam_buka_pos: String(data.jam_buka_pos ?? prev.jam_buka_pos).slice(0, 5),
         batas_tepat_waktu: String(data.batas_tepat_waktu ?? prev.batas_tepat_waktu).slice(0, 5),
         batas_jam_masuk: String(data.batas_jam_masuk ?? prev.batas_jam_masuk).slice(0, 5),
+        batas_jam_pulang_senin: String(data.batas_jam_pulang_senin ?? prev.batas_jam_pulang_senin ?? '14:00').slice(0, 5),
         batas_jam_pulang: String(data.batas_jam_pulang ?? prev.batas_jam_pulang).slice(0, 5),
         batas_jam_pulang_jumat: String(data.batas_jam_pulang_jumat ?? prev.batas_jam_pulang_jumat).slice(0, 5),
+          hari_khusus: Array.isArray(data.hari_khusus) ? data.hari_khusus : (prev.hari_khusus || []),
         hari_aktif_sekolah: Array.isArray(data.hari_aktif_sekolah) ? data.hari_aktif_sekolah : prev.hari_aktif_sekolah,
         toleransi_duplikasi_menit: Number(data.toleransi_duplikasi_menit ?? prev.toleransi_duplikasi_menit),
       }));
@@ -1238,8 +1264,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             jam_buka_pos: row.jam_buka_pos,
             batas_tepat_waktu: row.batas_tepat_waktu,
             batas_jam_masuk: row.batas_jam_masuk,
+            batas_jam_pulang_senin: row.batas_jam_pulang_senin ?? '14:00',
             batas_jam_pulang: row.batas_jam_pulang,
             batas_jam_pulang_jumat: row.batas_jam_pulang_jumat,
+            hari_khusus: Array.isArray(row.hari_khusus) ? row.hari_khusus : [],
             hari_aktif_sekolah: row.hari_aktif_sekolah,
             toleransi_duplikasi_menit: row.toleransi_duplikasi_menit,
             updated_at: new Date().toISOString(),
@@ -1619,8 +1647,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const handleOnline = () => {
       setIsOnline(true);
       autoSyncRetryRef.current = 0;
-      setSyncBanner({ type: 'online', message: 'Koneksi pulih. Sinkronisasi otomatis sedang dijalankan...' });
-      scheduleAutoSync('network-online');
+      setSyncBanner({ type: 'online', message: 'Koneksi pulih. Presensi akan disinkronkan pada siklus berikutnya.' });
       void refreshPengaturanJamFromSupabase();
     };
     const handleOffline = () => {
@@ -1634,8 +1661,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const handleActivity = () => {
       appendDiagnosticTrace(document.visibilityState === 'visible' ? 'visibility' : 'focus', absensiList, `aktivitas tab: ${document.visibilityState}`);
       if (document.visibilityState === 'visible' && navigator.onLine && !isSimulatedOffline) {
-        autoSyncRetryRef.current = 0;
-        scheduleAutoSync('tab-active');
+        // v16: pindah tab/focus tidak lagi memicu sinkronisasi absensi.
+        // Hanya refresh pengaturan ringan agar perubahan jam tetap terbaca.
         void refreshPengaturanJamFromSupabase();
       }
     };
@@ -1653,15 +1680,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSessionEmail, isSimulatedOffline, supabaseConfig.url, supabaseConfig.anonKey]);
 
-  // Watchdog handles cases where Chrome does not emit `online`, or the tab was
-  // backgrounded while the network returned. It only runs when work is pending.
+  // v16: presensi hasil scan dibuffer lokal dan dikirim ke Supabase setiap 6 menit.
+  // Mutation non-scan (master/settings/catatan) tetap dapat memicu sinkronisasi segera.
   useEffect(() => {
     if (!activeSessionEmail || isSimulatedOffline) return;
     const timer = window.setInterval(() => {
+      if (!navigator.onLine) return;
       const pendingAttendance = absensiList.some((a) => !a.synced);
-      const pendingMutations = readPendingMutations().length > 0;
-      if (navigator.onLine && (pendingAttendance || pendingMutations)) scheduleAutoSync('watchdog');
-    }, 10000);
+      if (pendingAttendance) scheduleAutoSync('scan-batch-6-menit');
+    }, 6 * 60 * 1000);
     return () => window.clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSessionEmail, isSimulatedOffline, absensiList]);
@@ -1807,6 +1834,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const todayInfo = getHariInfo(today, nationalHolidays, customSchoolDays, pengaturanJam);
     const effectiveBatasPulangStr = (todayInfo.jamPulangEfektif || '14:00') + ':00';
     const batasTepatWaktu = (pengaturanJam.batas_tepat_waktu || '07:15') + ':00';
+    const batasAkhirMasuk = (pengaturanJam.batas_jam_masuk || '10:00') + ':00';
+
+    // Setelah batas akhir scan masuk dan sebelum jam pulang, scan bukan lagi
+    // absensi masuk terlambat. Tampilkan peringatan tanpa membuat record.
+    if (nowTimeStr > batasAkhirMasuk && nowTimeStr < effectiveBatasPulangStr) {
+      soundManager.playError();
+      const closedResult: ScanResult = {
+        success: false,
+        isScanClosed: true,
+        siswa: student,
+        kelas: studentClass,
+        message: `SCAN MASUK SUDAH DITUTUP. Batas akhir scan masuk pukul ${pengaturanJam.batas_jam_masuk} WIB.`,
+        waktu: nowTimeStr,
+      };
+      setLastScanResult(closedResult);
+      return closedResult;
+    }
 
     if (nowTimeStr >= effectiveBatasPulangStr) {
       jenis = 'pulang';
@@ -1876,7 +1920,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // snapshot explicitly so this does not depend on React state having re-rendered.
     let absensiForNotification = newAbsensi;
 
-    if (isOnlineNow) {
+    if (false && isOnlineNow) {
+      // v16: scan disimpan lokal terlebih dahulu. Sinkronisasi batch berjalan tiap 6 menit.
       const syncResult = await processSyncToDatabase(
         nextAbsensiList,
         logNotifikasiList,
@@ -2600,10 +2645,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (existingIndex >= 0) {
       const updated = [...customSchoolDays];
       updated[existingIndex] = newEntry;
-      setCustomSchoolDays(updated.sort((a, b) => a.tanggal.localeCompare(b.tanggal)));
+      const sorted = updated.sort((a, b) => a.tanggal.localeCompare(b.tanggal));
+      setCustomSchoolDays(sorted);
+      updatePengaturanJam({ hari_khusus: sorted });
       return { success: true, message: `Hari khusus tanggal ${cleanDate} diperbarui menjadi "${newEntry.nama}".` };
     } else {
-      setCustomSchoolDays((prev) => [...prev, newEntry].sort((a, b) => a.tanggal.localeCompare(b.tanggal)));
+      const sorted = [...customSchoolDays, newEntry].sort((a, b) => a.tanggal.localeCompare(b.tanggal));
+      setCustomSchoolDays(sorted);
+      updatePengaturanJam({ hari_khusus: sorted });
       return { success: true, message: `Hari khusus "${newEntry.nama}" tanggal ${cleanDate} berhasil ditandai.` };
     }
   };
@@ -2619,7 +2668,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...update,
       sumber: 'sekolah',
     };
-    setCustomSchoolDays(updated.sort((a, b) => a.tanggal.localeCompare(b.tanggal)));
+    const sorted = updated.sort((a, b) => a.tanggal.localeCompare(b.tanggal));
+    setCustomSchoolDays(sorted);
+    updatePengaturanJam({ hari_khusus: sorted });
     return { success: true, message: 'Perubahan hari khusus berhasil disimpan.' };
   };
 
@@ -2628,7 +2679,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!target) {
       return { success: false, message: 'Data tidak ditemukan.' };
     }
-    setCustomSchoolDays((prev) => prev.filter((d) => d.id !== id));
+    const updated = customSchoolDays.filter((d) => d.id !== id);
+    setCustomSchoolDays(updated);
+    updatePengaturanJam({ hari_khusus: updated });
     return { success: true, message: `Penanda hari khusus "${target.nama}" (${target.tanggal}) berhasil dihapus.` };
   };
 

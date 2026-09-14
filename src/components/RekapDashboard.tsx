@@ -566,7 +566,7 @@ export const RekapDashboard: React.FC = () => {
             onClick={exportToExcel}
             className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
           >
-            <FileSpreadsheet className="w-4 h-4" />
+            <FileSpreadsheet className="w-5 h-5" />
             <span>Ekspor Excel (.xlsx)</span>
           </button>
 
@@ -1073,17 +1073,17 @@ export const RekapDashboard: React.FC = () => {
                                   setSelectedStudentId(item.siswa.id);
                                   setActiveTab('siswa');
                                 }}
-                                className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
+                                className="p-2.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
                               >
-                                <Eye className="w-4 h-4" />
+                                <Eye className="w-5 h-5" />
                               </button>
                               {!item.scanMasuk && (
                                 <button
                                   title="Tandai Izin/Sakit"
                                   onClick={() => setIzinSakitTarget({ siswa: item.siswa, catatan: item.catatan })}
-                                  className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition cursor-pointer"
+                                  className="p-2.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition cursor-pointer"
                                 >
-                                  <ClipboardList className="w-4 h-4" />
+                                  <ClipboardList className="w-5 h-5" />
                                 </button>
                               )}
                               {item.catatan && (
@@ -1094,9 +1094,9 @@ export const RekapDashboard: React.FC = () => {
                                       deleteCatatanKehadiran(item.catatan!.id);
                                     }
                                   }}
-                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                  className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
                                 >
-                                  <Trash2 className="w-4 h-4" />
+                                  <Trash2 className="w-5 h-5" />
                                 </button>
                               )}
                               {item.scanMasuk && (
@@ -1107,9 +1107,9 @@ export const RekapDashboard: React.FC = () => {
                                       deleteAbsensi(item.scanMasuk!.id);
                                     }
                                   }}
-                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                  className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
                                 >
-                                  <Trash2 className="w-4 h-4" />
+                                  <Trash2 className="w-5 h-5" />
                                 </button>
                               )}
                             </div>

@@ -71,7 +71,9 @@ export function getHariInfo(
 
   // Jam pulang yang berlaku:
   let jamPulangEfektif = pengaturanJam.batas_jam_pulang || '14:00';
-  if (isFriday && pengaturanJam.batas_jam_pulang_jumat) {
+  if (dayOfWeekIndex === 1 && pengaturanJam.batas_jam_pulang_senin) {
+    jamPulangEfektif = pengaturanJam.batas_jam_pulang_senin;
+  } else if (isFriday && pengaturanJam.batas_jam_pulang_jumat) {
     jamPulangEfektif = pengaturanJam.batas_jam_pulang_jumat;
   }
   if (isPulangCepat && customDay?.jamPulangKustom) {

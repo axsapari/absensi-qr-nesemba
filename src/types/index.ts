@@ -70,10 +70,12 @@ export interface PengaturanJam {
   jam_buka_pos: string; // default "06:00"
   batas_tepat_waktu: string; // default "07:15"
   batas_jam_masuk: string; // default "10:00"
-  batas_jam_pulang: string; // Jam pulang reguler (Senin - Kamis), default "14:00"
+  batas_jam_pulang_senin: string; // Jam pulang khusus Hari Senin, default "14:00"
+  batas_jam_pulang: string; // Jam pulang reguler (Selasa - Kamis), default "14:15"
   batas_jam_pulang_jumat: string; // Jam pulang khusus Hari Jumat, default "11:30"
   hari_aktif_sekolah: string[]; // default ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat']
   toleransi_duplikasi_menit: number; // default 5 menit
+  hari_khusus?: HariKhusus[]; // Jadwal khusus per tanggal, disinkronkan antar perangkat
 }
 
 export interface WAGatewayConfig {
@@ -106,6 +108,7 @@ export interface ScanResult {
   isDuplicate?: boolean;
   duplicatePreviousScanTime?: string;
   isOfflineSaved?: boolean;
+  isScanClosed?: boolean;
 }
 
 export interface AppBackupPayload {

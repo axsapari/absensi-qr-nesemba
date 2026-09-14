@@ -149,12 +149,15 @@ export const ScanKiosk: React.FC = () => {
 
   // Determine current day & session status (Friday dismissal vs regular dismissal)
   const currentDayOfWeek = new Date().getDay(); // 0: Sun, 1: Mon, ..., 5: Fri, 6: Sat
+  const isMondayToday = currentDayOfWeek === 1;
   const isFridayToday = currentDayOfWeek === 5;
   const isWeekend = currentDayOfWeek === 0 || currentDayOfWeek === 6;
 
-  const activeBatasPulangTime = isFridayToday && pengaturanJam.batas_jam_pulang_jumat
+  const activeBatasPulangTime = isMondayToday && pengaturanJam.batas_jam_pulang_senin
+    ? pengaturanJam.batas_jam_pulang_senin
+    : isFridayToday && pengaturanJam.batas_jam_pulang_jumat
     ? pengaturanJam.batas_jam_pulang_jumat
-    : (pengaturanJam.batas_jam_pulang || '14:00');
+    : (pengaturanJam.batas_jam_pulang || '14:15');
 
   const batasPulang = activeBatasPulangTime + ':00';
   const batasTepatWaktu = (pengaturanJam.batas_tepat_waktu || '07:15') + ':00';
@@ -361,7 +364,7 @@ export const ScanKiosk: React.FC = () => {
                     DUPLIKASI TERDETEKSI: SUDAH TERCATAT
                   </div>
 
-                  <h3 className="text-3xl md:text-5xl font-black text-white tracking-tight mb-2">
+                  <h3 className="text-3xl md:text-5xl font-black text-white tracking-[0.06em] mb-2">
                     {lastScanResult.siswa?.nama}
                   </h3>
 
@@ -436,7 +439,9 @@ export const ScanKiosk: React.FC = () => {
                       );
                     }}
                     className={`w-40 h-40 md:w-52 md:h-52 object-cover rounded-2xl border-4 shadow-2xl ${
-                      lastScanResult.status === 'terlambat'
+                      lastScanResult.isScanClosed
+                        ? 'border-rose-400'
+                        : lastScanResult.status === 'terlambat'
                         ? 'border-amber-400'
                         : lastScanResult.jenis === 'pulang'
                         ? 'border-blue-400'
@@ -445,14 +450,16 @@ export const ScanKiosk: React.FC = () => {
                   />
                   <div
                     className={`absolute -bottom-3 -right-3 p-3 rounded-full shadow-lg ${
-                      lastScanResult.status === 'terlambat'
+                      lastScanResult.isScanClosed
+                        ? 'bg-rose-500 text-white'
+                        : lastScanResult.status === 'terlambat'
                         ? 'bg-amber-500 text-slate-950'
                         : lastScanResult.jenis === 'pulang'
                         ? 'bg-blue-500 text-white'
                         : 'bg-emerald-500 text-slate-950'
                     }`}
                   >
-                    <CheckCircle2 className="w-8 h-8 stroke-[2.5]" />
+                    {lastScanResult.isScanClosed ? <AlertTriangle className="w-8 h-8 stroke-[2.5]" /> : <CheckCircle2 className="w-8 h-8 stroke-[2.5]" />}
                   </div>
                 </div>
 
@@ -462,14 +469,21 @@ export const ScanKiosk: React.FC = () => {
                   <div className="mb-3">
                     <span
                       className={`inline-flex items-center gap-2 px-5 py-2 rounded-full text-base md:text-lg font-black tracking-wide uppercase shadow-lg ${
-                        lastScanResult.status === 'terlambat'
+                        lastScanResult.isScanClosed
+                          ? 'bg-rose-500 text-white'
+                          : lastScanResult.status === 'terlambat'
                           ? 'bg-amber-500 text-slate-950'
                           : lastScanResult.jenis === 'pulang'
                           ? 'bg-blue-600 text-white'
                           : 'bg-emerald-500 text-slate-950'
                       }`}
                     >
-                      {lastScanResult.status === 'terlambat' ? (
+                      {lastScanResult.isScanClosed ? (
+                        <>
+                          <AlertTriangle className="w-5 h-5" />
+                          SCAN MASUK SUDAH DITUTUP
+                        </>
+                      ) : lastScanResult.status === 'terlambat' ? (
                         <>
                           <AlertTriangle className="w-5 h-5" />
                           ABSENSI MASUK: TERLAMBAT
@@ -488,8 +502,12 @@ export const ScanKiosk: React.FC = () => {
                     </span>
                   </div>
 
+                  {lastScanResult.isScanClosed && (
+                    <div className="mb-3 text-rose-300 font-bold text-sm md:text-base">{lastScanResult.message}</div>
+                  )}
+
                   {/* Student Full Name */}
-                  <h3 className="text-3xl md:text-5xl font-black text-white tracking-tight mb-2">
+                  <h3 className="text-3xl md:text-5xl font-black text-white tracking-[0.06em] mb-2">
                     {lastScanResult.siswa?.nama}
                   </h3>
 
@@ -515,17 +533,6 @@ export const ScanKiosk: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                      <div className="p-2.5 rounded-xl bg-emerald-950/80 text-emerald-400 border border-emerald-800/60">
-                        <Smartphone className="w-5 h-5" />
-                      </div>
-                      <div className="text-left">
-                        <div className="text-xs text-slate-400">Notifikasi WA Ortu</div>
-                        <div className="text-sm font-semibold text-emerald-300 truncate max-w-[200px]">
-                          {lastScanResult.siswa?.nomor_wa_ortu} ({lastScanResult.siswa?.nama_ortu || 'Ortu'})
-                        </div>
-                      </div>
-                    </div>
                   </div>
 
                   {/* Offline / Synced Storage Status Banner */}

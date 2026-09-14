@@ -1174,12 +1174,19 @@ export const AdminPanel: React.FC = () => {
               />
             </div>
 
-            {/* Senin - Kamis Dismissal */}
+            {/* Senin Dismissal */}
+            <div className="bg-indigo-50/60 p-4 rounded-2xl border border-indigo-200">
+              <label className="block text-xs font-bold text-indigo-900 mb-1">Jam Pulang Hari Senin</label>
+              <p className="text-[11px] text-indigo-700 mb-2">Mulai waktu scan pulang khusus hari Senin (default 14:00)</p>
+              <input type="time" value={jamForm.batas_jam_pulang_senin || '14:00'} onChange={(e) => setJamForm({ ...jamForm, batas_jam_pulang_senin: e.target.value })} required className="w-full bg-white border border-indigo-300 rounded-xl px-3 py-2 text-sm font-mono font-bold text-indigo-800" />
+            </div>
+
+            {/* Selasa - Kamis Dismissal */}
             <div className="bg-blue-50/60 p-4 rounded-2xl border border-blue-200">
               <label className="block text-xs font-bold text-blue-900 mb-1">
-                Jam Pulang Reguler (Senin - Kamis)
+                Jam Pulang Reguler (Selasa - Kamis)
               </label>
-              <p className="text-[11px] text-blue-700 mb-2">Mulai waktu scan pulang hari Senin s/d Kamis</p>
+              <p className="text-[11px] text-blue-700 mb-2">Mulai waktu scan pulang hari Selasa s/d Kamis</p>
               <input
                 type="time"
                 value={jamForm.batas_jam_pulang}

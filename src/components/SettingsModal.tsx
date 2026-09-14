@@ -15,6 +15,8 @@ import {
   Save,
   AlertCircle,
   ExternalLink,
+  CalendarDays,
+  Trash2,
 } from 'lucide-react';
 
 export const SettingsModal: React.FC = () => {
@@ -30,9 +32,13 @@ export const SettingsModal: React.FC = () => {
     kelasList,
     reloadInitialData,
     resetTodayAttendance,
+    customSchoolDays,
+    addCustomSchoolDay,
+    updateCustomSchoolDay,
+    deleteCustomSchoolDay,
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'jam' | 'wa' | 'supabase'>('jam');
+  const [activeTab, setActiveTab] = useState<'jam' | 'khusus' | 'wa' | 'supabase'>('jam');
   const [copiedSql, setCopiedSql] = useState(false);
   const [testPhone, setTestPhone] = useState('081234567890');
   const [testResultMsg, setTestResultMsg] = useState<string | null>(null);
@@ -42,6 +48,10 @@ export const SettingsModal: React.FC = () => {
   const [waForm, setWaForm] = useState(waConfig);
   const [supabaseForm, setSupabaseForm] = useState(supabaseConfig);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [specialDate, setSpecialDate] = useState('');
+  const [specialName, setSpecialName] = useState('');
+  const [specialTime, setSpecialTime] = useState('');
+  const [specialNote, setSpecialNote] = useState('');
 
   // Handle Save Jam
   const handleSaveJam = (e: React.FormEvent) => {
@@ -129,7 +139,7 @@ export const SettingsModal: React.FC = () => {
             <span>Pengaturan Sistem & Integrasi</span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Konfigurasi jam operasional masuk/pulang, integrasi WhatsApp Gateway, dan skema database Supabase.
+            Konfigurasi jam operasional masuk/pulang, jadwal khusus per tanggal, integrasi WhatsApp Gateway, dan skema database Supabase.
           </p>
         </div>
 
@@ -153,6 +163,18 @@ export const SettingsModal: React.FC = () => {
         >
           <Clock className="w-4 h-4" />
           <span>Aturan Jam & Toleransi</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('khusus')}
+          className={`px-4 py-2 rounded-xl text-xs md:text-sm font-bold transition flex items-center gap-2 cursor-pointer ${
+            activeTab === 'khusus'
+              ? 'bg-emerald-600 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <CalendarDays className="w-4 h-4" />
+          <span>Jadwal Khusus</span>
         </button>
 
         <button
@@ -223,7 +245,20 @@ export const SettingsModal: React.FC = () => {
 
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                Batas Jam Mulai Kepulangan (HH:mm)
+                Batas Jam Pulang Hari Senin (HH:mm)
+              </label>
+              <input
+                type="time"
+                value={jamForm.batas_jam_pulang_senin}
+                onChange={(e) => setJamForm({ ...jamForm, batas_jam_pulang_senin: e.target.value })}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-base font-bold text-slate-900 focus:outline-none focus:border-emerald-500"
+              />
+              <p className="text-[11px] text-slate-400 mt-1">Senin menggunakan jadwal khusus ini. Default <strong>14:00</strong>.</p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                Batas Jam Mulai Kepulangan Selasa–Kamis (HH:mm)
               </label>
               <input
                 type="time"
@@ -281,7 +316,34 @@ export const SettingsModal: React.FC = () => {
         </form>
       )}
 
-      {/* TAB 2: WHATSAPP GATEWAY */}
+      {/* TAB: JADWAL KHUSUS */}
+      {activeTab === 'khusus' && (
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
+            <h3 className="text-lg font-black text-slate-900 flex items-center gap-2"><CalendarDays className="w-5 h-5 text-emerald-600" /> Jadwal Khusus Per Tanggal</h3>
+            <p className="text-xs text-slate-500 mt-1">Atur hari pulang cepat untuk event, rapat guru, atau kegiatan sekolah. Pengaturan hanya berlaku pada tanggal yang dipilih dan otomatis tidak berlaku pada tanggal lain.</p>
+            <form className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5" onSubmit={(e) => {
+              e.preventDefault();
+              if (!specialDate || !specialName || !specialTime) return;
+              addCustomSchoolDay({ tanggal: specialDate, nama: specialName, kategori: 'pulang_cepat', isEfektifKBM: true, keterangan: specialNote, jamPulangKustom: specialTime });
+              setSpecialDate(''); setSpecialName(''); setSpecialTime(''); setSpecialNote('');
+              setSavedSuccess(true); setTimeout(() => setSavedSuccess(false), 2500);
+            }}>
+              <div><label className="block text-xs font-bold text-slate-700 uppercase mb-1">Tanggal</label><input type="date" required value={specialDate} onChange={e => setSpecialDate(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 font-bold" /></div>
+              <div><label className="block text-xs font-bold text-slate-700 uppercase mb-1">Nama kegiatan</label><input required value={specialName} onChange={e => setSpecialName(e.target.value)} placeholder="Contoh: Rapat Guru" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5" /></div>
+              <div><label className="block text-xs font-bold text-slate-700 uppercase mb-1">Jam pulang khusus</label><input type="time" required value={specialTime} onChange={e => setSpecialTime(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 font-bold" /></div>
+              <div><label className="block text-xs font-bold text-slate-700 uppercase mb-1">Keterangan (opsional)</label><input value={specialNote} onChange={e => setSpecialNote(e.target.value)} placeholder="Keterangan untuk operator" className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5" /></div>
+              <div className="md:col-span-2 flex justify-end"><button type="submit" className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl cursor-pointer">Simpan Jadwal Khusus</button></div>
+            </form>
+          </div>
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 font-black text-slate-800">Daftar Jadwal Khusus</div>
+            {customSchoolDays.length === 0 ? <div className="p-6 text-sm text-slate-400">Belum ada jadwal khusus.</div> : <div className="divide-y divide-slate-100">{customSchoolDays.map(day => <div key={day.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-3"><div><div className="font-bold text-slate-800">{day.tanggal} — {day.nama}</div><div className="text-xs text-slate-500">Pulang {day.jamPulangKustom || '-'} WIB{day.keterangan ? ` · ${day.keterangan}` : ''}</div></div><button type="button" title="Hapus jadwal khusus" onClick={() => { if (confirm(`Hapus jadwal khusus ${day.tanggal}?`)) deleteCustomSchoolDay(day.id); }} className="self-end md:self-auto p-2.5 text-rose-600 hover:bg-rose-50 rounded-xl cursor-pointer"><Trash2 className="w-5 h-5" /></button></div>)}</div>}
+          </div>
+        </div>
+      )}
+
+      {/* TAB: WHATSAPP GATEWAY */}
       {activeTab === 'wa' && (
         <div className="space-y-6">
           <form

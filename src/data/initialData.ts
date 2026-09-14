@@ -32,7 +32,7 @@ export const INITIAL_USERS: UserAccount[] = [
   {
     id: 'u-moch',
     username: 'moch',
-    name: 'Mochammad Ramdani, S.Kom.',
+    name: 'Mochamad Fernanda A',
     email: 'moch@smpn9banjar.sch.id',
     role: 'admin',
     isSuperAdmin: false,
@@ -41,16 +41,16 @@ export const INITIAL_USERS: UserAccount[] = [
   {
     id: 'u-alia',
     username: 'alia',
-    name: 'Alia Nurul Hasanah, S.Pd.',
+    name: 'Alia Zakiyah',
     email: 'alia@smpn9banjar.sch.id',
     role: 'admin',
     isSuperAdmin: false,
     avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=120&auto=format&fit=crop&q=80',
   },
   {
-    id: 'u-feby',
-    username: 'feby',
-    name: 'Feby Febrianti, S.Pd.',
+    id: 'u-tri',
+    username: 'tri',
+    name: 'Tri Feby Adinsyah',
     email: 'feby@smpn9banjar.sch.id',
     role: 'admin',
     isSuperAdmin: false,
@@ -72,7 +72,8 @@ export const INITIAL_PENGATURAN_JAM: PengaturanJam = {
   jam_buka_pos: '06:00',
   batas_tepat_waktu: '07:15',
   batas_jam_masuk: '10:00',
-  batas_jam_pulang: '14:00', // Senin - Kamis
+  batas_jam_pulang_senin: '14:00', // Khusus Hari Senin
+  batas_jam_pulang: '14:15', // Selasa - Kamis
   batas_jam_pulang_jumat: '11:30', // Khusus Hari Jumat
   hari_aktif_sekolah: ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'],
   toleransi_duplikasi_menit: 5,
