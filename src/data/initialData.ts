@@ -27,6 +27,7 @@ export const INITIAL_USERS: UserAccount[] = [
     email: 'agus@smpn9banjar.sch.id', // GANTI sesuai email akun Supabase Auth Anda
     role: 'admin',
     isSuperAdmin: true, // Only Agus is Super Admin
+    nip: '199108152019031009',
     avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
   },
   {
@@ -93,7 +94,7 @@ export const INITIAL_SISWA: Siswa[] = [
     tempat_lahir: 'Banjar',
     tanggal_lahir: '12 Mei 2012',
     alamat: 'Jl. Tentara Pelajar No. 45, Banjar',
-    foto_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
   {
@@ -107,7 +108,7 @@ export const INITIAL_SISWA: Siswa[] = [
     tempat_lahir: 'Banjar',
     tanggal_lahir: '20 Agustus 2012',
     alamat: 'Jl. Mayor Babas No. 18, Banjar',
-    foto_url: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
   {
@@ -118,7 +119,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nomor_wa_ortu: '081298765432',
     nama_ortu: 'Ibu Sri Wahyuni',
     jenis_kelamin: 'P',
-    foto_url: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
   {
@@ -129,7 +130,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nomor_wa_ortu: '085712345678',
     nama_ortu: 'Bpk. Joko Santoso',
     jenis_kelamin: 'L',
-    foto_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
   {
@@ -140,7 +141,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nomor_wa_ortu: '087812349988',
     nama_ortu: 'Ibu Rina Marlina',
     jenis_kelamin: 'P',
-    foto_url: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
   {
@@ -151,7 +152,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nomor_wa_ortu: '081388990011',
     nama_ortu: 'Bpk. Eko Prasetyo',
     jenis_kelamin: 'L',
-    foto_url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
 
@@ -164,7 +165,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nomor_wa_ortu: '085277889900',
     nama_ortu: 'Bpk. Hidayatullah',
     jenis_kelamin: 'L',
-    foto_url: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
   {
@@ -175,7 +176,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nomor_wa_ortu: '081911223344',
     nama_ortu: 'Ibu Siti Aminah',
     jenis_kelamin: 'P',
-    foto_url: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
   {
@@ -186,7 +187,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nomor_wa_ortu: '082166554433',
     nama_ortu: 'Bpk. Rusdianto',
     jenis_kelamin: 'L',
-    foto_url: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
   {
@@ -197,7 +198,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nomor_wa_ortu: '081399887766',
     nama_ortu: 'Ibu Nuryani',
     jenis_kelamin: 'P',
-    foto_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
 
@@ -210,7 +211,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nomor_wa_ortu: '085811223300',
     nama_ortu: 'Bpk. Cahyadi',
     jenis_kelamin: 'L',
-    foto_url: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
   {
@@ -221,7 +222,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nomor_wa_ortu: '087788991122',
     nama_ortu: 'Ibu Endang Astuti',
     jenis_kelamin: 'P',
-    foto_url: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
   {
@@ -232,7 +233,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nomor_wa_ortu: '081255443322',
     nama_ortu: 'Bpk. Mansyur',
     jenis_kelamin: 'L',
-    foto_url: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
   {
@@ -243,7 +244,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nomor_wa_ortu: '089612345678',
     nama_ortu: 'Ibu Hasanah',
     jenis_kelamin: 'P',
-    foto_url: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
 
@@ -256,7 +257,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nomor_wa_ortu: '081377889911',
     nama_ortu: 'Bpk. Wibowo',
     jenis_kelamin: 'L',
-    foto_url: 'https://images.unsplash.com/photo-1501196354995-cbb51c65aaea?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
   {
@@ -267,7 +268,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nomor_wa_ortu: '085622334455',
     nama_ortu: 'Ibu Ratna Juwita',
     jenis_kelamin: 'P',
-    foto_url: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
   {
@@ -278,7 +279,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nomor_wa_ortu: '081299881100',
     nama_ortu: 'Bpk. Dewanto',
     jenis_kelamin: 'L',
-    foto_url: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
 
@@ -291,7 +292,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nomor_wa_ortu: '081344556677',
     nama_ortu: 'Ibu Hj. Faridah',
     jenis_kelamin: 'P',
-    foto_url: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
   {
@@ -302,7 +303,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nomor_wa_ortu: '085711998877',
     nama_ortu: 'Bpk. Budi Prakoso',
     jenis_kelamin: 'L',
-    foto_url: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
   {
@@ -313,7 +314,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nomor_wa_ortu: '081277112233',
     nama_ortu: 'Bpk. Drs. H. Usman',
     jenis_kelamin: 'L',
-    foto_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
   {
@@ -324,7 +325,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nomor_wa_ortu: '087899001122',
     nama_ortu: 'Ibu Siti Khadijah',
     jenis_kelamin: 'P',
-    foto_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
 
@@ -337,7 +338,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nomor_wa_ortu: '081244558899',
     nama_ortu: 'Bpk. Triyono',
     jenis_kelamin: 'L',
-    foto_url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
   {
@@ -348,7 +349,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nomor_wa_ortu: '085611223344',
     nama_ortu: 'Ibu Aisyah',
     jenis_kelamin: 'P',
-    foto_url: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
   {
@@ -359,7 +360,7 @@ export const INITIAL_SISWA: Siswa[] = [
     nomor_wa_ortu: '081399001122',
     nama_ortu: 'Bpk. Abdul Ghany',
     jenis_kelamin: 'L',
-    foto_url: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=200&auto=format&fit=crop&q=80',
+    foto_url: '',
     status_aktif: true,
   },
 ];

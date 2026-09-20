@@ -481,7 +481,11 @@ export const ScanKiosk: React.FC = () => {
                       {lastScanResult.isScanClosed ? (
                         <>
                           <AlertTriangle className="w-5 h-5" />
-                          SCAN MASUK SUDAH DITUTUP
+                          {lastScanResult.scanClosedReason === 'not_started'
+                            ? 'ABSENSI BELUM DIMULAI'
+                            : lastScanResult.scanClosedReason === 'pulang_not_started'
+                            ? 'ABSENSI KEPULANGAN BELUM DIMULAI'
+                            : 'SCAN MASUK SUDAH DITUTUP'}
                         </>
                       ) : lastScanResult.status === 'terlambat' ? (
                         <>

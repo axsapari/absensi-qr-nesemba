@@ -4,6 +4,7 @@ import { Siswa, Kelas } from '../types';
 import { ImportExcelModal } from './ImportExcelModal';
 import { downloadExcelTemplate, exportStudentsToExcel } from '../lib/excelHelper';
 import { getFotoSiswaUrl, getFotoPlaceholder } from '../lib/fotoHelper';
+import { sortKelas } from '../lib/classUtils';
 import {
   Plus,
   Search,
@@ -295,7 +296,7 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
                 className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-lg px-2.5 py-1.5 focus:outline-none cursor-pointer"
               >
                 <option value="all">Semua Kelas ({kelasList.length})</option>
-                {kelasList.map((k) => (
+                {sortKelas(kelasList).map((k) => (
                   <option key={k.id} value={k.id}>
                     {k.nama_kelas}
                   </option>
@@ -457,7 +458,7 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
       {/* TAB KELAS */}
       {activeTab === 'kelas' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {kelasList.map((k) => {
+          {sortKelas(kelasList).map((k) => {
             const countSiswa = siswaList.filter((s) => s.kelas_id === k.id).length;
             return (
               <div key={k.id} className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-3">
@@ -566,7 +567,7 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
                     onChange={(e) => setSiswaForm({ ...siswaForm, kelas_id: e.target.value })}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 focus:outline-none cursor-pointer"
                   >
-                    {kelasList.map((k) => (
+                    {sortKelas(kelasList).map((k) => (
                       <option key={k.id} value={k.id}>
                         {k.nama_kelas}
                       </option>
@@ -634,11 +635,11 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
                 />
               </div>
 
-              {/* WA Ortu & Nama Ortu */}
+              {/* WA Ibu & Nama Ibu */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                    Nomor WhatsApp Ortu *
+                    Nomor WhatsApp Ibu *
                   </label>
                   <input
                     type="text"
@@ -652,13 +653,13 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
-                    Nama Orang Tua / Wali
+                    Nama Ibu
                   </label>
                   <input
                     type="text"
                     value={siswaForm.nama_ortu}
                     onChange={(e) => setSiswaForm({ ...siswaForm, nama_ortu: e.target.value })}
-                    placeholder="Contoh: Bpk. Hendra Gunawan"
+                    placeholder="Contoh: Ibu Sri Wahyuni"
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold text-slate-900 focus:outline-none focus:border-emerald-500"
                   />
                 </div>

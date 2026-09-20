@@ -7,9 +7,9 @@ export const DEFAULT_WA_CONFIG: WAGatewayConfig = {
   apiToken: '', // TIDAK LAGI DIPAKAI dari sisi client -- token diatur sebagai Secret di Supabase Edge Function
   senderPhone: '',
   active: true,
-  templateMasuk: 'Yth. Bapak/Ibu {nama_ortu}, ananda *{nama}* (Kelas {kelas}) telah tiba di sekolah dan tercatat *HADIR TEPAT WAKTU* pada hari {hari}, {tanggal} pukul *{waktu} WIB*. Terima kasih. - Pos Absensi SMP NEGERI 9 BANJAR',
-  templateTerlambat: 'PEMBERITAHUAN KETERLAMBATAN:\nYth. Bapak/Ibu {nama_ortu}, ananda *{nama}* (Kelas {kelas}) tercatat hadir *TERLAMBAT* di sekolah pada {hari}, {tanggal} pukul *{waktu} WIB*. Mohon pendampingan dan perhatian terhadap kedisiplinan waktu kedatangan sekolah. Terima kasih. - SMP NEGERI 9 BANJAR',
-  templatePulang: 'Yth. Bapak/Ibu {nama_ortu}, ananda *{nama}* (Kelas {kelas}) telah tercatat *PULANG* dari sekolah pada hari {hari}, {tanggal} pukul *{waktu} WIB*. Semoga sampai di rumah dengan selamat. Terima kasih. - Pos Absensi SMP NEGERI 9 BANJAR',
+  templateMasuk: 'Yth. Ibu {nama_ortu}, ananda *{nama}* (Kelas {kelas}) telah tiba di sekolah dan tercatat *HADIR TEPAT WAKTU* pada hari {hari}, {tanggal} pukul *{waktu} WIB*. Terima kasih. - Pos Absensi SMP NEGERI 9 BANJAR',
+  templateTerlambat: 'PEMBERITAHUAN KETERLAMBATAN:\nYth. Ibu {nama_ortu}, ananda *{nama}* (Kelas {kelas}) tercatat hadir *TERLAMBAT* di sekolah pada {hari}, {tanggal} pukul *{waktu} WIB*. Mohon pendampingan dan perhatian terhadap kedisiplinan waktu kedatangan sekolah. Terima kasih. - SMP NEGERI 9 BANJAR',
+  templatePulang: 'Yth. Ibu {nama_ortu}, ananda *{nama}* (Kelas {kelas}) telah tercatat *PULANG* dari sekolah pada hari {hari}, {tanggal} pukul *{waktu} WIB*. Semoga sampai di rumah dengan selamat. Terima kasih. - Pos Absensi SMP NEGERI 9 BANJAR',
 };
 
 // Format phone number to Indonesian international format (e.g. 0812... -> 62812...)
@@ -53,7 +53,7 @@ export function buildWhatsAppMessage(
   return template
     .replace(/{nama}/g, siswa.nama)
     .replace(/{kelas}/g, namaKelas)
-    .replace(/{nama_ortu}/g, siswa.nama_ortu || 'Orang Tua / Wali')
+    .replace(/{nama_ortu}/g, siswa.nama_ortu || 'Ibu / Wali')
     .replace(/{waktu}/g, waktuStr)
     .replace(/{tanggal}/g, tanggalFormatted)
     .replace(/{hari}/g, hari)

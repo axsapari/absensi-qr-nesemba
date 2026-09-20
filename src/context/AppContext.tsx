@@ -380,6 +380,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           else {
             existing.name = defUser.name;
             if (!existing.email && defUser.email) existing.email = defUser.email;
+            if (defUser.nip) existing.nip = defUser.nip;
           }
         }
         return merged;
@@ -1836,16 +1837,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const batasTepatWaktu = (pengaturanJam.batas_tepat_waktu || '07:15') + ':00';
     const batasAkhirMasuk = (pengaturanJam.batas_jam_masuk || '10:00') + ':00';
 
-    // Setelah batas akhir scan masuk dan sebelum jam pulang, scan bukan lagi
-    // absensi masuk terlambat. Tampilkan peringatan tanpa membuat record.
+    const jamBukaPos = (pengaturanJam.jam_buka_pos || '06:00') + ':00';
+
+    // Sebelum jam operasional: jangan menganggap QR/NISN tidak dikenal.
+    // Siswa terdaftar, tetapi absensi memang belum dibuka.
+    if (nowTimeStr < jamBukaPos) {
+      soundManager.playError();
+      const notStartedResult: ScanResult = {
+        success: false,
+        isScanClosed: true,
+        scanClosedReason: 'not_started',
+        siswa: student,
+        kelas: studentClass,
+        message: `ABSENSI BELUM DIMULAI. Siswa dapat mulai melakukan absensi pukul ${pengaturanJam.jam_buka_pos || '06:00'} WIB.`,
+        waktu: nowTimeStr,
+      };
+      setLastScanResult(notStartedResult);
+      return notStartedResult;
+    }
+
+    // Setelah batas akhir scan masuk tetapi sebelum jam pulang, periode masuk
+    // sudah selesai dan periode kepulangan belum dibuka.
     if (nowTimeStr > batasAkhirMasuk && nowTimeStr < effectiveBatasPulangStr) {
       soundManager.playError();
       const closedResult: ScanResult = {
         success: false,
         isScanClosed: true,
+        scanClosedReason: 'pulang_not_started',
         siswa: student,
         kelas: studentClass,
-        message: `SCAN MASUK SUDAH DITUTUP. Batas akhir scan masuk pukul ${pengaturanJam.batas_jam_masuk} WIB.`,
+        message: `ABSENSI KEPULANGAN BELUM DIMULAI. Siswa dapat melakukan absensi pulang mulai pukul ${todayInfo.jamPulangEfektif || '14:00'} WIB.`,
         waktu: nowTimeStr,
       };
       setLastScanResult(closedResult);

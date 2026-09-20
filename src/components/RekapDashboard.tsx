@@ -36,6 +36,7 @@ import {
 import * as XLSX from 'xlsx';
 import { SchoolLogo, LogoTutWuri, CityLogo } from './SchoolLogos';
 import { getFotoSiswaUrl, getFotoPlaceholder } from '../lib/fotoHelper';
+import { sortKelas, sortSiswaByKelas } from '../lib/classUtils';
 
 type FilterMode = 'harian' | 'bulanan' | 'rentang';
 
@@ -51,6 +52,7 @@ export const RekapDashboard: React.FC = () => {
     deleteCatatanKehadiran,
     profilSekolah,
     supabaseConfig,
+    currentUser,
     getDateHariInfo,
   } = useApp();
 
@@ -132,7 +134,7 @@ export const RekapDashboard: React.FC = () => {
   const selectedDateHariInfo = useMemo(() => getDateHariInfo(selectedDate), [selectedDate, getDateHariInfo]);
 
   const dailyAttendanceList = useMemo(() => {
-    return siswaList
+    return sortSiswaByKelas(siswaList, kelasList)
       .filter((siswa) => {
         if (selectedKelasId !== 'all' && siswa.kelas_id !== selectedKelasId) return false;
         if (searchQuery.trim()) {
@@ -248,7 +250,12 @@ export const RekapDashboard: React.FC = () => {
           predikat,
         };
       })
-      .sort((a, b) => b.persentase - a.persentase);
+      .sort((a, b) => {
+        const classA = a.kelas?.nama_kelas || '';
+        const classB = b.kelas?.nama_kelas || '';
+        const classCmp = classA.localeCompare(classB, 'id', { numeric: true, sensitivity: 'base' });
+        return classCmp !== 0 ? classCmp : a.siswa.nama.localeCompare(b.siswa.nama, 'id', { sensitivity: 'base' });
+      });
   }, [siswaList, kelasList, absensiList, catatanKehadiranList, selectedKelasId, searchQuery, distinctAttendanceDates, filterMode, selectedMonth, selectedYear, startDate, endDate]);
 
   // Overall Period KPIs
@@ -313,7 +320,7 @@ export const RekapDashboard: React.FC = () => {
 
   // Per-Class Comparison Insights
   const classComparisonStats = useMemo(() => {
-    return kelasList.map((k) => {
+    return sortKelas(kelasList).map((k) => {
       const studentsInClass = siswaList.filter((s) => s.kelas_id === k.id);
       const studentIds = new Set(studentsInClass.map((s) => s.id));
       const totalStudents = studentsInClass.length;
@@ -403,8 +410,8 @@ export const RekapDashboard: React.FC = () => {
           ? 'Belum Hadir'
           : 'Libur',
         'Jam Pulang': item.scanPulang ? item.scanPulang.waktu_scan : '-',
-        'No WA Ortu': item.siswa.nomor_wa_ortu,
-        'Nama Ortu': item.siswa.nama_ortu,
+        'No WA Ibu': item.siswa.nomor_wa_ortu,
+        'Nama Ibu': item.siswa.nama_ortu,
       }));
 
       const worksheet = XLSX.utils.json_to_sheet(data);
@@ -453,7 +460,7 @@ export const RekapDashboard: React.FC = () => {
         'Jam Masuk',
         'Status Kedatangan',
         'Jam Pulang',
-        'No WA Ortu',
+        'No WA Ibu',
       ];
       const rows = dailyAttendanceList.map((item) => [
         selectedDate,
@@ -717,7 +724,7 @@ export const RekapDashboard: React.FC = () => {
                 className="bg-transparent text-slate-800 text-xs font-bold focus:outline-none cursor-pointer w-full"
               >
                 <option value="all">Semua Kelas ({kelasList.length} Rombel)</option>
-                {kelasList.map((k) => (
+                {sortKelas(kelasList).map((k) => (
                   <option key={k.id} value={k.id}>
                     Kelas {k.nama_kelas} ({k.wali_kelas})
                   </option>
@@ -949,7 +956,7 @@ export const RekapDashboard: React.FC = () => {
                       <th className="px-4 py-3.5">Scan Masuk</th>
                       <th className="px-4 py-3.5">Status Kedatangan</th>
                       <th className="px-4 py-3.5">Scan Pulang</th>
-                      <th className="px-4 py-3.5">Kontak Ortu (WA)</th>
+                      <th className="px-4 py-3.5">Kontak Ibu (WA)</th>
                       <th className="px-4 py-3.5 text-right">Aksi</th>
                     </tr>
                   </thead>
@@ -1402,7 +1409,7 @@ export const RekapDashboard: React.FC = () => {
                     {selectedStudentData.studentClass?.wali_kelas}
                   </p>
                   <p className="text-xs text-slate-500 font-mono">
-                    NISN: {selectedStudentData.student.nisn} • WA Ortu: {selectedStudentData.student.nomor_wa_ortu}
+                    NISN: {selectedStudentData.student.nisn} • WA Ibu: {selectedStudentData.student.nomor_wa_ortu}
                   </p>
                 </div>
               </div>
@@ -1617,7 +1624,7 @@ export const RekapDashboard: React.FC = () => {
                         <div>
                           <div className="font-bold text-sm text-slate-900">{item.siswa.nama}</div>
                           <div className="text-xs text-slate-400">
-                            Kelas {item.kelas?.nama_kelas} • WA Ortu: {item.siswa.nomor_wa_ortu}
+                            Kelas {item.kelas?.nama_kelas} • WA Ibu: {item.siswa.nomor_wa_ortu}
                           </div>
                         </div>
                       </div>
@@ -1885,14 +1892,10 @@ export const RekapDashboard: React.FC = () => {
 
                   <div className="text-center w-64">
                     <div>Banjar, {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
-                    <div className="font-bold">
-                      {activeClassObj ? `Wali Kelas ${activeClassObj.nama_kelas}` : 'Koordinator Presensi & Kesiswaan'}
-                    </div>
+                    <div className="font-bold">Koordinator Presensi &amp; Kesiswaan</div>
                     <div className="h-20" />
-                    <div className="font-bold underline">
-                      {activeClassObj ? activeClassObj.wali_kelas : 'AGUS SAPARI, S.Pd.'}
-                    </div>
-                    <div className="text-[11px] text-slate-600">NIP. 19820512 201001 1 018</div>
+                    <div className="font-bold underline">{currentUser?.name || 'Koordinator Presensi & Kesiswaan'}</div>
+                    <div className="text-[11px] text-slate-600">{currentUser?.nip ? `NIP. ${currentUser.nip}` : ''}</div>
                   </div>
                 </div>
               </div>

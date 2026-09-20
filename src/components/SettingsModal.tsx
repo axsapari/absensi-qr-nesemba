@@ -406,7 +406,7 @@ export const SettingsModal: React.FC = () => {
             {/* Template Messages */}
             <div className="space-y-4 pt-2">
               <h4 className="text-sm font-bold text-slate-800">
-                Template Pesan WhatsApp (Dapat menggunakan variabel: {'{nama}'}, {'{kelas}'}, {'{nama_ortu}'}, {'{waktu}'}, {'{tanggal}'})
+                Template Pesan WhatsApp (nama penerima menggunakan data Ibu: {'{nama_ortu}'})
               </h4>
 
               <div>

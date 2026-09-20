@@ -32,8 +32,8 @@ export function downloadExcelTemplate(kelasList: Kelas[] = []) {
       'Tempat Lahir': 'Banjar',
       'Tanggal Lahir': '12 Mei 2012',
       'Alamat': 'Jl. Tentara Pelajar No. 45, Banjar',
-      'No WA Ortu': '081234567890',
-      'Nama Ortu': 'Bpk. Hendra Gunawan',
+      'No WA Ibu': '081234567890',
+      'Nama Ibu': 'Ibu Hendra Gunawan',
       'Status': 'Aktif',
       'Foto URL': '',
     },
@@ -45,8 +45,8 @@ export function downloadExcelTemplate(kelasList: Kelas[] = []) {
       'Tempat Lahir': 'Banjar',
       'Tanggal Lahir': '20 Agustus 2012',
       'Alamat': 'Jl. Mayor Babas No. 18, Banjar',
-      'No WA Ortu': '081298765432',
-      'Nama Ortu': 'Bpk. Joko Santoso',
+      'No WA Ibu': '081298765432',
+      'Nama Ibu': 'Ibu Joko Santoso',
       'Status': 'Aktif',
       'Foto URL': '',
     },
@@ -58,8 +58,8 @@ export function downloadExcelTemplate(kelasList: Kelas[] = []) {
       'Tempat Lahir': 'Ciamis',
       'Tanggal Lahir': '05 Januari 2012',
       'Alamat': 'Jl. Dr. Husein Kartasasmita No. 88, Banjar',
-      'No WA Ortu': '085712345678',
-      'Nama Ortu': 'Ibu Sri Wahyuni',
+      'No WA Ibu': '085712345678',
+      'Nama Ibu': 'Ibu Sri Wahyuni',
       'Status': 'Aktif',
       'Foto URL': '',
     },
@@ -71,8 +71,8 @@ export function downloadExcelTemplate(kelasList: Kelas[] = []) {
       'Tempat Lahir': 'Banjar',
       'Tanggal Lahir': '14 September 2010',
       'Alamat': 'Jl. BKR Lingkungan Sukarame, Banjar',
-      'No WA Ortu': '081344556677',
-      'Nama Ortu': 'Ibu Hj. Faridah',
+      'No WA Ibu': '081344556677',
+      'Nama Ibu': 'Ibu Hj. Faridah',
       'Status': 'Aktif',
       'Foto URL': '',
     },
@@ -85,7 +85,7 @@ export function downloadExcelTemplate(kelasList: Kelas[] = []) {
     { 'PANDUAN PENGISIAN DATA SISWA': '3. Kolom "NISN" WAJIB 10 digit angka dan unik per siswa -- ini yang dipakai untuk cetak QR & proses scan absensi. PENTING: format kolom NISN di Excel sebagai TEKS (klik kanan kolom > Format Cells > Text) sebelum mengetik, supaya angka nol di depan tidak hilang.' },
     { 'PANDUAN PENGISIAN DATA SISWA': '4. Kolom "Jenis Kelamin (L/P)" diisi L untuk Laki-laki atau P untuk Perempuan.' },
     { 'PANDUAN PENGISIAN DATA SISWA': '5. Kolom "Tempat Lahir", "Tanggal Lahir", dan "Alamat" akan langsung tampil di Kartu Pelajar resmi.' },
-    { 'PANDUAN PENGISIAN DATA SISWA': '6. Kolom "No WA Ortu" diisi nomor WhatsApp orang tua (contoh: 081234567890) untuk notifikasi absensi.' },
+    { 'PANDUAN PENGISIAN DATA SISWA': '6. Kolom "No WA Ibu" diisi nomor WhatsApp ibu (contoh: 081234567890) untuk notifikasi absensi.' },
     { 'PANDUAN PENGISIAN DATA SISWA': '7. Kolom "Status" diisi Aktif (default) atau Nonaktif (untuk siswa lulus/pindah sekolah).' },
     { 'PANDUAN PENGISIAN DATA SISWA': '8. Kolom "Foto URL" boleh dikosongkan -- sistem otomatis mengambil foto dari Supabase Storage berdasarkan NISN (nama file foto = NISN, contoh: 0098234101.jpg).' },
     { 'PANDUAN PENGISIAN DATA SISWA': '9. Setelah diisi, simpan file ini dan gunakan tombol "Impor dari Excel" pada aplikasi.' },
@@ -103,8 +103,8 @@ export function downloadExcelTemplate(kelasList: Kelas[] = []) {
     { wch: 16 }, // Tempat Lahir
     { wch: 18 }, // Tanggal Lahir
     { wch: 35 }, // Alamat
-    { wch: 16 }, // No WA Ortu
-    { wch: 22 }, // Nama Ortu
+    { wch: 16 }, // No WA Ibu
+    { wch: 22 }, // Nama Ibu
     { wch: 12 }, // Status
     { wch: 40 }, // Foto URL
   ];
@@ -130,8 +130,8 @@ export function downloadCsvTemplate() {
     'Tempat Lahir',
     'Tanggal Lahir',
     'Alamat',
-    'No WA Ortu',
-    'Nama Ortu',
+    'No WA Ibu',
+    'Nama Ibu',
     'Foto URL',
   ];
 
@@ -146,7 +146,7 @@ export function downloadCsvTemplate() {
       '12 Mei 2012',
       'Jl. Tentara Pelajar No. 45, Banjar',
       '081234567890',
-      'Bpk. Hendra Gunawan',
+      'Ibu Hendra Gunawan',
       'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200',
     ],
     [
@@ -159,7 +159,7 @@ export function downloadCsvTemplate() {
       '20 Agustus 2012',
       'Jl. Mayor Babas No. 18, Banjar',
       '081298765432',
-      'Bpk. Joko Santoso',
+      'Ibu Joko Santoso',
       'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=200',
     ],
   ];
@@ -216,8 +216,8 @@ export async function parseExcelFile(file: File): Promise<ParsedSiswaRow[]> {
     const tempat_lahir = findValue(row, ['Tempat Lahir', 'TempatLahir', 'Kota Lahir']);
     const tanggal_lahir = findValue(row, ['Tanggal Lahir', 'TanggalLahir', 'Tgl Lahir', 'TTL']);
     const alamat = findValue(row, ['Alamat', 'Alamat Siswa', 'Domisili']);
-    const nomor_wa_ortu = findValue(row, ['No WA Ortu', 'No WA', 'Nomor WhatsApp', 'No HP', 'Kontak Ortu', 'Telepon']);
-    const nama_ortu = findValue(row, ['Nama Ortu', 'Nama Orang Tua', 'Nama Wali', 'Orang Tua']);
+    const nomor_wa_ortu = findValue(row, ['No WA Ibu', 'No WA Ortu', 'No WA', 'Nomor WhatsApp Ibu', 'Nomor WhatsApp', 'No HP', 'Kontak Ibu', 'Kontak Ortu', 'Telepon']);
+    const nama_ortu = findValue(row, ['Nama Ibu', 'Nama Ortu', 'Nama Orang Tua', 'Nama Wali', 'Orang Tua']);
     const foto_url = findValue(row, ['Foto URL', 'Foto', 'Photo', 'URL Foto']);
     const statusRaw = findValue(row, ['Status', 'Status Aktif', 'Status Siswa']).toLowerCase();
 
@@ -277,8 +277,8 @@ export function exportStudentsToExcel(siswaList: Siswa[], kelasList: Kelas[]) {
       'Tempat Lahir': s.tempat_lahir || 'Banjar',
       'Tanggal Lahir': s.tanggal_lahir || '-',
       'Alamat': s.alamat || 'Kota Banjar',
-      'No WA Ortu': s.nomor_wa_ortu,
-      'Nama Ortu': s.nama_ortu,
+      'No WA Ibu': s.nomor_wa_ortu,
+      'Nama Ibu': s.nama_ortu,
       'Status': s.status_aktif ? 'Aktif' : 'Nonaktif',
       'Foto URL': s.foto_url,
     };

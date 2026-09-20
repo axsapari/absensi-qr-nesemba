@@ -202,7 +202,7 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({ isOpen, onCl
                   Langkah 1: Unduh Format Template Excel (.xlsx)
                 </h3>
                 <p className="text-xs text-emerald-700/90 mt-0.5">
-                  Format resmi sudah mencakup kolom <strong>Nama, NISN, Kelas, TTL, Alamat, dan No. WA Ortu</strong> yang langsung disesuaikan dengan Kartu Pelajar SMPN 9 Banjar.
+                  Format resmi sudah mencakup kolom <strong>Nama, NISN, Kelas, TTL, Alamat, dan No. WA Ibu</strong> yang langsung disesuaikan dengan Kartu Pelajar SMPN 9 Banjar.
                 </p>
               </div>
             </div>
@@ -367,7 +367,7 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({ isOpen, onCl
                       <th className="px-3 py-2">NISN</th>
                       <th className="px-3 py-2">Tempat, Tanggal Lahir</th>
                       <th className="px-3 py-2">Alamat</th>
-                      <th className="px-3 py-2">No. WA Ortu</th>
+                      <th className="px-3 py-2">No. WA Ibu</th>
                       <th className="px-3 py-2">Status</th>
                     </tr>
                   </thead>

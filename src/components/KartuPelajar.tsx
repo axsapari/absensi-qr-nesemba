@@ -4,6 +4,7 @@ import { Siswa, Kelas } from '../types';
 import QRCode from 'qrcode';
 import { SchoolLogo, LogoOSIS } from './SchoolLogos';
 import { getFotoSiswaUrl, getFotoPlaceholder } from '../lib/fotoHelper';
+import { sortKelas } from '../lib/classUtils';
 import {
   Printer,
   Download,
@@ -97,39 +98,79 @@ export const KartuPelajar: React.FC<{ initialSelectedId?: string }> = ({ initial
       : filteredStudents;
 
   const handlePrint = () => {
-    window.print();
+    document.body.classList.add('printing-student-cards');
+    window.setTimeout(() => window.print(), 60);
   };
+
+  useEffect(() => {
+    const cleanup = () => document.body.classList.remove('printing-student-cards');
+    window.addEventListener('afterprint', cleanup);
+    return () => {
+      window.removeEventListener('afterprint', cleanup);
+      cleanup();
+    };
+  }, []);
 
   return (
     <div id="kartu-pelajar-page" className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
-      {/* Print-specific style tag for high-resolution A4 layout */}
+      {/* Print-specific style: only the card sheet is rendered. */}
       <style>{`
+        @page { size: 215.9mm 330.2mm; margin: 8mm; }
         @media print {
-          body {
-            background: #ffffff !important;
-            color: #000000 !important;
+          html, body {
+            width: 100% !important;
+            min-height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #fff !important;
           }
-          body * {
-            visibility: hidden;
+          body.printing-student-cards * {
+            visibility: hidden !important;
           }
-          #print-area, #print-area * {
-            visibility: visible;
+          body.printing-student-cards #print-area,
+          body.printing-student-cards #print-area * {
+            visibility: visible !important;
           }
-          #print-area {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            background: transparent !important;
-            padding: 10px;
+          body.printing-student-cards #kartu-pelajar-page {
+            display: block !important;
+            position: static !important;
+            width: 100% !important;
+            max-width: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
           }
-          .no-print {
+          body.printing-student-cards #kartu-pelajar-page > *:not(#print-area) {
             display: none !important;
           }
-          .card-wrapper {
+          body.printing-student-cards #print-area {
+            display: block !important;
+            position: static !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #fff !important;
+          }
+          body.printing-student-cards #print-area > .grid {
+            display: grid !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 6mm !important;
+            align-items: start !important;
+            justify-items: center !important;
+          }
+          body.printing-student-cards .card-wrapper {
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            gap: 3mm !important;
             break-inside: avoid !important;
             page-break-inside: avoid !important;
-            margin-bottom: 20px !important;
+            margin: 0 !important;
+          }
+          body.printing-student-cards .card-wrapper > * {
+            flex: none !important;
+          }
+          body.printing-student-cards .card-wrapper [class*="shadow"] {
+            box-shadow: none !important;
           }
         }
       `}</style>
@@ -204,7 +245,7 @@ export const KartuPelajar: React.FC<{ initialSelectedId?: string }> = ({ initial
                 className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl px-3 py-2 focus:outline-none cursor-pointer"
               >
                 <option value="all">Semua Kelas ({siswaList.length} Siswa)</option>
-                {kelasList.map((k) => (
+                {sortKelas(kelasList).map((k) => (
                   <option key={k.id} value={k.id}>
                     Kelas {k.nama_kelas}
                   </option>

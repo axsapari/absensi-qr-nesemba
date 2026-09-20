@@ -366,8 +366,8 @@ export const BackupRestore: React.FC = () => {
                         'Tempat Lahir': s.tempat_lahir || '-',
                         'Tanggal Lahir': s.tanggal_lahir || '-',
                         Alamat: s.alamat || '-',
-                        'No WA Ortu': s.nomor_wa_ortu,
-                        'Nama Ortu': s.nama_ortu,
+                        'No WA Ibu': s.nomor_wa_ortu,
+                        'Nama Ibu': s.nama_ortu,
                       };
                     });
                     const ws = XLSX.utils.json_to_sheet(data);

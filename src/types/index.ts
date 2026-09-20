@@ -13,8 +13,8 @@ export interface Siswa {
   nama: string;
   nisn: string;
   kelas_id: string;
-  nomor_wa_ortu: string;
-  nama_ortu: string;
+  nomor_wa_ortu: string; // nomor WhatsApp ibu/orang tua utama
+  nama_ortu: string; // nama ibu/orang tua utama
   jenis_kelamin: JenisKelamin;
   foto_url: string;
   status_aktif: boolean;
@@ -109,6 +109,7 @@ export interface ScanResult {
   duplicatePreviousScanTime?: string;
   isOfflineSaved?: boolean;
   isScanClosed?: boolean;
+  scanClosedReason?: 'not_started' | 'masuk_closed' | 'pulang_not_started';
 }
 
 export interface AppBackupPayload {
@@ -236,6 +237,7 @@ export interface UserAccount {
   email: string; // WAJIB sama persis dengan akun yang dibuat di Supabase Auth Dashboard
   role: 'admin' | 'petugas';
   isSuperAdmin?: boolean; // Only 'agus' is Super Admin
+  nip?: string; // NIP penandatangan/koordinator (opsional)
   avatar?: string;
   password?: string; // sudah tidak dipakai untuk verifikasi (itu tugas Supabase Auth), disimpan hanya untuk kompatibilitas data lama
   lastLogin?: string;
