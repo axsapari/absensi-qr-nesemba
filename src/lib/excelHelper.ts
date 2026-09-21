@@ -303,3 +303,42 @@ export function exportStudentsToExcel(siswaList: Siswa[], kelasList: Kelas[]) {
   XLSX.utils.book_append_sheet(wb, ws, 'Data Siswa');
   XLSX.writeFile(wb, `Data_Siswa_SMPN_9_Banjar_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
+
+
+export interface ParsedOrtuRow {
+  nisn: string;
+  nama_ortu: string;
+  nomor_wa_ortu: string;
+  isValid: boolean;
+  errors: string[];
+}
+
+export async function parseOrtuExcelFile(file: File): Promise<ParsedOrtuRow[]> {
+  const arrayBuffer = await file.arrayBuffer();
+  const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+  const firstSheetName = workbook.SheetNames[0];
+  if (!firstSheetName) throw new Error('File Excel tidak memiliki sheet yang dapat dibaca.');
+  const worksheet = workbook.Sheets[firstSheetName];
+  const rawRows: Record<string, any>[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+  if (!rawRows.length) throw new Error('Sheet Excel kosong atau tidak memiliki baris data.');
+  const findValue = (row: Record<string, any>, keys: string[]) => {
+    const rowKeys = Object.keys(row);
+    for (const p of keys) {
+      const normalized = p.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const match = rowKeys.find((k) => k.toLowerCase().replace(/[^a-z0-9]/g, '') === normalized);
+      if (match && row[match] !== undefined && row[match] !== null) return String(row[match]).trim();
+    }
+    return '';
+  };
+  return rawRows.map((row) => {
+    let nisn = findValue(row, ['NISN', 'Nomor Induk Siswa Nasional', 'NIS']);
+    if (/^\d+$/.test(nisn) && nisn.length < 10) nisn = nisn.padStart(10, '0');
+    const nama_ortu = findValue(row, ['Nama Ibu', 'Nama Ortu', 'Nama Orang Tua', 'Nama Wali', 'Orang Tua']);
+    const nomor_wa_ortu = findValue(row, ['No WA Ibu', 'No WA Ortu', 'No WA', 'Nomor WhatsApp Ibu', 'Nomor WhatsApp', 'No HP', 'Kontak Ibu', 'Kontak Ortu', 'Telepon']);
+    const errors: string[] = [];
+    if (!/^\d{10}$/.test(nisn)) errors.push('NISN harus tepat 10 digit');
+    if (!nama_ortu) errors.push('Nama Ibu/Ortu wajib diisi');
+    if (!nomor_wa_ortu) errors.push('Nomor WA Ibu/Ortu wajib diisi');
+    return { nisn, nama_ortu, nomor_wa_ortu, isValid: errors.length === 0, errors };
+  });
+}

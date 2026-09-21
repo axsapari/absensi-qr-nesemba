@@ -6,11 +6,13 @@ import {
   CatatanKehadiran,
   PengaturanJam,
   LogNotifikasiWA,
+  LogRekapWAMingguan,
   WAGatewayConfig,
   SupabaseConfig,
   ScanResult,
   JenisAbsensi,
   StatusAbsensi,
+  StatusKirimWA,
   AppBackupPayload,
   LocalSnapshot,
   UserAccount,
@@ -38,7 +40,7 @@ import {
   PeriodDayMetrics,
 } from '../lib/holidayUtils';
 import { soundManager } from '../lib/sound';
-import { DEFAULT_WA_CONFIG, sendWhatsAppNotification } from '../lib/whatsapp';
+import { DEFAULT_WA_CONFIG, formatPhoneNumber, formatHariTanggal } from '../lib/whatsapp';
 import { processSyncToDatabase } from '../lib/syncService';
 import { getSupabaseClient, resetSupabaseClient } from '../lib/supabase';
 import { runDataAudit } from '../lib/dataAudit';
@@ -55,6 +57,7 @@ interface AppContextType {
   absensiList: Absensi[];
   catatanKehadiranList: CatatanKehadiran[];
   logNotifikasiList: LogNotifikasiWA[];
+  logRekapWAMingguanList: LogRekapWAMingguan[];
   pengaturanJam: PengaturanJam;
   waConfig: WAGatewayConfig;
   supabaseConfig: SupabaseConfig;
@@ -87,6 +90,9 @@ interface AppContextType {
     newStudents: Omit<Siswa, 'id'>[],
     mode?: 'append' | 'replace'
   ) => { added: number; updated: number };
+  updateOrtuBatch: (rows: { nisn: string; nama_ortu: string; nomor_wa_ortu: string }[]) => { updated: number; notFound: string[]; invalid: string[] };
+  sendWeeklyWhatsAppSummary: (startDate?: string, endDate?: string, retryFailedOnly?: boolean) => Promise<{ success: boolean; sent: number; skipped: number; failed: number; message: string }>;
+
   updateSiswa: (id: string, siswa: Partial<Siswa>) => void;
   deleteSiswa: (id: string) => void;
 
@@ -167,6 +173,8 @@ const STORAGE_KEYS = {
   KELAS: 'absensi_kelas_v1',
   ABSENSI: 'absensi_records_v1',
   LOG_WA: 'absensi_log_wa_v1',
+  LOG_REKAP_WA_MINGGUAN: 'absensi_log_rekap_wa_mingguan_v1',
+  LAST_WEEKLY_WA_AUTOSEND: 'absensi_last_weekly_wa_autosend_v1',
   CONFIG_JAM: 'absensi_config_jam_v1',
   CONFIG_WA: 'absensi_config_wa_v1',
   CONFIG_SUPABASE: 'absensi_config_supabase_v1',
@@ -309,6 +317,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [logNotifikasiList, setLogNotifikasiList] = useState<LogNotifikasiWA[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.LOG_WA);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [logRekapWAMingguanList, setLogRekapWAMingguanList] = useState<LogRekapWAMingguan[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.LOG_REKAP_WA_MINGGUAN);
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -595,6 +612,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.LOG_WA, JSON.stringify(logNotifikasiList));
   }, [logNotifikasiList]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.LOG_REKAP_WA_MINGGUAN, JSON.stringify(logRekapWAMingguanList));
+  }, [logRekapWAMingguanList]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.CONFIG_JAM, JSON.stringify(pengaturanJam));
@@ -1971,78 +1992,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
-    // 8. Send/queue WhatsApp notification. The returned log is the source of truth:
-    // `terkirim` is used only when the Edge Function/gateway actually reports success.
-    if (!isOnlineNow) {
-      const offlineWALog: LogNotifikasiWA = {
-        id: 'log_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
-        absensi_id: absensiForNotification.id,
-        siswa_id: student.id,
-        nomor_tujuan: student.nomor_wa_ortu,
-        jenis_pesan: status === 'terlambat' ? 'terlambat' : jenis,
-        pesan: `Presensi ${student.nama} (${studentClass?.nama_kelas || '-'}) tercatat ${status === 'terlambat' ? 'TERLAMBAT' : 'TEPAT WAKTU'} pukul ${nowTimeStr.substring(0, 5)} WIB.`,
-        status_kirim: 'pending',
-        waktu_kirim: new Date().toISOString(),
-        response_payload: 'Disimpan offline. Menunggu koneksi untuk pengiriman WhatsApp.',
-      };
-      const nextLogs = [offlineWALog, ...logNotifikasiList];
-      setLogNotifikasiList(nextLogs);
-
-      // Save the pending log to Supabase if connectivity/auth happens to be available.
-      // This never changes its status to "terkirim".
-      if (getSupabaseClient(supabaseConfig)) {
-        const logSync = await processSyncToDatabase(
-          nextAbsensiList,
-          nextLogs,
-          supabaseConfig,
-          false,
-          [...siswaList.map((s) => ({ id: s.id, nisn: s.nisn })), ...Object.entries(siswaIdAliases).map(([id, nisn]) => ({ id, nisn }))]
-        );
-        if (logSync.result.success) {
-          setAbsensiList(logSync.updatedAbsensiList);
-          setLogNotifikasiList(logSync.updatedLogNotifikasiList);
-        }
-      }
-    } else {
-      const logEntry = await sendWhatsAppNotification(
-        waConfig,
-        student,
-        studentClass,
-        absensiForNotification,
-        getSupabaseClient(supabaseConfig)
-      );
-      setLogNotifikasiList((prev) => [logEntry, ...prev]);
-
-      // Persist the exact gateway result. A failed/simulated log remains locally
-      // available for diagnosis and can be retried explicitly later.
-      const supabase = getSupabaseClient(supabaseConfig);
-      if (supabase && absensiForNotification.synced) {
-        const { error: logError } = await supabase.from('log_notifikasi_wa').upsert({
-          id: logEntry.id,
-          absensi_id: logEntry.absensi_id || null,
-          siswa_id: logEntry.siswa_id || null,
-          nomor_tujuan: logEntry.nomor_tujuan,
-          jenis_pesan: logEntry.jenis_pesan,
-          pesan: logEntry.pesan,
-          status_kirim: logEntry.status_kirim,
-          waktu_kirim: logEntry.waktu_kirim,
-          response_payload: logEntry.response_payload || null,
-        }, { onConflict: 'id' });
-        if (logError) {
-          console.error('Gagal menyimpan log WA ke Supabase:', logError);
-          setSyncBanner({ type: 'sync_error', message: `WA tercatat lokal, tetapi log gagal disimpan ke Supabase: ${logError.message}` });
-        }
-      } else if (supabase && !absensiForNotification.synced) {
-        // Attendance is still local/pending. Do not attempt the WA-log INSERT yet
-        // because log_notifikasi_wa.absensi_id is an FK to absensi.id. The next
-        // sync will upload attendance first, resolve the canonical ID, then upload
-        // this log.
-        setSyncBanner({
-          type: 'sync_error',
-          message: 'WA tercatat lokal. Log WA menunggu absensi berhasil tersinkron ke Supabase.',
-        });
-      }
-    }
+    // 8. v20: WhatsApp tidak lagi dikirim setiap scan.
+    // Semua scan hanya disimpan lokal dan dikirim sebagai rekap mingguan pada Jumat.
 
     // 8. Set last scan result for instant feedback
     const successResult: ScanResult = {
@@ -2076,6 +2027,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const clearLastScanResult = () => {
     setLastScanResult(null);
   };
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const now = new Date();
+      const day = now.getDay(); // Jumat = 5
+      const hh = now.getHours();
+      const mm = now.getMinutes();
+      if (day !== 5 || hh < 12 || !currentUser || !effectiveOnline || !waConfig.active) return;
+      const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      if (localStorage.getItem(STORAGE_KEYS.LAST_WEEKLY_WA_AUTOSEND) === key) return;
+      if (mm >= 0) {
+        localStorage.setItem(STORAGE_KEYS.LAST_WEEKLY_WA_AUTOSEND, key);
+        void sendWeeklyWhatsAppSummary();
+      }
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [currentUser, effectiveOnline, waConfig.active, siswaList, absensiList, catatanKehadiranList]);
 
   const auditDataIntegrity = async (diagnosticNisn = '0124203121'): Promise<DataAuditReport> => {
     appendDiagnosticTrace('audit', absensiList, `audit target ${diagnosticNisn}`);
@@ -2137,6 +2105,157 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSiswaList(changedRows);
     changedRows.forEach(queueSiswaUpsert);
     return { added, updated };
+  };
+
+  const updateOrtuBatch = (rows: { nisn: string; nama_ortu: string; nomor_wa_ortu: string }[]) => {
+    const byNisn = new Map(siswaList.map((s) => [String(s.nisn).trim(), s]));
+    const notFound: string[] = [];
+    const invalid: string[] = [];
+    let updated = 0;
+    const changedIds = new Set<string>();
+    const next = siswaList.map((student) => {
+      const row = rows.find((r) => String(r.nisn).trim() === String(student.nisn).trim());
+      if (!row) return student;
+      const phone = String(row.nomor_wa_ortu || '').trim();
+      const name = String(row.nama_ortu || '').trim();
+      if (!name && !phone) return student;
+      if (phone && !/^((\+?62)|0)\d{8,15}$/.test(phone.replace(/[\s-]/g, ''))) {
+        invalid.push(row.nisn);
+        return student;
+      }
+      changedIds.add(student.id);
+      updated++;
+      return { ...student, nama_ortu: name || student.nama_ortu, nomor_wa_ortu: phone || student.nomor_wa_ortu };
+    });
+    for (const row of rows) {
+      if (!byNisn.has(String(row.nisn).trim())) notFound.push(row.nisn);
+    }
+    if (updated > 0) {
+      setSiswaList(next);
+      next.filter((s) => changedIds.has(s.id)).forEach(queueSiswaUpsert);
+    }
+    return { updated, notFound, invalid };
+  };
+
+  const getWeekMondayFriday = (baseDateStr: string) => {
+    const d = new Date(`${baseDateStr}T00:00:00`);
+    const day = d.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    const monday = new Date(d);
+    monday.setDate(d.getDate() + diffToMonday);
+    const friday = new Date(monday);
+    friday.setDate(monday.getDate() + 4);
+    const fmt = (x: Date) => {
+      const y = x.getFullYear();
+      const m = String(x.getMonth() + 1).padStart(2, '0');
+      const dd = String(x.getDate()).padStart(2, '0');
+      return `${y}-${m}-${dd}`;
+    };
+    return { start: fmt(monday), end: fmt(friday) };
+  };
+
+  const buildWeeklyWhatsAppMessage = (student: Siswa, startDate: string, endDate: string) => {
+    const studentClass = kelasList.find((k) => k.id === student.kelas_id);
+    const lines: string[] = [];
+    let hadir = 0;
+    let terlambat = 0;
+    let izin = 0;
+    let sakit = 0;
+    let alpa = 0;
+    const start = new Date(`${startDate}T00:00:00`);
+    for (let i = 0; i < 5; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const dayName = formatHariTanggal(dateStr).hari;
+      const masuk = absensiList.find((a) => a.siswa_id === student.id && a.tanggal === dateStr && a.jenis === 'masuk');
+      const pulang = absensiList.find((a) => a.siswa_id === student.id && a.tanggal === dateStr && a.jenis === 'pulang');
+      const catatan = catatanKehadiranList.find((c) => c.siswa_id === student.id && c.tanggal === dateStr);
+      if (masuk) {
+        hadir++;
+        if (masuk.status === 'terlambat') terlambat++;
+        lines.push(`${dayName}: Masuk ${masuk.waktu_scan.slice(0, 5)}${masuk.status === 'terlambat' ? ' (Terlambat)' : ''} | Pulang ${pulang ? pulang.waktu_scan.slice(0, 5) : '-'}`);
+      } else if (catatan) {
+        if (catatan.status === 'izin') izin++;
+        else if (catatan.status === 'sakit') sakit++;
+        else if (catatan.status === 'alpa') alpa++;
+        lines.push(`${dayName}: ${catatan.status.toUpperCase()}${catatan.keterangan ? ` (${catatan.keterangan})` : ''}`);
+      } else {
+        lines.push(`${dayName}: Belum tercatat`);
+      }
+    }
+    return `LAPORAN KEHADIRAN MINGGUAN\nSMP NEGERI 9 BANJAR\n\nYth. Ibu ${student.nama_ortu || '/ Wali'},\nAnanda *${student.nama}* (Kelas ${studentClass?.nama_kelas || '-'})\nPeriode: ${formatHariTanggal(startDate).tanggalFormatted} s/d ${formatHariTanggal(endDate).tanggalFormatted}\n\n${lines.join('\n')}\n\nREKAP MINGGUAN\nHadir: ${hadir} hari\nTerlambat: ${terlambat} hari\nIzin: ${izin} hari\nSakit: ${sakit} hari\nAlpa: ${alpa} hari\n\nTerima kasih.\nSMP NEGERI 9 BANJAR`;
+  };
+
+  const sendWeeklyWhatsAppSummary = async (startDateArg?: string, endDateArg?: string, retryFailedOnly = false) => {
+    const base = startDateArg ? getWeekMondayFriday(startDateArg) : getWeekMondayFriday(getTodayDateString());
+    const startDate = startDateArg || base.start;
+    const endDate = endDateArg || base.end;
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (!waConfig.active) {
+      return { success: false, sent: 0, skipped: 0, failed: 0, message: 'WhatsApp Gateway sedang nonaktif di Pengaturan.' };
+    }
+    if (!supabase || !effectiveOnline) {
+      return { success: false, sent: 0, skipped: 0, failed: 0, message: 'Supabase/Internet belum tersedia. Rekap WA mingguan belum dikirim.' };
+    }
+    const [{ data: existingRows, error: existingError }, { data: remoteStudents, error: remoteStudentError }] = await Promise.all([
+      supabase.from('log_rekap_wa_mingguan').select('id,siswa_id,status_kirim,nomor_tujuan').eq('minggu_mulai', startDate),
+      supabase.from('siswa').select('id,nisn'),
+    ]);
+    if (existingError) return { success: false, sent: 0, skipped: 0, failed: 0, message: `Gagal membaca log WA mingguan: ${existingError.message}` };
+    if (remoteStudentError) return { success: false, sent: 0, skipped: 0, failed: 0, message: `Gagal membaca master siswa: ${remoteStudentError.message}` };
+    const existing = new Map<string, any>((existingRows || []).map((r: any) => [String(r.siswa_id), r]));
+    const remoteIdByNisn = new Map<string, string>((remoteStudents || []).map((r: any) => [String(r.nisn).trim(), String(r.id)]));
+    let sent = 0, skipped = 0, failed = 0;
+    const students = siswaList.filter((s) => s.status_aktif).slice();
+    for (const student of students) {
+      const phone = String(student.nomor_wa_ortu || '').trim();
+      if (!phone) { skipped++; continue; }
+      const remoteStudentId = remoteIdByNisn.get(String(student.nisn).trim());
+      if (!remoteStudentId) { failed++; continue; }
+      const prior = existing.get(String(remoteStudentId));
+      if (prior?.status_kirim === 'terkirim' && !retryFailedOnly) { skipped++; continue; }
+      if (prior?.status_kirim === 'terkirim' && retryFailedOnly) { skipped++; continue; }
+      const targetPhone = formatPhoneNumber(phone);
+      const message = buildWeeklyWhatsAppMessage(student, startDate, endDate);
+      let claimed = false;
+      if (prior?.status_kirim === 'gagal' && retryFailedOnly) {
+        const { error } = await supabase.from('log_rekap_wa_mingguan').update({ status_kirim: 'pending', nomor_tujuan: targetPhone, pesan: message, response_payload: null }).eq('id', prior.id);
+        if (!error) claimed = true;
+      } else if (!prior) {
+        const claimId = `wlog_${startDate}_${remoteStudentId}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const { error } = await supabase.from('log_rekap_wa_mingguan').insert({
+          id: claimId, siswa_id: remoteStudentId, minggu_mulai: startDate, minggu_selesai: endDate,
+          nomor_tujuan: targetPhone, pesan: message, status_kirim: 'pending', waktu_kirim: new Date().toISOString(), response_payload: 'Claim pengiriman mingguan.'
+        });
+        if (!error) claimed = true;
+        else if (error.code === '23505') { skipped++; continue; }
+      } else {
+        skipped++; continue;
+      }
+      if (!claimed) { failed++; continue; }
+      try {
+        const { data, error } = await supabase.functions.invoke('send-wa-notification', {
+          body: { provider: waConfig.provider, endpointUrl: waConfig.endpointUrl, targetPhone, message },
+        });
+        const ok = !error && data?.success === true;
+        const status: StatusKirimWA = ok ? 'terkirim' : 'gagal';
+        const responsePayload = error ? `Gagal memanggil Edge Function: ${error.message}` : JSON.stringify(data);
+        await supabase.from('log_rekap_wa_mingguan').update({ status_kirim: status, waktu_kirim: new Date().toISOString(), response_payload: responsePayload }).eq('id', prior?.id || `wlog_${startDate}_${remoteStudentId}`.replace(/[^a-zA-Z0-9_-]/g, '_'));
+        const localLog: LogRekapWAMingguan = {
+          id: prior?.id || `wlog_${startDate}_${remoteStudentId}`.replace(/[^a-zA-Z0-9_-]/g, '_'), siswa_id: remoteStudentId,
+          minggu_mulai: startDate, minggu_selesai: endDate, nomor_tujuan: targetPhone, pesan: message,
+          status_kirim: status, waktu_kirim: new Date().toISOString(), response_payload: responsePayload,
+        };
+        setLogRekapWAMingguanList((prev) => [localLog, ...prev.filter((x) => x.id !== localLog.id)]);
+        if (ok) sent++; else failed++;
+      } catch (err) {
+        failed++;
+        await supabase.from('log_rekap_wa_mingguan').update({ status_kirim: 'gagal', waktu_kirim: new Date().toISOString(), response_payload: err instanceof Error ? err.message : String(err) }).eq('id', prior?.id || `wlog_${startDate}_${remoteStudentId}`.replace(/[^a-zA-Z0-9_-]/g, '_'));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    return { success: failed === 0, sent, skipped, failed, message: `Rekap WA mingguan selesai: ${sent} terkirim, ${skipped} dilewati, ${failed} gagal.` };
   };
 
   const updateSiswa = (id: string, data: Partial<Siswa>) => {
@@ -2293,6 +2412,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         kelas: kelasList,
         absensi: absensiList,
         log_notifikasi: logNotifikasiList,
+        log_rekap_wa_mingguan: logRekapWAMingguanList,
         pengaturan_jam: pengaturanJam,
         wa_config: waConfig,
         supabase_config: supabaseConfig,
@@ -2318,6 +2438,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const incomingKelas = payload.data.kelas || [];
       const incomingAbsensi = payload.data.absensi || [];
       const incomingLog = payload.data.log_notifikasi || [];
+      const incomingWeeklyLog = payload.data.log_rekap_wa_mingguan || [];
       const incomingHariKhusus = payload.data.hari_khusus;
 
       if (mode === 'replace') {
@@ -2325,6 +2446,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setKelasList(incomingKelas);
         setAbsensiList(incomingAbsensi);
         setLogNotifikasiList(incomingLog);
+        setLogRekapWAMingguanList(incomingWeeklyLog);
         if (incomingHariKhusus) setCustomSchoolDays(incomingHariKhusus);
         if (payload.data.pengaturan_jam) setPengaturanJam(payload.data.pengaturan_jam);
         if (payload.data.wa_config) setWaConfig(payload.data.wa_config);
@@ -2376,6 +2498,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         });
         setAbsensiList(mergedAbsensi);
+
+        const existingWeeklyIds = new Set(logRekapWAMingguanList.map((l) => l.id));
+        setLogRekapWAMingguanList([...logRekapWAMingguanList, ...incomingWeeklyLog.filter((l) => !existingWeeklyIds.has(l.id))]);
 
         const existingLogIds = new Set(logNotifikasiList.map((l) => l.id));
         const mergedLog = [...logNotifikasiList];
@@ -2783,6 +2908,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         absensiList,
         catatanKehadiranList,
         logNotifikasiList,
+        logRekapWAMingguanList,
         pengaturanJam,
         waConfig,
         supabaseConfig,
@@ -2810,6 +2936,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         clearLastScanResult,
         addSiswa,
         importSiswaBatch,
+        updateOrtuBatch,
+        sendWeeklyWhatsAppSummary,
         updateSiswa,
         deleteSiswa,
         addKelas,

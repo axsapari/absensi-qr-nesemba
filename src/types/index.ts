@@ -53,6 +53,18 @@ export interface CatatanKehadiran {
 
 export type StatusKirimWA = 'pending' | 'terkirim' | 'gagal' | 'simulasi';
 
+export interface LogRekapWAMingguan {
+  id: string;
+  siswa_id: string;
+  minggu_mulai: string;
+  minggu_selesai: string;
+  nomor_tujuan: string;
+  pesan: string;
+  status_kirim: StatusKirimWA;
+  waktu_kirim: string;
+  response_payload?: string;
+}
+
 export interface LogNotifikasiWA {
   id: string;
   absensi_id: string;
@@ -129,6 +141,7 @@ export interface AppBackupPayload {
     kelas: Kelas[];
     absensi: Absensi[];
     log_notifikasi: LogNotifikasiWA[];
+    log_rekap_wa_mingguan?: LogRekapWAMingguan[];
     pengaturan_jam: PengaturanJam;
     wa_config: WAGatewayConfig;
     supabase_config?: SupabaseConfig;

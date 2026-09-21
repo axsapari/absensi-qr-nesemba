@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { Siswa, Kelas } from '../types';
 import { ImportExcelModal } from './ImportExcelModal';
+import { ImportOrtuModal } from './ImportOrtuModal';
 import { downloadExcelTemplate, exportStudentsToExcel } from '../lib/excelHelper';
 import { getFotoSiswaUrl, getFotoPlaceholder } from '../lib/fotoHelper';
 import { sortKelas } from '../lib/classUtils';
@@ -43,6 +44,7 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
 
   // Excel Modal State
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showImportOrtuModal, setShowImportOrtuModal] = useState(false);
 
   // Modal State for Siswa
   const [showSiswaModal, setShowSiswaModal] = useState(false);
@@ -216,6 +218,16 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
               >
                 <Upload className="w-4 h-4" />
                 <span>Impor dari Excel</span>
+              </button>
+
+              <button
+                id="btn-open-import-ortu"
+                onClick={() => setShowImportOrtuModal(true)}
+                title="Timpa nama dan nomor WhatsApp orang tua berdasarkan NISN"
+                className="flex items-center gap-1.5 px-3.5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition cursor-pointer"
+              >
+                <Upload className="w-4 h-4" />
+                <span>Update Data Ibu</span>
               </button>
 
               {/* Export to Excel */}
@@ -801,6 +813,8 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
       )}
 
       {/* IMPORT EXCEL MODAL */}
+      <ImportOrtuModal isOpen={showImportOrtuModal} onClose={() => setShowImportOrtuModal(false)} />
+
       <ImportExcelModal
         isOpen={showImportModal}
         onClose={() => setShowImportModal(false)}
