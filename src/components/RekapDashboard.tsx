@@ -161,8 +161,10 @@ export const RekapDashboard: React.FC = () => {
           (c) => c.siswa_id === siswa.id && c.tanggal === selectedDate
         );
 
-        let overallStatus: 'tepat_waktu' | 'terlambat' | 'izin' | 'sakit' | 'alpa' | 'belum_absen' = 'belum_absen';
-        if (scanMasuk) {
+        let overallStatus: 'tepat_waktu' | 'terlambat' | 'izin' | 'sakit' | 'bolos' | 'alpa' | 'belum_absen' = 'belum_absen';
+        if (catatan?.status === 'bolos') {
+          overallStatus = 'bolos';
+        } else if (scanMasuk) {
           overallStatus = scanMasuk.status;
         } else if (catatan) {
           overallStatus = catatan.status;
@@ -184,6 +186,7 @@ export const RekapDashboard: React.FC = () => {
         if (selectedStatusFilter === 'belum_absen') return item.overallStatus === 'belum_absen';
         if (selectedStatusFilter === 'izin') return item.overallStatus === 'izin';
         if (selectedStatusFilter === 'sakit') return item.overallStatus === 'sakit';
+        if (selectedStatusFilter === 'bolos') return item.overallStatus === 'bolos';
         if (selectedStatusFilter === 'alpa') return item.overallStatus === 'alpa';
         if (selectedStatusFilter === 'pulang') return !!item.scanPulang;
         return true;
@@ -230,6 +233,7 @@ export const RekapDashboard: React.FC = () => {
         );
         const totalIzin = periodCatatan.filter((c) => c.status === 'izin').length;
         const totalSakit = periodCatatan.filter((c) => c.status === 'sakit').length;
+        const totalBolos = periodCatatan.filter((c) => c.status === 'bolos').length;
         const totalAlpa = periodCatatan.filter((c) => c.status === 'alpa').length;
 
         let predikat = 'Sangat Baik';
@@ -248,6 +252,7 @@ export const RekapDashboard: React.FC = () => {
           totalTanpaKeterangan,
           totalIzin,
           totalSakit,
+          totalBolos,
           totalAlpa,
           totalDaysRecorded,
           persentase,
@@ -400,7 +405,9 @@ export const RekapDashboard: React.FC = () => {
         Kelas: item.kelas?.nama_kelas || '-',
         'Wali Kelas': item.kelas?.wali_kelas || '-',
         'Jam Masuk': item.scanMasuk ? item.scanMasuk.waktu_scan : '-',
-        'Status Kedatangan': item.scanMasuk
+        'Status Kedatangan': item.catatan?.status === 'bolos'
+          ? 'Bolos'
+          : item.scanMasuk
           ? item.scanMasuk.status === 'terlambat'
             ? 'Terlambat'
             : 'Tepat Waktu'
@@ -408,6 +415,8 @@ export const RekapDashboard: React.FC = () => {
           ? 'Izin'
           : item.catatan?.status === 'sakit'
           ? 'Sakit'
+          : item.catatan?.status === 'bolos'
+          ? 'Bolos'
           : item.catatan?.status === 'alpa'
           ? 'Alpa'
           : selectedDateHariInfo.isHariEfektif
@@ -435,6 +444,7 @@ export const RekapDashboard: React.FC = () => {
         'Terlambat (TL)': item.totalTerlambat,
         'Izin (I)': item.totalIzin,
         'Sakit (S)': item.totalSakit,
+        'Bolos (B)': item.totalBolos,
         'Alpa (A)': item.totalAlpa,
         'Pulang Tercatat (P)': item.totalPulang,
         'Tanpa Keterangan': item.totalTanpaKeterangan,
@@ -472,7 +482,9 @@ export const RekapDashboard: React.FC = () => {
         `"${item.siswa.nama}"`,
         `"${item.kelas?.nama_kelas || '-'}"`,
         item.scanMasuk ? item.scanMasuk.waktu_scan : '-',
-        item.scanMasuk
+        item.catatan?.status === 'bolos'
+          ? 'Bolos'
+          : item.scanMasuk
           ? item.scanMasuk.status === 'terlambat'
             ? 'Terlambat'
             : 'Tepat Waktu'
@@ -480,6 +492,8 @@ export const RekapDashboard: React.FC = () => {
           ? 'Izin'
           : item.catatan?.status === 'sakit'
           ? 'Sakit'
+          : item.catatan?.status === 'bolos'
+          ? 'Bolos'
           : item.catatan?.status === 'alpa'
           ? 'Alpa'
           : selectedDateHariInfo.isHariEfektif
@@ -511,6 +525,7 @@ export const RekapDashboard: React.FC = () => {
         'Terlambat (TL)',
         'Izin (I)',
         'Sakit (S)',
+        'Bolos (B)',
         'Alpa (A)',
         '% Kehadiran',
         'Predikat',
@@ -526,6 +541,7 @@ export const RekapDashboard: React.FC = () => {
         item.totalTerlambat,
         item.totalIzin,
         item.totalSakit,
+        item.totalBolos,
         item.totalAlpa,
         `"${item.persentase}%"`,
         `"${item.predikat}"`,
@@ -751,6 +767,7 @@ export const RekapDashboard: React.FC = () => {
                 <option value="pulang">Sudah Pulang</option>
                 <option value="izin">Izin</option>
                 <option value="sakit">Sakit</option>
+                <option value="bolos">Bolos</option>
                 <option value="alpa">Alpa</option>
                 <option value="belum_absen">Belum Hadir</option>
               </select>
@@ -1052,6 +1069,10 @@ export const RekapDashboard: React.FC = () => {
                               <span className="inline-flex items-center gap-1 bg-violet-100 text-violet-800 font-bold px-2.5 py-1 rounded-full text-xs">
                                 Sakit
                               </span>
+                            ) : item.catatan?.status === 'bolos' ? (
+                              <span className="inline-flex items-center gap-1 bg-orange-100 text-orange-800 font-bold px-2.5 py-1 rounded-full text-xs">
+                                Bolos
+                              </span>
                             ) : item.catatan?.status === 'alpa' ? (
                               <span className="inline-flex items-center gap-1 bg-slate-800 text-white font-bold px-2.5 py-1 rounded-full text-xs">
                                 Alpa
@@ -1102,15 +1123,13 @@ export const RekapDashboard: React.FC = () => {
                               >
                                 <Eye className="w-5 h-5" />
                               </button>
-                              {!item.scanMasuk && (
-                                <button
-                                  title="Tandai Izin/Sakit"
-                                  onClick={() => setIzinSakitTarget({ siswa: item.siswa, catatan: item.catatan })}
-                                  className="p-2.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition cursor-pointer"
-                                >
-                                  <ClipboardList className="w-5 h-5" />
-                                </button>
-                              )}
+                              <button
+                                title="Tandai Izin/Sakit/Bolos"
+                                onClick={() => setIzinSakitTarget({ siswa: item.siswa, catatan: item.catatan })}
+                                className="p-2.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition cursor-pointer"
+                              >
+                                <ClipboardList className="w-5 h-5" />
+                              </button>
                               {item.catatan && (
                                 <button
                                   title={`Hapus catatan ${item.catatan.status}`}
@@ -1862,6 +1881,7 @@ export const RekapDashboard: React.FC = () => {
                             <th className="border border-black p-1.5 text-center">Terlambat</th>
                             <th className="border border-black p-1.5 text-center">Izin</th>
                             <th className="border border-black p-1.5 text-center">Sakit</th>
+                            <th className="border border-black p-1.5 text-center">Bolos</th>
                             <th className="border border-black p-1.5 text-center">Alpa</th>
                             <th className="border border-black p-1.5 text-center">% Kehadiran</th>
                           </>
@@ -1880,7 +1900,9 @@ export const RekapDashboard: React.FC = () => {
                                 {item.scanMasuk ? item.scanMasuk.waktu_scan : '-'}
                               </td>
                               <td className="border border-black p-1.5 text-center">
-                                {item.scanMasuk
+                                {item.catatan?.status === 'bolos'
+                                  ? 'Bolos'
+                                  : item.scanMasuk
                                   ? item.scanMasuk.status === 'terlambat'
                                     ? 'Terlambat'
                                     : 'Tepat Waktu'
@@ -1910,6 +1932,7 @@ export const RekapDashboard: React.FC = () => {
                               <td className="border border-black p-1.5 text-center">{item.totalTerlambat}</td>
                               <td className="border border-black p-1.5 text-center">{item.totalIzin}</td>
                               <td className="border border-black p-1.5 text-center">{item.totalSakit}</td>
+                              <td className="border border-black p-1.5 text-center">{item.totalBolos}</td>
                               <td className="border border-black p-1.5 text-center">{item.totalAlpa}</td>
                               <td className="border border-black p-1.5 text-center font-bold">
                                 {item.persentase}%
@@ -1968,24 +1991,24 @@ const IzinSakitModal: React.FC<{
   catatan?: CatatanKehadiran;
   tanggal: string;
   onClose: () => void;
-  onSave: (status: 'izin' | 'sakit', keterangan: string) => void;
+  onSave: (status: 'izin' | 'sakit' | 'bolos', keterangan: string) => void;
 }> = ({ siswa, catatan, tanggal, onClose, onSave }) => {
-  const [status, setStatus] = useState<'izin' | 'sakit'>(
-    catatan?.status === 'sakit' ? 'sakit' : 'izin'
+  const [status, setStatus] = useState<'izin' | 'sakit' | 'bolos'>(
+    catatan?.status === 'sakit' ? 'sakit' : catatan?.status === 'bolos' ? 'bolos' : 'izin'
   );
   const [keterangan, setKeterangan] = useState(catatan?.keterangan || '');
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-        <h3 className="text-lg font-bold text-slate-900">Tandai Izin / Sakit</h3>
+        <h3 className="text-lg font-bold text-slate-900">Tandai Izin / Sakit / Bolos</h3>
         <p className="text-sm text-slate-500 mt-1">
           {siswa.nama} &bull; {new Date(tanggal).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
         </p>
 
         <div className="mt-5">
           <label className="block text-xs font-bold text-slate-700 uppercase mb-2">Status</label>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <button
               type="button"
               onClick={() => setStatus('izin')}
@@ -2007,6 +2030,17 @@ const IzinSakitModal: React.FC<{
               }`}
             >
               Sakit
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatus('bolos')}
+              className={`py-2.5 rounded-xl font-bold text-sm border-2 transition ${
+                status === 'bolos'
+                  ? 'border-orange-500 bg-orange-50 text-orange-700'
+                  : 'border-slate-200 text-slate-500 hover:border-slate-300'
+              }`}
+            >
+              Bolos
             </button>
           </div>
         </div>

@@ -110,7 +110,7 @@ interface AppContextType {
 
   // Attendance Actions
   deleteAbsensi: (id: string) => void;
-  setCatatanIzinSakit: (siswaId: string, tanggal: string, status: 'izin' | 'sakit', keterangan: string) => void;
+  setCatatanIzinSakit: (siswaId: string, tanggal: string, status: 'izin' | 'sakit' | 'bolos', keterangan: string) => void;
   deleteCatatanKehadiran: (id: string) => void;
   resetTodayAttendance: () => void;
   reloadInitialData: () => void;
@@ -836,6 +836,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           });
         }
 
+        try {
+          const hydratedAttendance = await reconcileAllAttendanceFromSupabase(absensiList);
+          setAbsensiList(hydratedAttendance);
+        } catch (attendanceHydrateError) {
+          console.warn('Riwayat absensi cloud belum dapat ditarik:', attendanceHydrateError);
+        }
+
         setSyncBanner({
           type: 'sync_success',
           message: `Terhubung ke Supabase. Master cloud: ${kelasCount} kelas, ${siswaCount} siswa.`,
@@ -1514,6 +1521,80 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return result;
   };
 
+  // Pull seluruh riwayat absensi dari Supabase agar perangkat/pos yang sempat tidak
+  // melakukan sync pada hari tertentu tetap dapat mengejar data ketika online kembali.
+  // Remote menjadi sumber kebenaran untuk record yang sudah tersinkron; mutation lokal
+  // yang masih pending dan tombstone tetap diprioritaskan.
+  const reconcileAllAttendanceFromSupabase = async (baseList: Absensi[]): Promise<Absensi[]> => {
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (!supabase || !activeSessionEmail || isSimulatedOffline || !navigator.onLine) return baseList;
+
+    const pageSize = 1000;
+    const remoteRows: any[] = [];
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase
+        .from('absensi')
+        .select('id,siswa_id,tanggal,waktu_scan,timestamp,jenis,status,catatan')
+        .order('tanggal', { ascending: true })
+        .order('timestamp', { ascending: true })
+        .range(from, from + pageSize - 1);
+      if (error) throw new Error(`Gagal membaca seluruh riwayat absensi Supabase: ${error.message}`);
+      const rows = data ?? [];
+      remoteRows.push(...rows);
+      if (rows.length < pageSize) break;
+    }
+
+    const { data: remoteStudents, error: studentError } = await supabase.from('siswa').select('id,nisn');
+    if (studentError) throw new Error(`Gagal membaca master siswa untuk riwayat absensi: ${studentError.message}`);
+
+    const remoteNisnById = new Map<string, string>();
+    for (const row of remoteStudents ?? []) remoteNisnById.set(String(row.id), String(row.nisn ?? '').trim());
+    const localNisnById = new Map<string, string>();
+    for (const student of siswaList) localNisnById.set(String(student.id), String(student.nisn ?? '').trim());
+    for (const [id, nisn] of Object.entries(siswaIdAliases)) localNisnById.set(String(id), String(nisn ?? '').trim());
+
+    const businessKey = (studentId: string, tanggal: string, jenis: Absensi['jenis']) => {
+      const nisn = remoteNisnById.get(String(studentId)) || localNisnById.get(String(studentId));
+      return `${nisn || String(studentId)}|${tanggal}|${jenis}`;
+    };
+
+    const tombstones = readAttendanceTombstones();
+    const tombstoneKeySet = new Set(tombstones.filter(t => t.reason === 'delete' && t.key).map(t => String(t.key)));
+    const resetDateSet = new Set(tombstones.filter(t => t.reason === 'reset').map(t => String(t.tanggal)));
+    const remoteByKey = new Map<string, Absensi>();
+    for (const row of remoteRows) {
+      const item: Absensi = {
+        id: String(row.id), siswa_id: String(row.siswa_id), tanggal: String(row.tanggal),
+        waktu_scan: String(row.waktu_scan ?? ''), timestamp: Number(row.timestamp ?? 0),
+        jenis: row.jenis as Absensi['jenis'], status: row.status as Absensi['status'],
+        catatan: row.catatan ?? undefined, synced: true, synced_at: new Date().toISOString(),
+      };
+      const key = businessKey(item.siswa_id, item.tanggal, item.jenis);
+      if (resetDateSet.has(item.tanggal) || tombstoneKeySet.has(key)) continue;
+      remoteByKey.set(key, item);
+    }
+
+    const localByKey = new Map<string, Absensi>();
+    for (const item of baseList) {
+      localByKey.set(businessKey(item.siswa_id, item.tanggal, item.jenis), item);
+    }
+
+    const merged = new Map<string, Absensi>();
+    for (const [key, remote] of remoteByKey) {
+      const local = localByKey.get(key);
+      // Pending local scan wins until it is actually accepted by Supabase.
+      merged.set(key, local && !local.synced ? local : remote);
+    }
+    // Keep pending local records even when remote does not contain them yet.
+    for (const [key, local] of localByKey) {
+      if (!local.synced && !merged.has(key)) merged.set(key, local);
+    }
+
+    const result = Array.from(merged.values()).sort((a, b) => a.timestamp - b.timestamp);
+    appendDiagnosticTrace('reconcile', result, `FULL remote=${remoteRows.length}, tombstones=${tombstones.length}, hasil=${result.length}`);
+    return result;
+  };
+
   // Synchronization function
   const syncData = async (isAuto = false, attendanceOverride?: Absensi[], logOverride?: LogNotifikasiWA[]): Promise<{ success: boolean; count: number; message: string }> => {
     if (syncInFlightRef.current) {
@@ -1561,7 +1642,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (result.success && mutationResult.success) {
         let reconciledAbsensiList = updatedAbsensiList;
         try {
-          reconciledAbsensiList = await reconcileTodayAttendanceFromSupabase(updatedAbsensiList);
+          reconciledAbsensiList = await reconcileAllAttendanceFromSupabase(updatedAbsensiList);
         } catch (reconcileError) {
           // Reconciliation is a safety/read operation. Never discard local data if
           // the read fails; keep the successfully synced local state instead.
@@ -2161,6 +2242,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let terlambat = 0;
     let izin = 0;
     let sakit = 0;
+    let bolos = 0;
     let alpa = 0;
     const start = new Date(`${startDate}T00:00:00`);
     for (let i = 0; i < 5; i++) {
@@ -2171,20 +2253,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const masuk = absensiList.find((a) => a.siswa_id === student.id && a.tanggal === dateStr && a.jenis === 'masuk');
       const pulang = absensiList.find((a) => a.siswa_id === student.id && a.tanggal === dateStr && a.jenis === 'pulang');
       const catatan = catatanKehadiranList.find((c) => c.siswa_id === student.id && c.tanggal === dateStr);
-      if (masuk) {
+      if (catatan?.status === 'bolos') {
+        bolos++;
+        lines.push(`${dayName}: BOLOS${catatan.keterangan ? ` (${catatan.keterangan})` : ''}${masuk ? ` | Scan masuk ${masuk.waktu_scan.slice(0, 5)}` : ''}`);
+      } else if (masuk) {
         hadir++;
         if (masuk.status === 'terlambat') terlambat++;
         lines.push(`${dayName}: Masuk ${masuk.waktu_scan.slice(0, 5)}${masuk.status === 'terlambat' ? ' (Terlambat)' : ''} | Pulang ${pulang ? pulang.waktu_scan.slice(0, 5) : '-'}`);
       } else if (catatan) {
         if (catatan.status === 'izin') izin++;
         else if (catatan.status === 'sakit') sakit++;
+        else if (catatan.status === 'bolos') bolos++;
         else if (catatan.status === 'alpa') alpa++;
         lines.push(`${dayName}: ${catatan.status.toUpperCase()}${catatan.keterangan ? ` (${catatan.keterangan})` : ''}`);
       } else {
         lines.push(`${dayName}: Belum tercatat`);
       }
     }
-    return `LAPORAN KEHADIRAN MINGGUAN\nSMP NEGERI 9 BANJAR\n\nYth. Ibu ${student.nama_ortu || '/ Wali'},\nAnanda *${student.nama}* (Kelas ${studentClass?.nama_kelas || '-'})\nPeriode: ${formatHariTanggal(startDate).tanggalFormatted} s/d ${formatHariTanggal(endDate).tanggalFormatted}\n\n${lines.join('\n')}\n\nREKAP MINGGUAN\nHadir: ${hadir} hari\nTerlambat: ${terlambat} hari\nIzin: ${izin} hari\nSakit: ${sakit} hari\nAlpa: ${alpa} hari\n\nTerima kasih.\nSMP NEGERI 9 BANJAR`;
+    return `LAPORAN KEHADIRAN MINGGUAN\nSMP NEGERI 9 BANJAR\n\nYth. Ibu ${student.nama_ortu || '/ Wali'},\nAnanda *${student.nama}* (Kelas ${studentClass?.nama_kelas || '-'})\nPeriode: ${formatHariTanggal(startDate).tanggalFormatted} s/d ${formatHariTanggal(endDate).tanggalFormatted}\n\n${lines.join('\n')}\n\nREKAP MINGGUAN\nHadir: ${hadir} hari\nTerlambat: ${terlambat} hari\nIzin: ${izin} hari\nSakit: ${sakit} hari\nBolos: ${bolos} hari\nAlpa: ${alpa} hari\n\nTerima kasih.\nSMP NEGERI 9 BANJAR`;
   };
 
   const sendWeeklyWhatsAppSummary = async (startDateArg?: string, endDateArg?: string, retryFailedOnly = false) => {
@@ -2338,7 +2424,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setCatatanIzinSakit = (
     siswaId: string,
     tanggal: string,
-    status: 'izin' | 'sakit',
+    status: 'izin' | 'sakit' | 'bolos',
     keterangan: string
   ) => {
     const id = `catatan-${siswaId}-${tanggal}`;
