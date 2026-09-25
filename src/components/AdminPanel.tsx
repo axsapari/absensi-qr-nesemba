@@ -50,6 +50,7 @@ export const AdminPanel: React.FC = () => {
     resetTodayAttendance,
     reloadInitialData,
     auditDataIntegrity,
+    kelasList,
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<'logo' | 'profil' | 'users' | 'jam' | 'maintenance'>('logo');
@@ -67,7 +68,8 @@ export const AdminPanel: React.FC = () => {
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [newUserName, setNewUserName] = useState('');
   const [newUserUsername, setNewUserUsername] = useState('');
-  const [newUserRole, setNewUserRole] = useState<'admin' | 'petugas'>('petugas');
+  const [newUserRole, setNewUserRole] = useState<'admin' | 'petugas' | 'wali_kelas'>('petugas');
+  const [newUserKelasId, setNewUserKelasId] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [addUserFeedback, setAddUserFeedback] = useState<{ success?: boolean; message: string } | null>(null);
 
@@ -169,6 +171,7 @@ export const AdminPanel: React.FC = () => {
       username: newUserUsername,
       email: newUserEmail,
       role: newUserRole,
+      wali_kelas_id: newUserRole === 'wali_kelas' ? newUserKelasId : undefined,
     });
 
     setAddUserFeedback(res);
@@ -176,6 +179,8 @@ export const AdminPanel: React.FC = () => {
       setNewUserName('');
       setNewUserUsername('');
       setNewUserEmail('');
+      setNewUserRole('petugas');
+      setNewUserKelasId('');
       setTimeout(() => {
         setShowAddUserModal(false);
         setAddUserFeedback(null);
@@ -896,12 +901,24 @@ export const AdminPanel: React.FC = () => {
                   <label className="block text-xs font-bold text-slate-700 mb-1">Peran Akses</label>
                   <select
                     value={newUserRole}
-                    onChange={(e) => setNewUserRole(e.target.value as 'admin' | 'petugas')}
+                    onChange={(e) => { const role = e.target.value as 'admin' | 'petugas' | 'wali_kelas'; setNewUserRole(role); if (role !== 'wali_kelas') setNewUserKelasId(''); }}
                     className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   >
                     <option value="petugas">Petugas Presensi</option>
                     <option value="admin">Administrator</option>
+                    <option value="wali_kelas">Wali Kelas</option>
                   </select>
+                  {newUserRole === 'wali_kelas' && (
+                    <select
+                      value={newUserKelasId}
+                      onChange={(e) => setNewUserKelasId(e.target.value)}
+                      required
+                      className="mt-2 w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="">Pilih kelas yang diampu...</option>
+                      {kelasList.map((k) => <option key={k.id} value={k.id}>{k.nama_kelas}</option>)}
+                    </select>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Email (Supabase Auth) *</label>
@@ -998,7 +1015,7 @@ export const AdminPanel: React.FC = () => {
                           Username: <strong className="text-blue-700 font-bold">@{u.username}</strong>
                         </div>
                         <div className="text-[11px] text-slate-400 mt-0.5">
-                          Peran: {u.role === 'admin' ? 'Administrator Sekolah' : 'Petugas Gerbang'}
+                          Peran: {u.role === 'admin' ? 'Administrator Sekolah' : u.role === 'wali_kelas' ? `Wali Kelas${u.wali_kelas_id ? ` — ${kelasList.find((k) => k.id === u.wali_kelas_id)?.nama_kelas || ''}` : ''}` : 'Petugas Gerbang'}
                         </div>
                       </div>
                     </div>

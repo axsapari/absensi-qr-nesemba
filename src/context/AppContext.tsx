@@ -2808,6 +2808,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const cleanEmail = newUser.email?.trim().toLowerCase();
+    if (newUser.role === 'wali_kelas' && !newUser.wali_kelas_id) {
+      return { success: false, message: 'Wali Kelas wajib memilih kelas yang menjadi tanggung jawabnya.' };
+    }
+
     if (!cleanEmail || !cleanEmail.includes('@')) {
       return {
         success: false,

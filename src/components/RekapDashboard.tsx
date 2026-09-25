@@ -58,6 +58,12 @@ export const RekapDashboard: React.FC = () => {
     getDateHariInfo,
   } = useApp();
 
+  const isWaliKelas = currentUser?.role === 'wali_kelas';
+  const waliKelasId = currentUser?.wali_kelas_id || '';
+  const visibleKelasIds = useMemo(() => isWaliKelas ? new Set(waliKelasId ? [waliKelasId] : []) : null, [isWaliKelas, waliKelasId]);
+  const canEditCatatan = !isWaliKelas || !!waliKelasId;
+  const canEditBolos = !isWaliKelas;
+
   // Mode Tarik Data
   const [filterMode, setFilterMode] = useState<FilterMode>('harian');
 
@@ -73,7 +79,7 @@ export const RekapDashboard: React.FC = () => {
   const [endDate, setEndDate] = useState<string>(getTodayDateString());
 
   // Class & Status Filter
-  const [selectedKelasId, setSelectedKelasId] = useState<string>('all');
+  const [selectedKelasId, setSelectedKelasId] = useState<string>(currentUser?.role === 'wali_kelas' ? (currentUser.wali_kelas_id || 'all') : 'all');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('all');
   const [izinSakitTarget, setIzinSakitTarget] = useState<{ siswa: Siswa; catatan?: CatatanKehadiran } | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -140,6 +146,7 @@ export const RekapDashboard: React.FC = () => {
   const dailyAttendanceList = useMemo(() => {
     return sortSiswaByKelas(siswaList, kelasList)
       .filter((siswa) => {
+        if (visibleKelasIds && !visibleKelasIds.has(siswa.kelas_id)) return false;
         if (selectedKelasId !== 'all' && siswa.kelas_id !== selectedKelasId) return false;
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase();
@@ -191,7 +198,7 @@ export const RekapDashboard: React.FC = () => {
         if (selectedStatusFilter === 'pulang') return !!item.scanPulang;
         return true;
       });
-  }, [siswaList, kelasList, absensiList, catatanKehadiranList, selectedDate, selectedKelasId, searchQuery, selectedStatusFilter]);
+  }, [siswaList, kelasList, absensiList, catatanKehadiranList, selectedDate, selectedKelasId, searchQuery, selectedStatusFilter, visibleKelasIds]);
 
   // 2. BULANAN & RENTANG: Aggregated Student Metrics across the period
   const periodicStudentMetrics = useMemo(() => {
@@ -200,6 +207,7 @@ export const RekapDashboard: React.FC = () => {
 
     return siswaList
       .filter((siswa) => {
+        if (visibleKelasIds && !visibleKelasIds.has(siswa.kelas_id)) return false;
         if (selectedKelasId !== 'all' && siswa.kelas_id !== selectedKelasId) return false;
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase();
@@ -265,7 +273,7 @@ export const RekapDashboard: React.FC = () => {
         const classCmp = classA.localeCompare(classB, 'id', { numeric: true, sensitivity: 'base' });
         return classCmp !== 0 ? classCmp : a.siswa.nama.localeCompare(b.siswa.nama, 'id', { sensitivity: 'base' });
       });
-  }, [siswaList, kelasList, absensiList, catatanKehadiranList, selectedKelasId, searchQuery, distinctAttendanceDates, filterMode, selectedMonth, selectedYear, startDate, endDate]);
+  }, [siswaList, kelasList, absensiList, catatanKehadiranList, selectedKelasId, searchQuery, distinctAttendanceDates, filterMode, selectedMonth, selectedYear, startDate, endDate, visibleKelasIds]);
 
   // Overall Period KPIs
   const periodKpi = useMemo(() => {
@@ -743,8 +751,8 @@ export const RekapDashboard: React.FC = () => {
                 onChange={(e) => setSelectedKelasId(e.target.value)}
                 className="bg-transparent text-slate-800 text-xs font-bold focus:outline-none cursor-pointer w-full"
               >
-                <option value="all">Semua Kelas ({kelasList.length} Rombel)</option>
-                {sortKelas(kelasList).map((k) => (
+                <option value="all" disabled={isWaliKelas}>{isWaliKelas ? `Kelas ${kelasList.find((k) => k.id === waliKelasId)?.nama_kelas || ""}` : `Semua Kelas (${kelasList.length} Rombel)`}</option>
+                {sortKelas(kelasList).filter((k) => !isWaliKelas || k.id === waliKelasId).map((k) => (
                   <option key={k.id} value={k.id}>
                     Kelas {k.nama_kelas} ({k.wali_kelas})
                   </option>
@@ -1123,14 +1131,16 @@ export const RekapDashboard: React.FC = () => {
                               >
                                 <Eye className="w-5 h-5" />
                               </button>
-                              <button
-                                title="Tandai Izin/Sakit/Bolos"
-                                onClick={() => setIzinSakitTarget({ siswa: item.siswa, catatan: item.catatan })}
-                                className="p-2.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition cursor-pointer"
-                              >
-                                <ClipboardList className="w-5 h-5" />
-                              </button>
-                              {item.catatan && (
+                              {canEditCatatan && (
+                                <button
+                                  title={isWaliKelas ? "Input Izin/Sakit" : "Tandai Izin/Sakit/Bolos"}
+                                  onClick={() => setIzinSakitTarget({ siswa: item.siswa, catatan: item.catatan })}
+                                  className="p-2.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition cursor-pointer"
+                                >
+                                  <ClipboardList className="w-5 h-5" />
+                                </button>
+                              )}
+                              {item.catatan && (!isWaliKelas || ['izin', 'sakit'].includes(item.catatan.status)) && (
                                 <button
                                   title={`Hapus catatan ${item.catatan.status}`}
                                   onClick={() => {
@@ -1972,6 +1982,7 @@ export const RekapDashboard: React.FC = () => {
           siswa={izinSakitTarget.siswa}
           catatan={izinSakitTarget.catatan}
           tanggal={selectedDate}
+          allowBolos={canEditBolos}
           onClose={() => setIzinSakitTarget(null)}
           onSave={(status, keterangan) => {
             setCatatanIzinSakit(izinSakitTarget.siswa.id, selectedDate, status, keterangan);
@@ -1991,10 +2002,11 @@ const IzinSakitModal: React.FC<{
   catatan?: CatatanKehadiran;
   tanggal: string;
   onClose: () => void;
+  allowBolos: boolean;
   onSave: (status: 'izin' | 'sakit' | 'bolos', keterangan: string) => void;
-}> = ({ siswa, catatan, tanggal, onClose, onSave }) => {
+}> = ({ siswa, catatan, tanggal, allowBolos, onClose, onSave }) => {
   const [status, setStatus] = useState<'izin' | 'sakit' | 'bolos'>(
-    catatan?.status === 'sakit' ? 'sakit' : catatan?.status === 'bolos' ? 'bolos' : 'izin'
+    catatan?.status === 'sakit' ? 'sakit' : (allowBolos && catatan?.status === 'bolos') ? 'bolos' : 'izin'
   );
   const [keterangan, setKeterangan] = useState(catatan?.keterangan || '');
 
@@ -2008,7 +2020,7 @@ const IzinSakitModal: React.FC<{
 
         <div className="mt-5">
           <label className="block text-xs font-bold text-slate-700 uppercase mb-2">Status</label>
-          <div className="grid grid-cols-3 gap-3">
+          <div className={`grid ${allowBolos ? 'grid-cols-3' : 'grid-cols-2'} gap-3`}>
             <button
               type="button"
               onClick={() => setStatus('izin')}
@@ -2031,17 +2043,19 @@ const IzinSakitModal: React.FC<{
             >
               Sakit
             </button>
-            <button
-              type="button"
-              onClick={() => setStatus('bolos')}
-              className={`py-2.5 rounded-xl font-bold text-sm border-2 transition ${
-                status === 'bolos'
-                  ? 'border-orange-500 bg-orange-50 text-orange-700'
-                  : 'border-slate-200 text-slate-500 hover:border-slate-300'
-              }`}
-            >
-              Bolos
-            </button>
+            {allowBolos && (
+              <button
+                type="button"
+                onClick={() => setStatus('bolos')}
+                className={`py-2.5 rounded-xl font-bold text-sm border-2 transition ${
+                  status === 'bolos'
+                    ? 'border-orange-500 bg-orange-50 text-orange-700'
+                    : 'border-slate-200 text-slate-500 hover:border-slate-300'
+                }`}
+              >
+                Bolos
+              </button>
+            )}
           </div>
         </div>
 

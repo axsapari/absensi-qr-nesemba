@@ -109,6 +109,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
   ];
 
+  const visibleMenuItems = currentUser?.role === 'wali_kelas'
+    ? menuItems.filter((item) => item.id === 'kiosk' || item.id === 'rekap')
+    : menuItems;
+
   const handleSelectNav = (view: AppView) => {
     setCurrentView(view);
     setIsMobileOpen(false);
@@ -272,7 +276,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {currentUser.name}
                 </div>
                 <div className="text-[10px] text-blue-400 font-mono">
-                  @{currentUser.username} • Admin
+                  @{currentUser.username} • {currentUser.role === 'wali_kelas' ? 'Wali Kelas' : currentUser.role === 'admin' ? 'Admin' : 'Petugas'}
                 </div>
               </div>
             </div>
