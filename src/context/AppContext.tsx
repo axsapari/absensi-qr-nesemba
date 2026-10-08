@@ -123,7 +123,7 @@ interface AppContextType {
 
   // Attendance Actions
   deleteAbsensi: (id: string) => void;
-  setCatatanIzinSakit: (siswaId: string, tanggal: string, status: 'izin' | 'sakit' | 'bolos', keterangan: string) => void;
+  setCatatanIzinSakit: (siswaId: string, tanggal: string, status: 'izin' | 'sakit' | 'bolos' | 'tidak_bawa_kartu', keterangan: string) => void;
   deleteCatatanKehadiran: (id: string) => void;
   resetTodayAttendance: () => void;
   reloadInitialData: () => void;
@@ -2349,6 +2349,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let sakit = 0;
     let bolos = 0;
     let alpa = 0;
+    let tanpaKartu = 0;
     const start = new Date(`${startDate}T00:00:00`);
     for (let i = 0; i < 5; i++) {
       const d = new Date(start);
@@ -2370,12 +2371,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         else if (catatan.status === 'sakit') sakit++;
         else if (catatan.status === 'bolos') bolos++;
         else if (catatan.status === 'alpa') alpa++;
-        lines.push(`${dayName}: ${catatan.status.toUpperCase()}${catatan.keterangan ? ` (${catatan.keterangan})` : ''}`);
+        else if (catatan.status === 'tidak_bawa_kartu') { hadir++; tanpaKartu++; }
+        const labelStatus = catatan.status === 'tidak_bawa_kartu' ? 'HADIR (TIDAK BAWA KARTU)' : catatan.status.toUpperCase();
+        lines.push(`${dayName}: ${labelStatus}${catatan.keterangan ? ` (${catatan.keterangan})` : ''}`);
       } else {
         lines.push(`${dayName}: Belum tercatat`);
       }
     }
-    return `LAPORAN KEHADIRAN MINGGUAN\nSMP NEGERI 9 BANJAR\n\nYth. Ibu ${student.nama_ortu || '/ Wali'},\nAnanda *${student.nama}* (Kelas ${studentClass?.nama_kelas || '-'})\nPeriode: ${formatHariTanggal(startDate).tanggalFormatted} s/d ${formatHariTanggal(endDate).tanggalFormatted}\n\n${lines.join('\n')}\n\nREKAP MINGGUAN\nHadir: ${hadir} hari\nTerlambat: ${terlambat} hari\nIzin: ${izin} hari\nSakit: ${sakit} hari\nBolos: ${bolos} hari\nAlpa: ${alpa} hari\n\nTerima kasih.\nSMP NEGERI 9 BANJAR`;
+    return `LAPORAN KEHADIRAN MINGGUAN\nSMP NEGERI 9 BANJAR\n\nYth. Ibu ${student.nama_ortu || '/ Wali'},\nAnanda *${student.nama}* (Kelas ${studentClass?.nama_kelas || '-'})\nPeriode: ${formatHariTanggal(startDate).tanggalFormatted} s/d ${formatHariTanggal(endDate).tanggalFormatted}\n\n${lines.join('\n')}\n\nREKAP MINGGUAN\nHadir: ${hadir} hari\nTerlambat: ${terlambat} hari\nIzin: ${izin} hari\nSakit: ${sakit} hari\nBolos: ${bolos} hari\nAlpa: ${alpa} hari${tanpaKartu > 0 ? `\nTidak bawa kartu: ${tanpaKartu} hari` : ''}\n\nTerima kasih.\nSMP NEGERI 9 BANJAR`;
   };
 
   const sendWeeklyWhatsAppSummary = async (startDateArg?: string, endDateArg?: string, retryFailedOnly = false) => {
@@ -2529,7 +2532,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setCatatanIzinSakit = (
     siswaId: string,
     tanggal: string,
-    status: 'izin' | 'sakit' | 'bolos',
+    status: 'izin' | 'sakit' | 'bolos' | 'tidak_bawa_kartu',
     keterangan: string
   ) => {
     const id = `catatan-${siswaId}-${tanggal}`;

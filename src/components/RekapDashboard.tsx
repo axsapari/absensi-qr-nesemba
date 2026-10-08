@@ -168,7 +168,7 @@ export const RekapDashboard: React.FC = () => {
           (c) => c.siswa_id === siswa.id && c.tanggal === selectedDate
         );
 
-        let overallStatus: 'tepat_waktu' | 'terlambat' | 'izin' | 'sakit' | 'bolos' | 'alpa' | 'belum_absen' = 'belum_absen';
+        let overallStatus: 'tepat_waktu' | 'terlambat' | 'izin' | 'sakit' | 'bolos' | 'alpa' | 'tidak_bawa_kartu' | 'belum_absen' = 'belum_absen';
         if (catatan?.status === 'bolos') {
           overallStatus = 'bolos';
         } else if (scanMasuk) {
@@ -195,6 +195,7 @@ export const RekapDashboard: React.FC = () => {
         if (selectedStatusFilter === 'sakit') return item.overallStatus === 'sakit';
         if (selectedStatusFilter === 'bolos') return item.overallStatus === 'bolos';
         if (selectedStatusFilter === 'alpa') return item.overallStatus === 'alpa';
+        if (selectedStatusFilter === 'tidak_bawa_kartu') return item.overallStatus === 'tidak_bawa_kartu';
         if (selectedStatusFilter === 'pulang') return !!item.scanPulang;
         return true;
       });
@@ -225,8 +226,15 @@ export const RekapDashboard: React.FC = () => {
           (a) => a.siswa_id === siswa.id && isDateInActiveFilter(a.tanggal)
         );
 
-        // Count unique dates attended
+        const periodCatatan = catatanKehadiranList.filter(
+          (c) => c.siswa_id === siswa.id && isDateInActiveFilter(c.tanggal)
+        );
+        const totalTanpaKartu = periodCatatan.filter((c) => c.status === 'tidak_bawa_kartu').length;
+
+        // Count unique dates attended. Hari "tidak bawa kartu" tetap dihitung hadir
+        // (siswa datang ke sekolah tetapi tidak bisa scan).
         const attendedDates = new Set(periodScans.filter((a) => a.jenis === 'masuk').map((a) => a.tanggal));
+        periodCatatan.filter((c) => c.status === 'tidak_bawa_kartu').forEach((c) => attendedDates.add(c.tanggal));
         const totalHadir = attendedDates.size;
 
         const totalTepatWaktu = periodScans.filter((a) => a.jenis === 'masuk' && a.status === 'tepat_waktu').length;
@@ -236,9 +244,6 @@ export const RekapDashboard: React.FC = () => {
         const totalTanpaKeterangan = Math.max(0, totalDaysRecorded - totalHadir);
         const persentase = Math.round((totalHadir / totalDaysRecorded) * 100);
 
-        const periodCatatan = catatanKehadiranList.filter(
-          (c) => c.siswa_id === siswa.id && isDateInActiveFilter(c.tanggal)
-        );
         const totalIzin = periodCatatan.filter((c) => c.status === 'izin').length;
         const totalSakit = periodCatatan.filter((c) => c.status === 'sakit').length;
         const totalBolos = periodCatatan.filter((c) => c.status === 'bolos').length;
@@ -262,6 +267,7 @@ export const RekapDashboard: React.FC = () => {
           totalSakit,
           totalBolos,
           totalAlpa,
+          totalTanpaKartu,
           totalDaysRecorded,
           persentase,
           predikat,
@@ -425,6 +431,8 @@ export const RekapDashboard: React.FC = () => {
           ? 'Sakit'
           : item.catatan?.status === 'bolos'
           ? 'Bolos'
+          : item.catatan?.status === 'tidak_bawa_kartu'
+          ? 'Hadir (Tidak Bawa Kartu)'
           : item.catatan?.status === 'alpa'
           ? 'Alpa'
           : selectedDateHariInfo.isHariEfektif
@@ -454,6 +462,7 @@ export const RekapDashboard: React.FC = () => {
         'Sakit (S)': item.totalSakit,
         'Bolos (B)': item.totalBolos,
         'Alpa (A)': item.totalAlpa,
+        'Tidak Bawa Kartu (TBK)': item.totalTanpaKartu,
         'Pulang Tercatat (P)': item.totalPulang,
         'Tanpa Keterangan': item.totalTanpaKeterangan,
         'Persentase Kehadiran (%)': `${item.persentase}%`,
@@ -502,6 +511,8 @@ export const RekapDashboard: React.FC = () => {
           ? 'Sakit'
           : item.catatan?.status === 'bolos'
           ? 'Bolos'
+          : item.catatan?.status === 'tidak_bawa_kartu'
+          ? 'Hadir (Tidak Bawa Kartu)'
           : item.catatan?.status === 'alpa'
           ? 'Alpa'
           : selectedDateHariInfo.isHariEfektif
@@ -535,6 +546,7 @@ export const RekapDashboard: React.FC = () => {
         'Sakit (S)',
         'Bolos (B)',
         'Alpa (A)',
+        'Tidak Bawa Kartu (TBK)',
         '% Kehadiran',
         'Predikat',
       ];
@@ -551,6 +563,7 @@ export const RekapDashboard: React.FC = () => {
         item.totalSakit,
         item.totalBolos,
         item.totalAlpa,
+        item.totalTanpaKartu,
         `"${item.persentase}%"`,
         `"${item.predikat}"`,
       ]);
@@ -777,6 +790,7 @@ export const RekapDashboard: React.FC = () => {
                 <option value="sakit">Sakit</option>
                 <option value="bolos">Bolos</option>
                 <option value="alpa">Alpa</option>
+                <option value="tidak_bawa_kartu">Tidak Bawa Kartu</option>
                 <option value="belum_absen">Belum Hadir</option>
               </select>
             </div>
@@ -1085,6 +1099,10 @@ export const RekapDashboard: React.FC = () => {
                               <span className="inline-flex items-center gap-1 bg-slate-800 text-white font-bold px-2.5 py-1 rounded-full text-xs">
                                 Alpa
                               </span>
+                            ) : item.catatan?.status === 'tidak_bawa_kartu' ? (
+                              <span className="inline-flex items-center gap-1 bg-teal-100 text-teal-800 font-bold px-2.5 py-1 rounded-full text-xs">
+                                Hadir &bull; Tidak Bawa Kartu
+                              </span>
                             ) : selectedDateHariInfo.isHariEfektif ? (
                               <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-700 font-bold px-2.5 py-1 rounded-full text-xs">
                                 Belum Hadir
@@ -1133,14 +1151,14 @@ export const RekapDashboard: React.FC = () => {
                               </button>
                               {canEditCatatan && (
                                 <button
-                                  title={isWaliKelas ? "Input Izin/Sakit" : "Tandai Izin/Sakit/Bolos"}
+                                  title={isWaliKelas ? "Input Izin/Sakit/Tidak Bawa Kartu" : "Tandai Izin/Sakit/Bolos/Tidak Bawa Kartu"}
                                   onClick={() => setIzinSakitTarget({ siswa: item.siswa, catatan: item.catatan })}
                                   className="p-2.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition cursor-pointer"
                                 >
                                   <ClipboardList className="w-5 h-5" />
                                 </button>
                               )}
-                              {item.catatan && (!isWaliKelas || ['izin', 'sakit'].includes(item.catatan.status)) && (
+                              {item.catatan && (!isWaliKelas || ['izin', 'sakit', 'tidak_bawa_kartu'].includes(item.catatan.status)) && (
                                 <button
                                   title={`Hapus catatan ${item.catatan.status}`}
                                   onClick={() => {
@@ -1893,6 +1911,7 @@ export const RekapDashboard: React.FC = () => {
                             <th className="border border-black p-1.5 text-center">Sakit</th>
                             <th className="border border-black p-1.5 text-center">Bolos</th>
                             <th className="border border-black p-1.5 text-center">Alpa</th>
+                            <th className="border border-black p-1.5 text-center">TBK</th>
                             <th className="border border-black p-1.5 text-center">% Kehadiran</th>
                           </>
                         )}
@@ -1920,6 +1939,8 @@ export const RekapDashboard: React.FC = () => {
                                   ? 'Izin'
                                   : item.catatan?.status === 'sakit'
                                   ? 'Sakit'
+                                  : item.catatan?.status === 'tidak_bawa_kartu'
+                                  ? 'Hadir (Tidak Bawa Kartu)'
                                   : item.catatan?.status === 'alpa'
                                   ? 'Alpa'
                                   : selectedDateHariInfo.isHariEfektif
@@ -1944,6 +1965,7 @@ export const RekapDashboard: React.FC = () => {
                               <td className="border border-black p-1.5 text-center">{item.totalSakit}</td>
                               <td className="border border-black p-1.5 text-center">{item.totalBolos}</td>
                               <td className="border border-black p-1.5 text-center">{item.totalAlpa}</td>
+                              <td className="border border-black p-1.5 text-center">{item.totalTanpaKartu}</td>
                               <td className="border border-black p-1.5 text-center font-bold">
                                 {item.persentase}%
                               </td>
@@ -1995,68 +2017,65 @@ export const RekapDashboard: React.FC = () => {
 };
 
 // =========================================================================
-// MODAL INPUT IZIN/SAKIT
+// MODAL INPUT IZIN/SAKIT/BOLOS/TIDAK BAWA KARTU
 // =========================================================================
+type StatusCatatanManual = 'izin' | 'sakit' | 'bolos' | 'tidak_bawa_kartu';
+
 const IzinSakitModal: React.FC<{
   siswa: Siswa;
   catatan?: CatatanKehadiran;
   tanggal: string;
   onClose: () => void;
   allowBolos: boolean;
-  onSave: (status: 'izin' | 'sakit' | 'bolos', keterangan: string) => void;
+  onSave: (status: StatusCatatanManual, keterangan: string) => void;
 }> = ({ siswa, catatan, tanggal, allowBolos, onClose, onSave }) => {
-  const [status, setStatus] = useState<'izin' | 'sakit' | 'bolos'>(
-    catatan?.status === 'sakit' ? 'sakit' : (allowBolos && catatan?.status === 'bolos') ? 'bolos' : 'izin'
-  );
+  const opsiStatus: { value: StatusCatatanManual; label: string; active: string }[] = [
+    { value: 'izin', label: 'Izin', active: 'border-sky-500 bg-sky-50 text-sky-700' },
+    { value: 'sakit', label: 'Sakit', active: 'border-violet-500 bg-violet-50 text-violet-700' },
+    { value: 'tidak_bawa_kartu', label: 'Tidak Bawa Kartu', active: 'border-teal-500 bg-teal-50 text-teal-700' },
+    ...(allowBolos
+      ? [{ value: 'bolos' as StatusCatatanManual, label: 'Bolos', active: 'border-orange-500 bg-orange-50 text-orange-700' }]
+      : []),
+  ];
+  const initialStatus: StatusCatatanManual =
+    catatan?.status === 'sakit' ? 'sakit'
+    : catatan?.status === 'tidak_bawa_kartu' ? 'tidak_bawa_kartu'
+    : (allowBolos && catatan?.status === 'bolos') ? 'bolos'
+    : 'izin';
+  const [status, setStatus] = useState<StatusCatatanManual>(initialStatus);
   const [keterangan, setKeterangan] = useState(catatan?.keterangan || '');
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-        <h3 className="text-lg font-bold text-slate-900">Tandai Izin / Sakit / Bolos</h3>
+        <h3 className="text-lg font-bold text-slate-900">Tandai Kehadiran Manual</h3>
         <p className="text-sm text-slate-500 mt-1">
           {siswa.nama} &bull; {new Date(tanggal).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
         </p>
 
         <div className="mt-5">
           <label className="block text-xs font-bold text-slate-700 uppercase mb-2">Status</label>
-          <div className={`grid ${allowBolos ? 'grid-cols-3' : 'grid-cols-2'} gap-3`}>
-            <button
-              type="button"
-              onClick={() => setStatus('izin')}
-              className={`py-2.5 rounded-xl font-bold text-sm border-2 transition ${
-                status === 'izin'
-                  ? 'border-sky-500 bg-sky-50 text-sky-700'
-                  : 'border-slate-200 text-slate-500 hover:border-slate-300'
-              }`}
-            >
-              Izin
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatus('sakit')}
-              className={`py-2.5 rounded-xl font-bold text-sm border-2 transition ${
-                status === 'sakit'
-                  ? 'border-violet-500 bg-violet-50 text-violet-700'
-                  : 'border-slate-200 text-slate-500 hover:border-slate-300'
-              }`}
-            >
-              Sakit
-            </button>
-            {allowBolos && (
+          <div className="grid grid-cols-2 gap-3">
+            {opsiStatus.map((opt) => (
               <button
+                key={opt.value}
                 type="button"
-                onClick={() => setStatus('bolos')}
-                className={`py-2.5 rounded-xl font-bold text-sm border-2 transition ${
-                  status === 'bolos'
-                    ? 'border-orange-500 bg-orange-50 text-orange-700'
+                onClick={() => setStatus(opt.value)}
+                className={`py-2.5 rounded-xl font-bold text-sm border-2 transition cursor-pointer ${
+                  status === opt.value
+                    ? opt.active
                     : 'border-slate-200 text-slate-500 hover:border-slate-300'
                 }`}
               >
-                Bolos
+                {opt.label}
               </button>
-            )}
+            ))}
           </div>
+          {status === 'tidak_bawa_kartu' && (
+            <p className="mt-2 text-xs text-teal-700 bg-teal-50 border border-teal-100 rounded-lg px-3 py-2">
+              Siswa dihitung <b>hadir</b> (datang ke sekolah tetapi lupa membawa kartu).
+            </p>
+          )}
         </div>
 
         <div className="mt-4">
@@ -2066,7 +2085,7 @@ const IzinSakitModal: React.FC<{
           <textarea
             value={keterangan}
             onChange={(e) => setKeterangan(e.target.value)}
-            placeholder="Contoh: Surat dari orang tua, demam sejak semalam"
+            placeholder="Contoh: Surat dari orang tua, demam sejak semalam, kartu tertinggal di rumah"
             rows={3}
             className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-sky-500"
           />
