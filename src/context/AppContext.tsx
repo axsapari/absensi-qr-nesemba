@@ -54,6 +54,15 @@ interface RecentScanItem {
 
 type SyncScope = 'full' | 'catatan';
 
+/** Ambil pesan galat yang bisa dibaca dari Error biasa maupun objek galat Supabase (PostgrestError). */
+export function describeSyncError(err: unknown): string {
+  if (!err) return 'galat tidak diketahui';
+  if (typeof err === 'string') return err;
+  const e = err as { message?: string; details?: string; hint?: string; code?: string };
+  const parts = [e.message, e.details, e.hint && `petunjuk: ${e.hint}`, e.code && `kode ${e.code}`].filter(Boolean);
+  return parts.length ? parts.join(' | ') : String(err);
+}
+
 export interface SyncRunResult {
   success: boolean;
   count: number;
@@ -1283,7 +1292,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     writePendingMutations(next);
   };
 
-  const syncPendingMutations = async (): Promise<{ success: boolean; processed: number; failed: number; deletedAttendanceIds: string[]; resetDates: string[] }> => {
+  const syncPendingMutations = async (): Promise<{ success: boolean; processed: number; failed: number; deletedAttendanceIds: string[]; resetDates: string[]; firstError?: string }> => {
     const supabase = getSupabaseClient(supabaseConfig);
     if (!supabase || isSimulatedOffline || !navigator.onLine) {
       return { success: false, processed: 0, failed: readPendingMutations().length, deletedAttendanceIds: [], resetDates: [] };
@@ -1311,6 +1320,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let processed = 0;
     let failed = 0;
     const deletedAttendanceIds: string[] = [];
+    let firstError = '';
     const resetDates: string[] = [];
     for (const mutation of queue) {
       try {
@@ -1479,10 +1489,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         processed++;
       } catch (err) {
         failed++;
+        if (!firstError) firstError = `${mutation.type}: ${describeSyncError(err)}`;
         console.error('Pending mutation gagal disinkronkan:', mutation, err);
       }
     }
-    return { success: failed === 0, processed, failed, deletedAttendanceIds, resetDates };
+    return { success: failed === 0, processed, failed, deletedAttendanceIds, resetDates, firstError: firstError || undefined };
   };
 
   // Reconcile today's attendance from Supabase without deleting local history.
@@ -1726,7 +1737,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       if (!mutationResult.success) {
-        const message = `Sinkronisasi sebagian: ${mutationResult.failed} perubahan/penghapusan gagal diproses. ${result.message}`;
+        const message = `Sinkronisasi sebagian: ${mutationResult.failed} perubahan/penghapusan gagal diproses${mutationResult.firstError ? ` (${mutationResult.firstError})` : ''}. ${result.message}`;
         setSyncBanner({ type: 'sync_error', message });
         return { success: false, count: result.syncedCount, message, remaining: countRemaining(updatedAbsensiList), progress };
       }
@@ -1759,7 +1770,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const m = await syncPendingMutations();
       if (!m.success) {
-        setSyncBanner({ type: 'sync_error', message: `${m.failed} perubahan catatan/pengaturan gagal dikirim, akan dicoba lagi.` });
+        setSyncBanner({ type: 'sync_error', message: `${m.failed} perubahan catatan/pengaturan gagal dikirim${m.firstError ? ` (${m.firstError})` : ''}, akan dicoba lagi.` });
       }
       return { success: m.success, count: m.processed, message: m.success ? 'Perubahan terkirim.' : 'Sebagian perubahan gagal.', remaining: readPendingMutations().length, progress: m.processed };
     } catch (err) {
