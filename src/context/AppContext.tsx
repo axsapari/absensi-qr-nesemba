@@ -832,7 +832,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           // Never let a focus/login refresh overwrite a local Izin/Sakit mutation
           // that is still waiting in the durable queue. Remote data is authoritative
           // only for keys without a pending local mutation.
-          const pendingCatatan = readPendingMutations().filter((m) => m.type.startsWith('catatan_kehadiran_'));
+          const pendingCatatan = readPendingMutations().filter(
+            (m): m is Extract<PendingMutation, { type: 'catatan_kehadiran_upsert' | 'catatan_kehadiran_delete' }> => m.type.startsWith('catatan_kehadiran_')
+          );
           const pendingKeys = new Set(
             pendingCatatan.flatMap((m) => {
               if (m.type === 'catatan_kehadiran_upsert') return [`${m.row.siswa_id}|${m.row.tanggal}`];
