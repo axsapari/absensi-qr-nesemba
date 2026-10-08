@@ -90,6 +90,9 @@ interface AppContextType {
   syncData: (isAuto?: boolean) => Promise<SyncRunResult>;
   /** Tombol "Sinkron": menunggu sinkron otomatis yang sedang berjalan, lalu mengulang sampai antrean habis. */
   syncNow: () => Promise<SyncRunResult>;
+  /** Perkiraan waktu (ms epoch) sinkron batch scan berikutnya; null bila belum ada sesi Supabase. */
+  nextBatchSyncAt: number | null;
+  syncIntervalMs: number;
   toggleSimulatedOffline: () => void;
   dismissSyncBanner: () => void;
 
@@ -476,6 +479,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const absensiListRef = useRef<Absensi[]>([]);
   const logNotifikasiListRef = useRef<LogNotifikasiWA[]>([]);
   const scheduleAutoSyncRef = useRef<(reason: string) => void>(() => {});
+  const [nextBatchSyncAt, setNextBatchSyncAt] = useState<number | null>(null);
   const [pendingMutationCount, setPendingMutationCount] = useState(0);
 
   const effectiveOnline = isOnline && !isSimulatedOffline;
@@ -1888,8 +1892,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   logNotifikasiListRef.current = logNotifikasiList;
   scheduleAutoSyncRef.current = scheduleAutoSync;
   useEffect(() => {
-    if (!activeSessionEmail || isSimulatedOffline) return;
+    if (!activeSessionEmail || isSimulatedOffline) {
+      setNextBatchSyncAt(null);
+      return;
+    }
+    setNextBatchSyncAt(Date.now() + SCAN_BATCH_SYNC_INTERVAL_MS);
     const timer = window.setInterval(() => {
+      setNextBatchSyncAt(Date.now() + SCAN_BATCH_SYNC_INTERVAL_MS);
       if (!navigator.onLine) return;
       const pendingAttendance = absensiListRef.current.some((a) => !a.synced);
       if (pendingAttendance) scheduleAutoSyncRef.current('scan-batch-2-menit');
@@ -3127,6 +3136,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         syncBanner,
         syncData,
         syncNow,
+        nextBatchSyncAt,
+        syncIntervalMs: SCAN_BATCH_SYNC_INTERVAL_MS,
         toggleSimulatedOffline,
         dismissSyncBanner,
         // Actions

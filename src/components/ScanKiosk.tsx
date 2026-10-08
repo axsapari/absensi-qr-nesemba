@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getFotoSiswaUrl, getFotoPlaceholder } from '../lib/fotoHelper';
+import { KioskSyncIndicator } from './KioskSyncIndicator';
 
 export const ScanKiosk: React.FC = () => {
   const {
@@ -199,6 +200,9 @@ export const ScanKiosk: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Indikator sinkron untuk petugas gerbang */}
+      <KioskSyncIndicator />
 
       {/* TOP HEADER: Pos Status, Live Clock, Simulator */}
       <div className="flex flex-col md:flex-row items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
