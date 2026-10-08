@@ -32,11 +32,13 @@ import {
   Cloud,
   HardDrive,
   ClipboardList,
+  Utensils,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { SchoolLogo, LogoTutWuri, CityLogo } from './SchoolLogos';
 import { getFotoSiswaUrl, getFotoPlaceholder } from '../lib/fotoHelper';
 import { sortKelas, sortSiswaByKelas } from '../lib/classUtils';
+import { RekapMakanSiangModal } from './RekapMakanSiang';
 
 type FilterMode = 'harian' | 'bulanan' | 'rentang';
 
@@ -90,6 +92,7 @@ export const RekapDashboard: React.FC = () => {
   const [weeklyMessage, setWeeklyMessage] = useState('');
   const [selectedStudentId, setSelectedStudentId] = useState<string>(siswaList[0]?.id || '');
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [isLunchModalOpen, setIsLunchModalOpen] = useState(false);
 
   // Month names in Indonesian
   const monthNames = [
@@ -609,6 +612,17 @@ export const RekapDashboard: React.FC = () => {
             <Printer className="w-4 h-4 text-slate-300" />
             <span>Cetak Laporan Resmi</span>
           </button>
+
+          {!isWaliKelas && (
+            <button
+              id="btn-rekap-makan-siang"
+              onClick={() => setIsLunchModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
+            >
+              <Utensils className="w-4 h-4" />
+              <span>Rekap Makan Siang</span>
+            </button>
+          )}
 
           <button
             id="export-excel-btn"
@@ -1819,6 +1833,8 @@ export const RekapDashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {isLunchModalOpen && <RekapMakanSiangModal onClose={() => setIsLunchModalOpen(false)} />}
 
       {/* MODAL CETAK LAPORAN RESMI (F4 PRINTABLE PREVIEW) */}
       {isPrintModalOpen && typeof document !== 'undefined' ? createPortal((
