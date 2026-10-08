@@ -30,7 +30,7 @@ export const SyncStatusBadge: React.FC<SyncStatusBadgeProps> = ({ compact = fals
     isSyncing,
     lastSyncTime,
     pendingSyncCount,
-    syncData,
+    syncNow,
     toggleSimulatedOffline,
     supabaseConfig,
     absensiList,
@@ -42,9 +42,9 @@ export const SyncStatusBadge: React.FC<SyncStatusBadgeProps> = ({ compact = fals
   const handleManualSync = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (isSyncing) return;
-    const res = await syncData(false);
+    const res = await syncNow();
     setFeedbackMsg(res.message);
-    setTimeout(() => setFeedbackMsg(null), 3500);
+    setTimeout(() => setFeedbackMsg(null), 6000);
   };
 
   return (

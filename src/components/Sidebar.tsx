@@ -48,7 +48,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     effectiveOnline,
     pendingSyncCount,
     isSyncing,
-    syncData,
+    syncNow,
     currentActiveTimeStr,
     currentActiveDateStr,
   } = useApp();
@@ -251,7 +251,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {pendingSyncCount > 0 && (
               <button
                 type="button"
-                onClick={() => syncData(false)}
+                onClick={() => { void syncNow(); }}
                 disabled={isSyncing}
                 className="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all disabled:opacity-50 shrink-0"
               >

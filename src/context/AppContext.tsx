@@ -41,6 +41,7 @@ import {
 } from '../lib/holidayUtils';
 import { soundManager } from '../lib/sound';
 import { DEFAULT_WA_CONFIG, formatPhoneNumber, formatHariTanggal } from '../lib/whatsapp';
+import { mergeAfterSync } from '../lib/syncMerge';
 import { processSyncToDatabase } from '../lib/syncService';
 import { getSupabaseClient, resetSupabaseClient } from '../lib/supabase';
 import { runDataAudit } from '../lib/dataAudit';
@@ -49,6 +50,16 @@ interface RecentScanItem {
   absensi: Absensi;
   siswa: Siswa;
   kelas?: Kelas;
+}
+
+export interface SyncRunResult {
+  success: boolean;
+  count: number;
+  message: string;
+  /** sisa antrean (scan + perubahan master/catatan) setelah proses ini */
+  remaining?: number;
+  /** jumlah item yang berhasil diproses pada putaran ini */
+  progress?: number;
 }
 
 interface AppContextType {
@@ -76,7 +87,9 @@ interface AppContextType {
   lastSyncTime: string | null;
   pendingSyncCount: number;
   syncBanner: { type: 'online' | 'offline' | 'sync_success' | 'sync_error' | 'syncing'; message: string } | null;
-  syncData: (isAuto?: boolean) => Promise<{ success: boolean; count: number; message: string }>;
+  syncData: (isAuto?: boolean) => Promise<SyncRunResult>;
+  /** Tombol "Sinkron": menunggu sinkron otomatis yang sedang berjalan, lalu mengulang sampai antrean habis. */
+  syncNow: () => Promise<SyncRunResult>;
   toggleSimulatedOffline: () => void;
   dismissSyncBanner: () => void;
 
@@ -457,6 +470,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const syncInFlightRef = useRef(false);
   const autoSyncTimerRef = useRef<number | null>(null);
   const autoSyncRetryRef = useRef(0);
+  // Interval kirim batch scan ke Supabase (sebelumnya 6 menit).
+  const SCAN_BATCH_SYNC_INTERVAL_MS = 2 * 60 * 1000;
+  // Ref selalu berisi data TERBARU. Dipakai timer & proses sinkron agar tidak membaca closure render lama.
+  const absensiListRef = useRef<Absensi[]>([]);
+  const logNotifikasiListRef = useRef<LogNotifikasiWA[]>([]);
+  const scheduleAutoSyncRef = useRef<(reason: string) => void>(() => {});
   const [pendingMutationCount, setPendingMutationCount] = useState(0);
 
   const effectiveOnline = isOnline && !isSimulatedOffline;
@@ -838,7 +857,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         try {
           const hydratedAttendance = await reconcileAllAttendanceFromSupabase(absensiList);
-          setAbsensiList(hydratedAttendance);
+          // Gabungkan dengan state terkini: scan yang masuk selama penarikan data tidak boleh hilang.
+          setAbsensiList((prev) => mergeAfterSync(prev, absensiList, hydratedAttendance));
         } catch (attendanceHydrateError) {
           console.warn('Riwayat absensi cloud belum dapat ditarik:', attendanceHydrateError);
         }
@@ -1260,7 +1280,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const { data: sessionData } = await supabase.auth.getSession();
     if (!sessionData.session) return { success: false, processed: 0, failed: readPendingMutations().length, deletedAttendanceIds: [], resetDates: [] };
 
-    const queue = readPendingMutations();
+    // Urutkan menurut ketergantungan: kelas -> siswa -> pengaturan -> catatan -> hapus.
+    // Tanpa ini catatan untuk siswa baru bisa diproses SEBELUM siswanya ada di database,
+    // gagal (foreign key), dan baru berhasil pada klik sinkron berikutnya.
+    const mutationPriority = (m: PendingMutation): number => {
+      switch (m.type) {
+        case 'kelas_upsert': return 0;
+        case 'siswa_upsert': return 1;
+        case 'pengaturan_jam_upsert': return 2;
+        case 'catatan_kehadiran_upsert': return 3;
+        case 'siswa_delete': return 5;
+        case 'kelas_delete': return 6;
+        default: return 4; // absensi_delete, absensi_reset_today, catatan_kehadiran_delete
+      }
+    };
+    const queue = [...readPendingMutations()].sort((a, b) => mutationPriority(a) - mutationPriority(b));
     if (!queue.length) return { success: true, processed: 0, failed: 0, deletedAttendanceIds: [], resetDates: [] };
 
     let processed = 0;
@@ -1596,12 +1630,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Synchronization function
-  const syncData = async (isAuto = false, attendanceOverride?: Absensi[], logOverride?: LogNotifikasiWA[]): Promise<{ success: boolean; count: number; message: string }> => {
+  const countRemaining = (absensi: Absensi[]) =>
+    absensi.filter((a) => !a.synced).length + readPendingMutations().length;
+
+  const syncData = async (isAuto = false, attendanceOverride?: Absensi[], logOverride?: LogNotifikasiWA[]): Promise<SyncRunResult> => {
     if (syncInFlightRef.current) {
-      return { success: false, count: 0, message: 'Proses sinkronisasi sedang berjalan...' };
+      return { success: false, count: 0, message: 'Proses sinkronisasi sedang berjalan...', remaining: countRemaining(absensiListRef.current), progress: 0 };
     }
     if (isSimulatedOffline || !navigator.onLine) {
-      return { success: false, count: 0, message: 'Perangkat masih offline. Data akan disinkronkan otomatis saat koneksi pulih.' };
+      return { success: false, count: 0, message: 'Perangkat masih offline. Data akan disinkronkan otomatis saat koneksi pulih.', remaining: countRemaining(absensiListRef.current), progress: 0 };
     }
 
     syncInFlightRef.current = true;
@@ -1622,10 +1659,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Exclude the mutations that were successfully applied in this same pass.
       const deletedIdSet = new Set(mutationResult.deletedAttendanceIds.map(String));
       const resetDateSet = new Set(mutationResult.resetDates.map(String));
-      const sourceAbsensi = (attendanceOverride ?? absensiList).filter((a) =>
+      // Baca dari ref (data terbaru), bukan closure render lama, supaya putaran sinkron
+      // berikutnya melihat hasil putaran sebelumnya.
+      const snapshotAbsensi = attendanceOverride ?? absensiListRef.current;
+      const snapshotLogs = logOverride ?? logNotifikasiListRef.current;
+      const sourceAbsensi = snapshotAbsensi.filter((a) =>
         !deletedIdSet.has(String(a.id)) && !resetDateSet.has(String(a.tanggal))
       );
-      const sourceLogs = (logOverride ?? logNotifikasiList).filter((log) =>
+      const sourceLogs = snapshotLogs.filter((log) =>
         !deletedIdSet.has(String(log.absensi_id))
       );
       const sourceStudents = siswaList;
@@ -1639,6 +1680,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         [...sourceStudents.map((s) => ({ id: s.id, nisn: s.nisn })), ...Object.entries(sourceAliases).map(([id, nisn]) => ({ id, nisn }))]
       );
 
+      const progress = (result.syncedCount || 0) + (result.syncedLogCount || 0) + mutationResult.processed;
+
       if (result.success && mutationResult.success) {
         let reconciledAbsensiList = updatedAbsensiList;
         try {
@@ -1648,8 +1691,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           // the read fails; keep the successfully synced local state instead.
           console.warn('Rekonsiliasi absensi hari ini dilewati:', reconcileError);
         }
-        setAbsensiList(reconciledAbsensiList);
-        setLogNotifikasiList(updatedLogNotifikasiList);
+        // Gabungkan dengan state TERKINI: scan yang masuk selama sinkron berjalan tidak boleh hilang.
+        setAbsensiList((prev) => mergeAfterSync(prev, snapshotAbsensi, reconciledAbsensiList));
+        setLogNotifikasiList((prev) => mergeAfterSync(prev, snapshotLogs, updatedLogNotifikasiList));
         setLastSyncTime(result.timestamp);
         localStorage.setItem(STORAGE_KEYS.LAST_SYNC, result.timestamp);
 
@@ -1660,29 +1704,79 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             : `Semua data (${absensiList.length} data) sudah tersinkron penuh dengan database (${result.timestamp}).`,
         });
 
-        return { success: true, count: result.syncedCount, message: result.message };
-      } else if (!mutationResult.success) {
+        return { success: true, count: result.syncedCount, message: result.message, remaining: countRemaining(reconciledAbsensiList), progress };
+      }
+
+      // Sebagian berhasil: simpan kemajuan (flag synced) agar sinkron berikutnya tidak mengirim ulang
+      // data yang sudah masuk. Sebelumnya kemajuan sebagian dibuang bila ada satu bagian yang gagal.
+      if (result.syncedCount > 0 || result.syncedLogCount > 0) {
+        setAbsensiList((prev) => mergeAfterSync(prev, snapshotAbsensi, updatedAbsensiList));
+        setLogNotifikasiList((prev) => mergeAfterSync(prev, snapshotLogs, updatedLogNotifikasiList));
+      }
+
+      if (!mutationResult.success) {
         const message = `Sinkronisasi sebagian: ${mutationResult.failed} perubahan/penghapusan gagal diproses. ${result.message}`;
         setSyncBanner({ type: 'sync_error', message });
-        return { success: false, count: result.syncedCount, message };
-      } else {
-        setSyncBanner({
-          type: 'sync_error',
-          message: result.message,
-        });
-        return { success: false, count: 0, message: result.message };
+        return { success: false, count: result.syncedCount, message, remaining: countRemaining(updatedAbsensiList), progress };
       }
+      setSyncBanner({ type: 'sync_error', message: result.message });
+      return { success: false, count: result.syncedCount || 0, message: result.message, remaining: countRemaining(updatedAbsensiList), progress };
     } catch (err) {
       const errMsg = 'Gagal sinkronisasi data: ' + String(err);
       setSyncBanner({
         type: 'sync_error',
         message: errMsg,
       });
-      return { success: false, count: 0, message: errMsg };
+      return { success: false, count: 0, message: errMsg, remaining: countRemaining(absensiListRef.current), progress: 0 };
     } finally {
       syncInFlightRef.current = false;
       setIsSyncing(false);
     }
+  };
+
+  // Tombol "Sinkron". Perbaikan bug "harus klik berkali-kali":
+  //  1. dulu klik ditolak diam-diam bila sinkron otomatis sedang berjalan -> sekarang menunggu giliran;
+  //  2. dulu hanya SATU putaran per klik -> sekarang mengulang sampai antrean kosong
+  //     (maks. 6 putaran; berhenti lebih awal bila tidak ada kemajuan).
+  const syncNow = async (): Promise<SyncRunResult> => {
+    const waitStart = Date.now();
+    while (syncInFlightRef.current && Date.now() - waitStart < 60_000) {
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    if (syncInFlightRef.current) {
+      return { success: false, count: 0, message: 'Sinkronisasi otomatis masih berjalan, coba lagi sebentar.', remaining: countRemaining(absensiListRef.current), progress: 0 };
+    }
+    // Batalkan jadwal otomatis yang menunggu supaya tidak berebut dengan proses manual ini.
+    if (autoSyncTimerRef.current !== null) {
+      window.clearTimeout(autoSyncTimerRef.current);
+      autoSyncTimerRef.current = null;
+    }
+    autoSyncRetryRef.current = 0;
+
+    const MAX_PASSES = 6;
+    let totalSent = 0;
+    let passes = 0;
+    let last: SyncRunResult = { success: true, count: 0, message: '', remaining: 0, progress: 0 };
+    for (let pass = 1; pass <= MAX_PASSES; pass++) {
+      passes = pass;
+      last = await syncData(false);
+      totalSent += last.count || 0;
+      if (last.success && (last.remaining ?? 0) === 0) break;
+      if (!(last.progress && last.progress > 0)) break; // tidak ada kemajuan: jangan berputar sia-sia
+      await new Promise((r) => setTimeout(r, 200)); // beri waktu React menerapkan state putaran ini
+    }
+
+    const remaining = last.remaining ?? 0;
+    if (last.success && remaining === 0) {
+      const message = totalSent > 0
+        ? `Sinkronisasi tuntas: ${totalSent} data terkirim${passes > 1 ? ` (${passes} putaran)` : ''}.`
+        : 'Semua data sudah tersinkron.';
+      setSyncBanner({ type: 'sync_success', message });
+      return { success: true, count: totalSent, message, remaining: 0, progress: last.progress };
+    }
+    const message = `Masih ada ${remaining} data belum terkirim. ${last.message}`;
+    setSyncBanner({ type: 'sync_error', message });
+    return { success: false, count: totalSent, message, remaining, progress: last.progress };
   };
 
   // Setelah sesi Supabase benar-benar tersedia (termasuk silent kiosk login),
@@ -1783,18 +1877,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSessionEmail, isSimulatedOffline, supabaseConfig.url, supabaseConfig.anonKey]);
 
-  // v16: presensi hasil scan dibuffer lokal dan dikirim ke Supabase setiap 6 menit.
+  // v16/v23: presensi hasil scan dibuffer lokal dan dikirim ke Supabase setiap 2 menit.
   // Mutation non-scan (master/settings/catatan) tetap dapat memicu sinkronisasi segera.
+  // PENTING: effect ini TIDAK boleh bergantung pada absensiList. Sebelumnya setiap scan baru
+  // membuat interval dibuat ulang (hitungan mulai dari nol), sehingga saat scan ramai
+  // (jeda antar-scan lebih pendek dari interval) sinkron batch praktis tidak pernah berjalan.
+  absensiListRef.current = absensiList;
+  logNotifikasiListRef.current = logNotifikasiList;
+  scheduleAutoSyncRef.current = scheduleAutoSync;
   useEffect(() => {
     if (!activeSessionEmail || isSimulatedOffline) return;
     const timer = window.setInterval(() => {
       if (!navigator.onLine) return;
-      const pendingAttendance = absensiList.some((a) => !a.synced);
-      if (pendingAttendance) scheduleAutoSync('scan-batch-6-menit');
-    }, 6 * 60 * 1000);
+      const pendingAttendance = absensiListRef.current.some((a) => !a.synced);
+      if (pendingAttendance) scheduleAutoSyncRef.current('scan-batch-2-menit');
+    }, SCAN_BATCH_SYNC_INTERVAL_MS);
     return () => window.clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSessionEmail, isSimulatedOffline, absensiList]);
+  }, [activeSessionEmail, isSimulatedOffline]);
 
   // Auto-dismiss banner after 5 seconds
   useEffect(() => {
@@ -1898,7 +1998,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // 2. Anti-duplication check:
     // Check if the student already scanned within `toleransi_duplikasi_menit`
     const toleranceMs = (pengaturanJam.toleransi_duplikasi_menit || 5) * 60 * 1000;
-    const existingRecentScan = absensiList.find((a) => {
+    const existingRecentScan = absensiListRef.current.find((a) => {
       if (a.siswa_id !== student.id || a.tanggal !== today) return false;
       // Compare timestamp difference
       const diff = Math.abs(nowTimestamp - a.timestamp);
@@ -2036,15 +2136,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // 6. Update attendance state. The record starts as PENDING regardless of
     // browser connectivity. Only a successful Supabase response may mark it synced.
-    const nextAbsensiList = [newAbsensi, ...absensiList];
-    setAbsensiList(nextAbsensiList);
+    // Pakai ref + update fungsional: dua scan beruntun sebelum React sempat render ulang tidak
+    // boleh saling menimpa, dan cek duplikat harus melihat scan yang baru saja masuk.
+    const nextAbsensiList = [newAbsensi, ...absensiListRef.current];
+    absensiListRef.current = nextAbsensiList;
+    setAbsensiList((prev) => [newAbsensi, ...prev.filter((a) => a.id !== newAbsensi.id)]);
 
     // 7. Try to persist the attendance immediately when online. We pass the new
     // snapshot explicitly so this does not depend on React state having re-rendered.
     let absensiForNotification = newAbsensi;
 
     if (false && isOnlineNow) {
-      // v16: scan disimpan lokal terlebih dahulu. Sinkronisasi batch berjalan tiap 6 menit.
+      // v16: scan disimpan lokal terlebih dahulu. Sinkronisasi batch berjalan tiap 2 menit.
       const syncResult = await processSyncToDatabase(
         nextAbsensiList,
         logNotifikasiList,
@@ -3018,6 +3121,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         pendingSyncCount,
         syncBanner,
         syncData,
+        syncNow,
         toggleSimulatedOffline,
         dismissSyncBanner,
         // Actions

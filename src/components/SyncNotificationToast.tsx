@@ -4,7 +4,7 @@ import { Wifi, WifiOff, CheckCircle2, AlertCircle, RefreshCw, X } from 'lucide-r
 import { motion, AnimatePresence } from 'motion/react';
 
 export const SyncNotificationToast: React.FC = () => {
-  const { syncBanner, dismissSyncBanner, isSyncing, syncData } = useApp();
+  const { syncBanner, dismissSyncBanner, isSyncing } = useApp();
 
   if (!syncBanner) return null;
 
