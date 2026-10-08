@@ -52,6 +52,8 @@ interface RecentScanItem {
   kelas?: Kelas;
 }
 
+type SyncScope = 'full' | 'catatan';
+
 export interface SyncRunResult {
   success: boolean;
   count: number;
@@ -479,6 +481,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const absensiListRef = useRef<Absensi[]>([]);
   const logNotifikasiListRef = useRef<LogNotifikasiWA[]>([]);
   const scheduleAutoSyncRef = useRef<(reason: string) => void>(() => {});
+  const autoSyncScopeRef = useRef<SyncScope>('full');
   const [nextBatchSyncAt, setNextBatchSyncAt] = useState<number | null>(null);
   const [pendingMutationCount, setPendingMutationCount] = useState(0);
 
@@ -1740,6 +1743,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  // Sinkron ringan khusus perubahan catatan kehadiran / pengaturan jam: langsung terkirim tanpa
+  // menunggu siklus batch scan 2 menit, dan tidak menyentuh data scan sama sekali.
+  const syncMutationsOnly = async (): Promise<SyncRunResult> => {
+    if (syncInFlightRef.current) {
+      return { success: false, count: 0, message: 'Proses sinkronisasi sedang berjalan...', progress: 0 };
+    }
+    if (isSimulatedOffline || !navigator.onLine) {
+      return { success: false, count: 0, message: 'Perangkat masih offline.', progress: 0 };
+    }
+    syncInFlightRef.current = true;
+    setIsSyncing(true);
+    try {
+      const m = await syncPendingMutations();
+      if (!m.success) {
+        setSyncBanner({ type: 'sync_error', message: `${m.failed} perubahan catatan/pengaturan gagal dikirim, akan dicoba lagi.` });
+      }
+      return { success: m.success, count: m.processed, message: m.success ? 'Perubahan terkirim.' : 'Sebagian perubahan gagal.', remaining: readPendingMutations().length, progress: m.processed };
+    } catch (err) {
+      return { success: false, count: 0, message: String(err), progress: 0 };
+    } finally {
+      syncInFlightRef.current = false;
+      setIsSyncing(false);
+    }
+  };
+
   // Tombol "Sinkron". Perbaikan bug "harus klik berkali-kali":
   //  1. dulu klik ditolak diam-diam bila sinkron otomatis sedang berjalan -> sekarang menunggu giliran;
   //  2. dulu hanya SATU putaran per klik -> sekarang mengulang sampai antrean kosong
@@ -1829,17 +1857,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Automatic sync is intentionally stronger than a single `online` event.
   // Chrome can fire `online` before the internet/Supabase is actually reachable.
-  const scheduleAutoSync = (reason: string) => {
+  const scheduleAutoSync = (reason: string, scope: SyncScope = 'full') => {
     if (isSimulatedOffline || !navigator.onLine || !activeSessionEmail) return;
-    if (autoSyncTimerRef.current !== null) window.clearTimeout(autoSyncTimerRef.current);
+    // Bila sudah ada jadwal sinkron penuh yang menunggu, jangan "diturunkan" menjadi sinkron catatan saja.
+    let effectiveScope: SyncScope = scope;
+    if (autoSyncTimerRef.current !== null) {
+      window.clearTimeout(autoSyncTimerRef.current);
+      if (autoSyncScopeRef.current === 'full') effectiveScope = 'full';
+    }
+    autoSyncScopeRef.current = effectiveScope;
     const delays = [300, 1000, 2500, 5000, 10000];
     const index = Math.min(autoSyncRetryRef.current, delays.length - 1);
     autoSyncTimerRef.current = window.setTimeout(async () => {
       autoSyncTimerRef.current = null;
-      const result = await syncData(true);
+      let result: SyncRunResult;
+      if (effectiveScope === 'catatan') {
+        // Hapus/reset absensi wajib lewat sinkron penuh (mencegah data yang sudah dihapus hidup kembali).
+        const needsFull = readPendingMutations().some((m) => m.type === 'absensi_delete' || m.type === 'absensi_reset_today');
+        result = needsFull ? await syncData(true) : await syncMutationsOnly();
+      } else {
+        result = await syncData(true);
+      }
       if (!result.success && navigator.onLine && !isSimulatedOffline) {
         autoSyncRetryRef.current = Math.min(autoSyncRetryRef.current + 1, delays.length - 1);
-        scheduleAutoSync(reason);
+        scheduleAutoSync(reason, effectiveScope);
       } else {
         autoSyncRetryRef.current = 0;
       }
@@ -2500,7 +2541,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Settings follow the same durable queue as students/classes/attendance:
     // local changes survive offline mode and are automatically retried online.
     enqueueMutation({ type: 'pengaturan_jam_upsert', row: next });
-    scheduleAutoSync('pengaturan-jam-change');
+    scheduleAutoSync('pengaturan-jam-change', 'catatan');
   };
 
   const updateWAConfig = (data: Partial<WAGatewayConfig>) => {
@@ -2562,14 +2603,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     enqueueMutation({ type: 'catatan_kehadiran_upsert', row: record });
-    scheduleAutoSync('catatan-kehadiran-change');
+    scheduleAutoSync('catatan-kehadiran-change', 'catatan');
   };
 
   const deleteCatatanKehadiran = (id: string) => {
     setCatatanKehadiranList((prev) => prev.filter((c) => c.id !== id));
     const target = catatanKehadiranList.find((c) => c.id === id);
     enqueueMutation({ type: 'catatan_kehadiran_delete', id, siswa_id: target?.siswa_id, tanggal: target?.tanggal });
-    scheduleAutoSync('catatan-kehadiran-delete');
+    scheduleAutoSync('catatan-kehadiran-delete', 'catatan');
   };
 
   const resetTodayAttendance = () => {
