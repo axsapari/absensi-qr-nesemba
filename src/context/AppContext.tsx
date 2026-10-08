@@ -213,7 +213,9 @@ const STORAGE_KEYS = {
 const DIAGNOSTIC_TRACE_KEY = 'absensi_audit_trace_v1';
 const appendDiagnosticTrace = (event: 'localstorage-write' | 'focus' | 'visibility' | 'audit' | 'delete' | 'reset' | 'reconcile', absensi: Absensi[], note?: string) => {
   try {
-    const targetNisn = '0124203121';
+    // NISN target dibaca dari Panel Admin (opsional), tidak lagi tertanam di kode.
+    const targetNisn = (localStorage.getItem('absensi_audit_target_nisn') || '').trim();
+    if (!targetNisn) return;
     const siswaRaw = localStorage.getItem(STORAGE_KEYS.SISWA);
     const siswaRows: Array<{ id: string; nisn?: string }> = siswaRaw ? JSON.parse(siswaRaw) : [];
     const targetIdsByNisn = new Set(siswaRows.filter(s => String(s.nisn ?? '').trim() === targetNisn).map(s => String(s.id)));
@@ -2281,7 +2283,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => window.clearInterval(timer);
   }, [currentUser, effectiveOnline, waConfig.active, siswaList, absensiList, catatanKehadiranList]);
 
-  const auditDataIntegrity = async (diagnosticNisn = '0124203121'): Promise<DataAuditReport> => {
+  const auditDataIntegrity = async (diagnosticNisn = ''): Promise<DataAuditReport> => {
     appendDiagnosticTrace('audit', absensiList, `audit target ${diagnosticNisn}`);
     return runDataAudit(
       { siswa: siswaList, kelas: kelasList, absensi: absensiList, logs: logNotifikasiList },

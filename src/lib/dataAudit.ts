@@ -17,10 +17,12 @@ export async function runDataAudit(
   local: { siswa: Siswa[]; kelas: Kelas[]; absensi: Absensi[]; logs: LogNotifikasiWA[] },
   supabaseConfig: SupabaseConfig,
   pendingMutations: number,
-  diagnosticNisn = '0124203121',
+  diagnosticNisn = '',
 ): Promise<DataAuditReport> {
   const timestamp = new Date().toISOString();
-  const target = normalizeNisn(diagnosticNisn);
+  // Kosong = audit umum tanpa melacak siswa tertentu. Sentinel dipakai agar perbandingan
+  // `=== target` / `includes(target)` tidak pernah cocok dengan data nyata.
+  const target = normalizeNisn(diagnosticNisn) || '__tanpa_target__';
   const empty = (): DataAuditReport => ({
     timestamp,
     online: false,

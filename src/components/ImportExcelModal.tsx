@@ -128,7 +128,7 @@ export const ImportExcelModal: React.FC<ImportExcelModalProps> = ({ isOpen, onCl
     // 2. Prepare student objects
     const studentsToImport = validRows.map((row) => {
       const targetClassId =
-        classIdMap[row.nama_kelas.toLowerCase().trim()] || kelasList[0]?.id || 'k-7a';
+        classIdMap[row.nama_kelas.toLowerCase().trim()] || kelasList[0]?.id || '';
 
       return {
         nama: row.nama,

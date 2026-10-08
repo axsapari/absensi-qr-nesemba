@@ -61,7 +61,9 @@ export const AdminPanel: React.FC = () => {
   const [jamForm, setJamForm] = useState(pengaturanJam);
   const [savedSuccess, setSavedSuccess] = useState<string | null>(null);
   const [auditReport, setAuditReport] = useState<DataAuditReport | null>(null);
-  const [diagnosticNisn, setDiagnosticNisn] = useState('0124203121');
+  const [diagnosticNisn, setDiagnosticNisn] = useState<string>(() => {
+    try { return localStorage.getItem('absensi_audit_target_nisn') || ''; } catch { return ''; }
+  });
   const [auditRunning, setAuditRunning] = useState(false);
 
   // New User Form State (Super Admin Only)
@@ -602,9 +604,9 @@ export const AdminPanel: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2 items-end bg-white border border-slate-200 rounded-xl p-3">
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">NISN yang dilacak</label>
-                <input value={diagnosticNisn} onChange={e => setDiagnosticNisn(e.target.value.replace(/\D/g, '').slice(0, 20))} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs font-mono" placeholder="0124203121" />
+                <input value={diagnosticNisn} onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 20); setDiagnosticNisn(v); try { localStorage.setItem('absensi_audit_target_nisn', v); } catch {} }} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs font-mono" placeholder="Isi NISN siswa yang ingin dilacak (opsional)" />
               </div>
-              <div className="text-[10px] text-slate-500">Default: <strong>Alip Yoga Permana</strong> — 0124203121</div>
+              <div className="text-[10px] text-slate-500">Opsional: kosongkan untuk audit umum tanpa melacak siswa tertentu.</div>
             </div>
 
             {auditReport && (
@@ -1297,9 +1299,9 @@ export const AdminPanel: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2 items-end bg-white border border-slate-200 rounded-xl p-3">
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">NISN yang dilacak</label>
-                <input value={diagnosticNisn} onChange={e => setDiagnosticNisn(e.target.value.replace(/\D/g, '').slice(0, 20))} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs font-mono" placeholder="0124203121" />
+                <input value={diagnosticNisn} onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 20); setDiagnosticNisn(v); try { localStorage.setItem('absensi_audit_target_nisn', v); } catch {} }} className="w-full px-3 py-2 rounded-lg border border-slate-300 text-xs font-mono" placeholder="Isi NISN siswa yang ingin dilacak (opsional)" />
               </div>
-              <div className="text-[10px] text-slate-500">Default: <strong>Alip Yoga Permana</strong> — 0124203121</div>
+              <div className="text-[10px] text-slate-500">Opsional: kosongkan untuk audit umum tanpa melacak siswa tertentu.</div>
             </div>
 
             {auditReport && (
