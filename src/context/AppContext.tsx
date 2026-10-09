@@ -42,6 +42,7 @@ import {
 import { soundManager } from '../lib/sound';
 import { DEFAULT_WA_CONFIG, formatPhoneNumber, formatHariTanggal } from '../lib/whatsapp';
 import { mergeAfterSync } from '../lib/syncMerge';
+import { hitungBatasTarik, HISTORY_PULL_KEY } from '../lib/historyWindow';
 import { processSyncToDatabase } from '../lib/syncService';
 import { getSupabaseClient, resetSupabaseClient } from '../lib/supabase';
 import { runDataAudit } from '../lib/dataAudit';
@@ -101,6 +102,8 @@ interface AppContextType {
   syncData: (isAuto?: boolean) => Promise<SyncRunResult>;
   /** Tombol "Sinkron": menunggu sinkron otomatis yang sedang berjalan, lalu mengulang sampai antrean habis. */
   syncNow: () => Promise<SyncRunResult>;
+  /** Tarik SELURUH riwayat absensi dari Supabase (di luar jendela sinkron biasa). Untuk perangkat baru / pemulihan. */
+  pullFullHistory: () => Promise<SyncRunResult>;
   /** Perkiraan waktu (ms epoch) sinkron batch scan berikutnya; null bila belum ada sesi Supabase. */
   nextBatchSyncAt: number | null;
   syncIntervalMs: number;
@@ -1577,28 +1580,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return result;
   };
 
-  // Pull seluruh riwayat absensi dari Supabase agar perangkat/pos yang sempat tidak
-  // melakukan sync pada hari tertentu tetap dapat mengejar data ketika online kembali.
-  // Remote menjadi sumber kebenaran untuk record yang sudah tersinkron; mutation lokal
-  // yang masih pending dan tombstone tetap diprioritaskan.
-  const reconcileAllAttendanceFromSupabase = async (baseList: Absensi[]): Promise<Absensi[]> => {
+  // Tarik riwayat absensi dari Supabase agar perangkat/pos yang sempat tidak sinkron tetap mengejar
+  // data ketika online kembali. Yang ditarik hanya JENDELA terbaru (lihat lib/historyWindow.ts),
+  // bukan seluruh riwayat sepanjang masa; baris lokal di luar jendela dibiarkan apa adanya.
+  // Remote menjadi sumber kebenaran untuk record yang sudah tersinkron di dalam jendela; mutation
+  // lokal yang masih pending dan tombstone tetap diprioritaskan.
+  const reconcileAllAttendanceFromSupabase = async (baseList: Absensi[], options?: { full?: boolean }): Promise<Absensi[]> => {
     const supabase = getSupabaseClient(supabaseConfig);
     if (!supabase || !activeSessionEmail || isSimulatedOffline || !navigator.onLine) return baseList;
+
+    const today = getTodayDateString();
+    const since = hitungBatasTarik({ today, lastPull: localStorage.getItem(HISTORY_PULL_KEY), full: options?.full });
 
     const pageSize = 1000;
     const remoteRows: any[] = [];
     for (let from = 0; ; from += pageSize) {
-      const { data, error } = await supabase
+      let query = supabase
         .from('absensi')
-        .select('id,siswa_id,tanggal,waktu_scan,timestamp,jenis,status,catatan')
+        .select('id,siswa_id,tanggal,waktu_scan,timestamp,jenis,status,catatan');
+      if (since) query = query.gte('tanggal', since);
+      const { data, error } = await query
         .order('tanggal', { ascending: true })
         .order('timestamp', { ascending: true })
         .range(from, from + pageSize - 1);
-      if (error) throw new Error(`Gagal membaca seluruh riwayat absensi Supabase: ${error.message}`);
+      if (error) throw new Error(`Gagal membaca riwayat absensi Supabase: ${error.message}`);
       const rows = data ?? [];
       remoteRows.push(...rows);
       if (rows.length < pageSize) break;
     }
+
+    // Baris lokal sebelum jendela tidak disentuh; hanya jendela yang direkonsiliasi.
+    const olderLocal = since ? baseList.filter((a) => a.tanggal < since) : [];
+    const windowLocal = since ? baseList.filter((a) => a.tanggal >= since) : baseList;
 
     const { data: remoteStudents, error: studentError } = await supabase.from('siswa').select('id,nisn');
     if (studentError) throw new Error(`Gagal membaca master siswa untuk riwayat absensi: ${studentError.message}`);
@@ -1631,7 +1644,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const localByKey = new Map<string, Absensi>();
-    for (const item of baseList) {
+    for (const item of windowLocal) {
       localByKey.set(businessKey(item.siswa_id, item.tanggal, item.jenis), item);
     }
 
@@ -1646,8 +1659,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!local.synced && !merged.has(key)) merged.set(key, local);
     }
 
-    const result = Array.from(merged.values()).sort((a, b) => a.timestamp - b.timestamp);
-    appendDiagnosticTrace('reconcile', result, `FULL remote=${remoteRows.length}, tombstones=${tombstones.length}, hasil=${result.length}`);
+    const result = [...olderLocal, ...Array.from(merged.values())].sort((a, b) => a.timestamp - b.timestamp);
+    try { localStorage.setItem(HISTORY_PULL_KEY, today); } catch { /* penyimpanan penuh: tarikan berikutnya cukup memakai jendela yang sama */ }
+    appendDiagnosticTrace('reconcile', result, `${since ? `JENDELA sejak ${since}` : 'FULL'} remote=${remoteRows.length}, tombstones=${tombstones.length}, hasil=${result.length}`);
     return result;
   };
 
@@ -1750,6 +1764,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         message: errMsg,
       });
       return { success: false, count: 0, message: errMsg, remaining: countRemaining(absensiListRef.current), progress: 0 };
+    } finally {
+      syncInFlightRef.current = false;
+      setIsSyncing(false);
+    }
+  };
+
+  // Tarik seluruh riwayat (tanpa jendela). Dipakai manual: perangkat baru, atau setelah data lokal dibersihkan.
+  const pullFullHistory = async (): Promise<SyncRunResult> => {
+    if (syncInFlightRef.current) return { success: false, count: 0, message: 'Proses sinkronisasi sedang berjalan...', progress: 0 };
+    if (isSimulatedOffline || !navigator.onLine) return { success: false, count: 0, message: 'Perangkat masih offline.', progress: 0 };
+    syncInFlightRef.current = true;
+    setIsSyncing(true);
+    try {
+      const snapshot = absensiListRef.current;
+      const reconciled = await reconcileAllAttendanceFromSupabase(snapshot, { full: true });
+      setAbsensiList((prev) => mergeAfterSync(prev, snapshot, reconciled));
+      const delta = reconciled.length - snapshot.length;
+      const message = `Seluruh riwayat ditarik dari Supabase: ${reconciled.length} data absensi (${delta >= 0 ? '+' : ''}${delta}).`;
+      setSyncBanner({ type: 'sync_success', message });
+      return { success: true, count: Math.max(0, delta), message, remaining: countRemaining(reconciled), progress: Math.abs(delta) };
+    } catch (err) {
+      const message = 'Gagal menarik seluruh riwayat: ' + describeSyncError(err);
+      setSyncBanner({ type: 'sync_error', message });
+      return { success: false, count: 0, message, progress: 0 };
     } finally {
       syncInFlightRef.current = false;
       setIsSyncing(false);
@@ -3190,6 +3228,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         syncBanner,
         syncData,
         syncNow,
+        pullFullHistory,
         nextBatchSyncAt,
         syncIntervalMs: SCAN_BATCH_SYNC_INTERVAL_MS,
         toggleSimulatedOffline,
