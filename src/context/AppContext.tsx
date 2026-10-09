@@ -43,6 +43,7 @@ import { soundManager } from '../lib/sound';
 import { DEFAULT_WA_CONFIG, formatPhoneNumber, formatHariTanggal } from '../lib/whatsapp';
 import { mergeAfterSync } from '../lib/syncMerge';
 import { hitungBatasTarik, HISTORY_PULL_KEY } from '../lib/historyWindow';
+import { safeSetItem, ukurPenyimpanan, STORAGE_FULL_EVENT, STORAGE_WARN_EVENT } from '../lib/storageUsage';
 import { processSyncToDatabase } from '../lib/syncService';
 import { getSupabaseClient, resetSupabaseClient } from '../lib/supabase';
 import { runDataAudit } from '../lib/dataAudit';
@@ -238,7 +239,7 @@ const appendDiagnosticTrace = (event: 'localstorage-write' | 'focus' | 'visibili
     const raw = localStorage.getItem(DIAGNOSTIC_TRACE_KEY);
     const list = raw ? JSON.parse(raw) : [];
     list.push({ at: new Date().toISOString(), event, targetPresent: targetIds.length > 0, targetIds, totalAttendance: absensi.length, note });
-    localStorage.setItem(DIAGNOSTIC_TRACE_KEY, JSON.stringify(list.slice(-80)));
+    safeSetItem(DIAGNOSTIC_TRACE_KEY, JSON.stringify(list.slice(-80)));
   } catch {}
 };
 
@@ -489,6 +490,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const syncInFlightRef = useRef(false);
   const autoSyncTimerRef = useRef<number | null>(null);
   const autoSyncRetryRef = useRef(0);
+  const lastStorageCheckRef = useRef(0);
   // Interval kirim batch scan ke Supabase (sebelumnya 6 menit).
   const SCAN_BATCH_SYNC_INTERVAL_MS = 2 * 60 * 1000;
   // Ref selalu berisi data TERBARU. Dipakai timer & proses sinkron agar tidak membaca closure render lama.
@@ -512,7 +514,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const writePendingMutations = (items: PendingMutation[]) => {
     try {
-      localStorage.setItem(STORAGE_KEYS.PENDING_MUTATIONS, JSON.stringify(items));
+      safeSetItem(STORAGE_KEYS.PENDING_MUTATIONS, JSON.stringify(items));
     } catch {}
     setPendingMutationCount(items.length);
   };
@@ -530,7 +532,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       // Keep the list bounded. Tombstones are intentionally durable, but there is
       // no reason for an attendance kiosk to accumulate an unbounded history.
-      localStorage.setItem(STORAGE_KEYS.ABSENSI_TOMBSTONES, JSON.stringify(items.slice(-1000)));
+      safeSetItem(STORAGE_KEYS.ABSENSI_TOMBSTONES, JSON.stringify(items.slice(-1000)));
     } catch {}
   };
 
@@ -607,21 +609,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
+  // Penyimpanan browser penuh / hampir penuh: jangan crash, beri tahu petugas, dan buang salinan
+  // cadangan lokal (redundan; berkas cadangan unduhan tidak terpengaruh).
+  useEffect(() => {
+    const onFull = () => {
+      setLocalSnapshots((prev) => (prev.length > 1 ? prev.slice(0, 1) : prev));
+      setSyncBanner({
+        type: 'sync_error',
+        message: 'Penyimpanan browser PENUH: sebagian data belum tersimpan di perangkat ini. Segera lakukan Sinkron lalu Arsip Semester / bersihkan data lama di menu Cadangan.',
+      });
+    };
+    const onWarn = (e: Event) => {
+      const persen = (e as CustomEvent<{ persen: number }>).detail?.persen;
+      setSyncBanner({
+        type: 'sync_error',
+        message: `Penyimpanan browser sudah ${persen ?? 90}% terpakai. Lakukan Arsip Semester atau hapus cadangan lokal lama sebelum penuh.`,
+      });
+    };
+    window.addEventListener(STORAGE_FULL_EVENT, onFull);
+    window.addEventListener(STORAGE_WARN_EVENT, onWarn);
+    return () => {
+      window.removeEventListener(STORAGE_FULL_EVENT, onFull);
+      window.removeEventListener(STORAGE_WARN_EVENT, onWarn);
+    };
+  }, []);
+
   // Sync state to LocalStorage
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.SISWA, JSON.stringify(siswaList));
+    safeSetItem(STORAGE_KEYS.SISWA, JSON.stringify(siswaList));
   }, [siswaList]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.SISWA_ID_ALIASES, JSON.stringify(siswaIdAliases));
+    safeSetItem(STORAGE_KEYS.SISWA_ID_ALIASES, JSON.stringify(siswaIdAliases));
   }, [siswaIdAliases]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.NATIONAL_HOLIDAYS, JSON.stringify(nationalHolidays));
+    safeSetItem(STORAGE_KEYS.NATIONAL_HOLIDAYS, JSON.stringify(nationalHolidays));
   }, [nationalHolidays]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.CUSTOM_SCHOOL_DAYS, JSON.stringify(customSchoolDays));
+    safeSetItem(STORAGE_KEYS.CUSTOM_SCHOOL_DAYS, JSON.stringify(customSchoolDays));
   }, [customSchoolDays]);
 
   // v16: jadwal khusus juga dibawa dalam konfigurasi jam agar dua perangkat pos
@@ -637,62 +664,68 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [pengaturanJam.hari_khusus]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.KELAS, JSON.stringify(kelasList));
+    safeSetItem(STORAGE_KEYS.KELAS, JSON.stringify(kelasList));
   }, [kelasList]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.ABSENSI, JSON.stringify(absensiList));
+    safeSetItem(STORAGE_KEYS.ABSENSI, JSON.stringify(absensiList));
     appendDiagnosticTrace('localstorage-write', absensiList, 'absensiList ditulis ke localStorage');
+    const now = Date.now();
+    if (now - lastStorageCheckRef.current > 5 * 60 * 1000) {
+      lastStorageCheckRef.current = now;
+      const u = ukurPenyimpanan();
+      if (u.level === 'kritis') window.dispatchEvent(new CustomEvent(STORAGE_WARN_EVENT, { detail: { persen: Math.round(u.persen) } }));
+    }
   }, [absensiList]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.CATATAN_KEHADIRAN, JSON.stringify(catatanKehadiranList));
+    safeSetItem(STORAGE_KEYS.CATATAN_KEHADIRAN, JSON.stringify(catatanKehadiranList));
   }, [catatanKehadiranList]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.LOG_WA, JSON.stringify(logNotifikasiList));
+    safeSetItem(STORAGE_KEYS.LOG_WA, JSON.stringify(logNotifikasiList));
   }, [logNotifikasiList]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.LOG_REKAP_WA_MINGGUAN, JSON.stringify(logRekapWAMingguanList));
+    safeSetItem(STORAGE_KEYS.LOG_REKAP_WA_MINGGUAN, JSON.stringify(logRekapWAMingguanList));
   }, [logRekapWAMingguanList]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.CONFIG_JAM, JSON.stringify(pengaturanJam));
+    safeSetItem(STORAGE_KEYS.CONFIG_JAM, JSON.stringify(pengaturanJam));
   }, [pengaturanJam]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.CONFIG_WA, JSON.stringify(waConfig));
+    safeSetItem(STORAGE_KEYS.CONFIG_WA, JSON.stringify(waConfig));
   }, [waConfig]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.CONFIG_SUPABASE, JSON.stringify(supabaseConfig));
+    safeSetItem(STORAGE_KEYS.CONFIG_SUPABASE, JSON.stringify(supabaseConfig));
   }, [supabaseConfig]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.ADMIN_AUTH, isAdminLoggedIn ? 'true' : 'false');
+    safeSetItem(STORAGE_KEYS.ADMIN_AUTH, isAdminLoggedIn ? 'true' : 'false');
   }, [isAdminLoggedIn]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.SNAPSHOTS, JSON.stringify(localSnapshots));
+    safeSetItem(STORAGE_KEYS.SNAPSHOTS, JSON.stringify(localSnapshots));
   }, [localSnapshots]);
 
   useEffect(() => {
     if (lastSyncTime) {
-      localStorage.setItem(STORAGE_KEYS.LAST_SYNC, lastSyncTime);
+      safeSetItem(STORAGE_KEYS.LAST_SYNC, lastSyncTime);
     }
   }, [lastSyncTime]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.SIMULATED_OFFLINE, String(isSimulatedOffline));
+    safeSetItem(STORAGE_KEYS.SIMULATED_OFFLINE, String(isSimulatedOffline));
   }, [isSimulatedOffline]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.PROFIL_SEKOLAH, JSON.stringify(profilSekolah));
+    safeSetItem(STORAGE_KEYS.PROFIL_SEKOLAH, JSON.stringify(profilSekolah));
   }, [profilSekolah]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+    safeSetItem(STORAGE_KEYS.USERS, JSON.stringify(users));
   }, [users]);
 
   // Pantau sesi Supabase Auth -- ini sumber kebenaran status login sekarang, bukan
@@ -1731,7 +1764,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setAbsensiList((prev) => mergeAfterSync(prev, snapshotAbsensi, reconciledAbsensiList));
         setLogNotifikasiList((prev) => mergeAfterSync(prev, snapshotLogs, updatedLogNotifikasiList));
         setLastSyncTime(result.timestamp);
-        localStorage.setItem(STORAGE_KEYS.LAST_SYNC, result.timestamp);
+        safeSetItem(STORAGE_KEYS.LAST_SYNC, result.timestamp);
 
         setSyncBanner({
           type: 'sync_success',
@@ -1882,7 +1915,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsSimulatedOffline((prev) => {
       const next = !prev;
       try {
-        localStorage.setItem(STORAGE_KEYS.SIMULATED_OFFLINE, String(next));
+        safeSetItem(STORAGE_KEYS.SIMULATED_OFFLINE, String(next));
       } catch {}
       if (next) {
         setSyncBanner({
@@ -2262,7 +2295,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setAbsensiList(syncResult.updatedAbsensiList);
         setLogNotifikasiList(syncResult.updatedLogNotifikasiList);
         setLastSyncTime(syncResult.result.timestamp);
-        localStorage.setItem(STORAGE_KEYS.LAST_SYNC, syncResult.result.timestamp);
+        safeSetItem(STORAGE_KEYS.LAST_SYNC, syncResult.result.timestamp);
 
         // processSyncToDatabase may reconcile the local generated ID with an
         // existing Supabase absensi.id. Use that canonical ID for the WA log.
@@ -2325,7 +2358,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const key = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       if (localStorage.getItem(STORAGE_KEYS.LAST_WEEKLY_WA_AUTOSEND) === key) return;
       if (mm >= 0) {
-        localStorage.setItem(STORAGE_KEYS.LAST_WEEKLY_WA_AUTOSEND, key);
+        safeSetItem(STORAGE_KEYS.LAST_WEEKLY_WA_AUTOSEND, key);
         void sendWeeklyWhatsAppSummary();
       }
     }, 30_000);
@@ -2855,7 +2888,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       },
       payload,
     };
-    setLocalSnapshots((prev) => [newSnapshot, ...prev.slice(0, 9)]);
+    // Tiap snapshot menyalin SELURUH data (siswa + absensi). Maks. 3 agar tidak memenuhi penyimpanan browser.
+    setLocalSnapshots((prev) => [newSnapshot, ...prev.slice(0, 2)]);
   };
 
   const restoreLocalSnapshot = (snapshotId: string): boolean => {
