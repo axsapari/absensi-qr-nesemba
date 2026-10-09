@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getFotoSiswaUrl, getFotoPlaceholder } from '../lib/fotoHelper';
+import { nextFotoCandidate } from '../lib/fotoFallback';
 import { KioskSyncIndicator } from './KioskSyncIndicator';
 
 export const ScanKiosk: React.FC = () => {
@@ -351,6 +352,7 @@ export const ScanKiosk: React.FC = () => {
                     alt={lastScanResult.siswa?.nama}
                     className="w-36 h-36 md:w-44 md:h-44 object-cover rounded-2xl border-4 border-amber-500 shadow-xl"
                     onError={(e) => {
+                      if (nextFotoCandidate(e.target as HTMLImageElement)) return;
                       (e.target as HTMLImageElement).src = getFotoPlaceholder(
                         lastScanResult.siswa?.jenis_kelamin || 'L'
                       );
@@ -438,6 +440,7 @@ export const ScanKiosk: React.FC = () => {
                     }
                     alt={lastScanResult.siswa?.nama}
                     onError={(e) => {
+                      if (nextFotoCandidate(e.target as HTMLImageElement)) return;
                       (e.target as HTMLImageElement).src = getFotoPlaceholder(
                         lastScanResult.siswa?.jenis_kelamin || 'L'
                       );

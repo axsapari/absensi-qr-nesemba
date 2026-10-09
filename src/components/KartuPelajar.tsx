@@ -4,6 +4,7 @@ import { Siswa, Kelas } from '../types';
 import QRCode from 'qrcode';
 import { SchoolLogo, LogoOSIS } from './SchoolLogos';
 import { getFotoSiswaUrl, getFotoPlaceholder } from '../lib/fotoHelper';
+import { nextFotoCandidate } from '../lib/fotoFallback';
 import { sortKelas } from '../lib/classUtils';
 import {
   Printer,
@@ -455,6 +456,7 @@ export const OfficialStudentCard: React.FC<OfficialStudentCardProps> = ({
           src={getFotoSiswaUrl(siswa, supabaseConfig.url)}
           alt={siswa.nama}
           onError={(e) => {
+            if (nextFotoCandidate(e.target as HTMLImageElement)) return;
             (e.target as HTMLImageElement).src = getFotoPlaceholder(siswa.jenis_kelamin);
           }}
           className="absolute object-cover"
@@ -562,6 +564,7 @@ export const OfficialStudentCard: React.FC<OfficialStudentCardProps> = ({
                 className="w-full h-full object-cover"
                 onError={(e) => {
                   // Fallback avatar kalau foto belum diupload ke Storage untuk NISN ini
+                  if (nextFotoCandidate(e.target as HTMLImageElement)) return;
                   (e.target as HTMLImageElement).src = getFotoPlaceholder(siswa.jenis_kelamin);
                 }}
               />

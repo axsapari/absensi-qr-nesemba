@@ -5,6 +5,7 @@ import { ImportExcelModal } from './ImportExcelModal';
 import { ImportOrtuModal } from './ImportOrtuModal';
 import { downloadExcelTemplate, exportStudentsToExcel } from '../lib/excelHelper';
 import { getFotoSiswaUrl, getFotoPlaceholder } from '../lib/fotoHelper';
+import { nextFotoCandidate } from '../lib/fotoFallback';
 import { sortKelas } from '../lib/classUtils';
 import {
   Plus,
@@ -374,6 +375,7 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
                               alt={s.nama}
                               className="w-10 h-10 rounded-xl object-cover border border-slate-200 shadow-2xs"
                               onError={(e) => {
+                                if (nextFotoCandidate(e.target as HTMLImageElement)) return;
                                 (e.target as HTMLImageElement).src = getFotoPlaceholder(s.jenis_kelamin);
                               }}
                             />

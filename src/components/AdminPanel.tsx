@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import type { DataAuditReport } from '../types';
 import { useApp } from '../context/AppContext';
+import { DiagnosaFoto } from './DiagnosaFoto';
 import { SchoolLogo, LogoSMPN9Banjar, CityLogo, LogoKotaBanjar } from './SchoolLogos';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import {
@@ -1278,6 +1279,8 @@ export const AdminPanel: React.FC = () => {
               Tindakan administratif untuk keperluan pemeliharaan dan pengujian alur presensi.
             </p>
           </div>
+
+          <DiagnosaFoto />
 
           <div className="p-5 bg-slate-50 border border-slate-200 rounded-2xl space-y-4">
             <div className="flex items-start justify-between gap-4">

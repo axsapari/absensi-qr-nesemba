@@ -38,6 +38,7 @@ import {
 import * as XLSX from 'xlsx';
 import { SchoolLogo, LogoTutWuri, CityLogo } from './SchoolLogos';
 import { getFotoSiswaUrl, getFotoPlaceholder } from '../lib/fotoHelper';
+import { nextFotoCandidate } from '../lib/fotoFallback';
 import { sortKelas, sortSiswaByKelas } from '../lib/classUtils';
 import { RekapMakanSiangModal } from './RekapMakanSiang';
 import { LaporanTanpaKartu } from './LaporanTanpaKartu';
@@ -1062,6 +1063,7 @@ export const RekapDashboard: React.FC = () => {
                                 src={getFotoSiswaUrl(item.siswa, supabaseConfig.url)}
                                 alt={item.siswa.nama}
                                 onError={(e) => {
+                                  if (nextFotoCandidate(e.target as HTMLImageElement)) return;
                                   (e.target as HTMLImageElement).src = getFotoPlaceholder(item.siswa.jenis_kelamin);
                                 }}
                                 className="w-9 h-9 rounded-full object-cover border border-slate-200 shrink-0"
@@ -1267,6 +1269,7 @@ export const RekapDashboard: React.FC = () => {
                                 src={getFotoSiswaUrl(item.siswa, supabaseConfig.url)}
                                 alt={item.siswa.nama}
                                 onError={(e) => {
+                                  if (nextFotoCandidate(e.target as HTMLImageElement)) return;
                                   (e.target as HTMLImageElement).src = getFotoPlaceholder(item.siswa.jenis_kelamin);
                                 }}
                                 className="w-9 h-9 rounded-full object-cover border border-slate-200 shrink-0"
@@ -1491,6 +1494,7 @@ export const RekapDashboard: React.FC = () => {
                   src={getFotoSiswaUrl(selectedStudentData.student, supabaseConfig.url)}
                   alt={selectedStudentData.student.nama}
                   onError={(e) => {
+                    if (nextFotoCandidate(e.target as HTMLImageElement)) return;
                     (e.target as HTMLImageElement).src = getFotoPlaceholder(selectedStudentData.student!.jenis_kelamin);
                   }}
                   className="w-14 h-14 rounded-2xl object-cover border-2 border-emerald-500 shadow-xs shrink-0"
