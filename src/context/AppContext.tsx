@@ -56,6 +56,17 @@ interface RecentScanItem {
 
 type SyncScope = 'full' | 'catatan';
 
+/** Data satu rentang tanggal (mis. satu semester) untuk arsip. */
+export interface DataSemester {
+  absensi: Absensi[];
+  catatan: CatatanKehadiran[];
+  /** 'supabase' = lengkap dari server (+ scan lokal yang belum terkirim); 'lokal' = hanya data di perangkat ini */
+  sumber: 'supabase' | 'lokal';
+  /** siswa_id (lokal maupun server) -> NISN, supaya data antar-perangkat tetap cocok */
+  nisnById: Record<string, string>;
+  peringatan?: string;
+}
+
 /** Ambil pesan galat yang bisa dibaca dari Error biasa maupun objek galat Supabase (PostgrestError). */
 export function describeSyncError(err: unknown): string {
   if (!err) return 'galat tidak diketahui';
@@ -105,6 +116,10 @@ interface AppContextType {
   syncNow: () => Promise<SyncRunResult>;
   /** Tarik SELURUH riwayat absensi dari Supabase (di luar jendela sinkron biasa). Untuk perangkat baru / pemulihan. */
   pullFullHistory: () => Promise<SyncRunResult>;
+  /** Ambil data lengkap suatu rentang tanggal untuk arsip semester (dari Supabase bila online). */
+  ambilDataSemester: (mulai: string, selesai: string) => Promise<DataSemester>;
+  /** Hapus data LOKAL (yang sudah tersinkron) pada rentang tanggal. Tidak menghapus apa pun di Supabase. */
+  hapusDataLokalRentang: (mulai: string, selesai: string) => { absensi: number; catatan: number; log: number };
   /** Perkiraan waktu (ms epoch) sinkron batch scan berikutnya; null bila belum ada sesi Supabase. */
   nextBatchSyncAt: number | null;
   syncIntervalMs: number;
@@ -1827,6 +1842,85 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const ambilDataSemester = async (mulai: string, selesai: string): Promise<DataSemester> => {
+    const inRange = (t: string) => t >= mulai && t <= selesai;
+    const localAbs = absensiListRef.current.filter((a) => inRange(a.tanggal));
+    const localCat = catatanKehadiranList.filter((c) => inRange(c.tanggal));
+    const nisnById: Record<string, string> = {};
+    for (const st of siswaList) nisnById[String(st.id)] = String(st.nisn ?? '').trim();
+    for (const [id, nisn] of Object.entries(siswaIdAliases)) nisnById[String(id)] = String(nisn ?? '').trim();
+
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (!supabase || !activeSessionEmail || isSimulatedOffline || !navigator.onLine) {
+      return { absensi: localAbs, catatan: localCat, sumber: 'lokal', nisnById, peringatan: 'Perangkat offline / belum login Supabase: arsip hanya memuat data di perangkat ini dan mungkin tidak lengkap.' };
+    }
+    try {
+      const pageAll = async (table: string, columns: string, order: string[]) => {
+        const out: any[] = [];
+        for (let from = 0; ; from += 1000) {
+          let q = supabase.from(table).select(columns).gte('tanggal', mulai).lte('tanggal', selesai);
+          for (const o of order) q = q.order(o, { ascending: true });
+          const { data, error } = await q.range(from, from + 999);
+          if (error) throw error;
+          out.push(...(data ?? []));
+          if ((data ?? []).length < 1000) break;
+        }
+        return out;
+      };
+      const remoteAbsRows = await pageAll('absensi', 'id,siswa_id,tanggal,waktu_scan,timestamp,jenis,status,catatan', ['tanggal', 'timestamp']);
+      const remoteCatRows = await pageAll('catatan_kehadiran', '*', ['tanggal']);
+      const { data: remoteStudents, error: stErr } = await supabase.from('siswa').select('id,nisn');
+      if (stErr) throw stErr;
+      for (const r of remoteStudents ?? []) nisnById[String(r.id)] = String(r.nisn ?? '').trim();
+
+      const keyAbs = (sid: string, t: string, j: string) => `${nisnById[String(sid)] || sid}|${t}|${j}`;
+      const absensi: Absensi[] = remoteAbsRows.map((r) => ({
+        id: String(r.id), siswa_id: String(r.siswa_id), tanggal: String(r.tanggal), waktu_scan: String(r.waktu_scan ?? ''),
+        timestamp: Number(r.timestamp ?? 0), jenis: r.jenis, status: r.status, catatan: r.catatan ?? undefined, synced: true,
+      }));
+      const have = new Set(absensi.map((a) => keyAbs(a.siswa_id, a.tanggal, a.jenis)));
+      for (const a of localAbs) if (!a.synced && !have.has(keyAbs(a.siswa_id, a.tanggal, a.jenis))) absensi.push(a); // scan yang belum terkirim
+
+      const catatan: CatatanKehadiran[] = remoteCatRows.map((r) => ({ ...r } as CatatanKehadiran));
+      const keyCat = (sid: string, t: string) => `${nisnById[String(sid)] || sid}|${t}`;
+      const haveCat = new Set(catatan.map((c) => keyCat(c.siswa_id, c.tanggal)));
+      const pendingUpsert = new Set(readPendingMutations().filter((m) => m.type === 'catatan_kehadiran_upsert').map((m: any) => keyCat(m.row.siswa_id, m.row.tanggal)));
+      for (const c of localCat) {
+        const k = keyCat(c.siswa_id, c.tanggal);
+        if (pendingUpsert.has(k)) { const i = catatan.findIndex((x) => keyCat(x.siswa_id, x.tanggal) === k); if (i >= 0) catatan[i] = c; else catatan.push(c); }
+        else if (!haveCat.has(k)) catatan.push(c);
+      }
+      absensi.sort((a, b) => a.timestamp - b.timestamp);
+      return { absensi, catatan, sumber: 'supabase', nisnById };
+    } catch (err) {
+      return { absensi: localAbs, catatan: localCat, sumber: 'lokal', nisnById, peringatan: `Gagal membaca dari Supabase (${describeSyncError(err)}). Arsip memakai data lokal dan mungkin tidak lengkap.` };
+    }
+  };
+
+  // Bersihkan data LOKAL pada rentang tanggal untuk membebaskan penyimpanan browser. Hanya baris yang
+  // sudah tersinkron yang dibuang; yang masih antre tetap aman. TIDAK membuat antrean hapus ke Supabase.
+  const hapusDataLokalRentang = (mulai: string, selesai: string) => {
+    const inRange = (t: string) => t >= mulai && t <= selesai;
+    const absensiDibuang = absensiListRef.current.filter((a) => inRange(a.tanggal) && a.synced === true);
+    const idAbs = new Set(absensiDibuang.map((a) => a.id));
+    const pending = readPendingMutations();
+    const catatanTerkunci = new Set<string>();
+    for (const m of pending) {
+      if (m.type === 'catatan_kehadiran_upsert') catatanTerkunci.add(m.row.id);
+      if (m.type === 'catatan_kehadiran_delete') catatanTerkunci.add(m.id);
+    }
+    const catatanDibuang = catatanKehadiranList.filter((c) => inRange(c.tanggal) && !catatanTerkunci.has(c.id));
+    const idCat = new Set(catatanDibuang.map((c) => c.id));
+    const logDibuang = logNotifikasiListRef.current.filter((l) => idAbs.has(String(l.absensi_id)));
+    const idLog = new Set(logDibuang.map((l) => l.id));
+
+    absensiListRef.current = absensiListRef.current.filter((a) => !idAbs.has(a.id));
+    setAbsensiList((prev) => prev.filter((a) => !idAbs.has(a.id)));
+    setCatatanKehadiranList((prev) => prev.filter((c) => !idCat.has(c.id)));
+    setLogNotifikasiList((prev) => prev.filter((l) => !idLog.has(l.id)));
+    return { absensi: absensiDibuang.length, catatan: catatanDibuang.length, log: logDibuang.length };
+  };
+
   // Sinkron ringan khusus perubahan catatan kehadiran / pengaturan jam: langsung terkirim tanpa
   // menunggu siklus batch scan 2 menit, dan tidak menyentuh data scan sama sekali.
   const syncMutationsOnly = async (): Promise<SyncRunResult> => {
@@ -3263,6 +3357,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         syncData,
         syncNow,
         pullFullHistory,
+        ambilDataSemester,
+        hapusDataLokalRentang,
         nextBatchSyncAt,
         syncIntervalMs: SCAN_BATCH_SYNC_INTERVAL_MS,
         toggleSimulatedOffline,
