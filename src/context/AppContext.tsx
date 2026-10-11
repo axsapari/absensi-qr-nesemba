@@ -44,6 +44,7 @@ import { DEFAULT_WA_CONFIG, formatPhoneNumber, formatHariTanggal } from '../lib/
 import { mergeAfterSync } from '../lib/syncMerge';
 import { hitungBatasTarik, HISTORY_PULL_KEY } from '../lib/historyWindow';
 import { safeSetItem, ukurPenyimpanan, STORAGE_FULL_EVENT, STORAGE_WARN_EVENT } from '../lib/storageUsage';
+import { idbGet, idbSet } from '../lib/idbStore';
 import { processSyncToDatabase } from '../lib/syncService';
 import { getSupabaseClient, resetSupabaseClient } from '../lib/supabase';
 import { runDataAudit } from '../lib/dataAudit';
@@ -213,6 +214,8 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | null>(null);
 
+const SNAPSHOTS_IDB_KEY = 'local_snapshots_v1';
+
 const STORAGE_KEYS = {
   SISWA: 'absensi_siswa_v1',
   SISWA_ID_ALIASES: 'absensi_siswa_id_aliases_v1',
@@ -343,6 +346,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // sebagai synced=true sebelum benar-benar masuk Supabase. ID scan nyata dibuat
       // dengan prefix `abs_`, sedangkan data demo bawaan memakai `abs-001`, dst.
       // Scan nyata lama dipaksa kembali ke antrean sinkronisasi agar bisa dipulihkan.
+      // PENTING: migrasi ini HANYA berjalan sekali per perangkat. Sebelumnya berjalan di setiap
+      // buka/refresh sehingga ribuan scan yang sudah tersinkron dikirim ulang terus-menerus.
+      const MIGRASI_KEY = 'absensi_migrasi_abs_synced_v1';
+      let sudahMigrasi = false;
+      try {
+        // Perangkat yang sudah pernah sinkron berarti sudah memakai versi baru -> tidak perlu migrasi.
+        sudahMigrasi =
+          localStorage.getItem(MIGRASI_KEY) === '1' ||
+          !!localStorage.getItem(STORAGE_KEYS.LAST_SYNC);
+        localStorage.setItem(MIGRASI_KEY, '1');
+      } catch {
+        /* abaikan */
+      }
+      if (sudahMigrasi) return parsed;
       return parsed.map((item) =>
         item.id.startsWith('abs_')
           ? { ...item, synced: false, synced_at: undefined }
@@ -468,6 +485,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     'idle' | 'checking' | 'success' | 'failed' | 'not_configured'
   >('idle');
 
+  // Salinan cadangan lokal menyimpan SELURUH data -> disimpan di IndexedDB (bukan localStorage ±5 MB).
+  // Bila IndexedDB tidak tersedia, jatuh kembali ke localStorage (perilaku lama).
   const [localSnapshots, setLocalSnapshots] = useState<LocalSnapshot[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.SNAPSHOTS);
@@ -476,6 +495,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return [];
     }
   });
+  const snapshotsDariIdbSiapRef = useRef(false);
+  const snapshotsIdbAktifRef = useRef(false);
 
   // Offline & Synchronization State
   const [isOnline, setIsOnline] = useState<boolean>(() => {
@@ -721,8 +742,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     safeSetItem(STORAGE_KEYS.ADMIN_AUTH, isAdminLoggedIn ? 'true' : 'false');
   }, [isAdminLoggedIn]);
 
+  // Muat salinan cadangan dari IndexedDB; migrasi dari localStorage lama (hapus kunci lama hanya
+  // setelah berhasil tersimpan di IndexedDB).
   useEffect(() => {
-    safeSetItem(STORAGE_KEYS.SNAPSHOTS, JSON.stringify(localSnapshots));
+    let batal = false;
+    (async () => {
+      const tersimpan = await idbGet<LocalSnapshot[]>(SNAPSHOTS_IDB_KEY);
+      if (batal) return;
+      let lama: LocalSnapshot[] = [];
+      try {
+        const raw = localStorage.getItem(STORAGE_KEYS.SNAPSHOTS);
+        lama = raw ? JSON.parse(raw) : [];
+      } catch { lama = []; }
+      if (tersimpan && tersimpan.length > 0) {
+        // IndexedDB sudah berisi data: itu sumber kebenaran. Kunci lama (bila ada) hanya sisa.
+        snapshotsIdbAktifRef.current = true;
+        try { localStorage.removeItem(STORAGE_KEYS.SNAPSHOTS); } catch { /* abaikan */ }
+        setLocalSnapshots((prev) => (prev.length ? prev : tersimpan));
+      } else if (lama.length > 0) {
+        // Migrasi dari localStorage; kunci lama dihapus hanya bila IndexedDB benar-benar menyimpan.
+        const ok = await idbSet(SNAPSHOTS_IDB_KEY, lama);
+        if (batal) return;
+        snapshotsIdbAktifRef.current = ok;
+        if (ok) { try { localStorage.removeItem(STORAGE_KEYS.SNAPSHOTS); } catch { /* abaikan */ } }
+      } else {
+        snapshotsIdbAktifRef.current = tersimpan !== null || (await idbSet(SNAPSHOTS_IDB_KEY, []));
+        if (batal) return;
+      }
+      snapshotsDariIdbSiapRef.current = true;
+    })();
+    return () => { batal = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!snapshotsDariIdbSiapRef.current) return;
+    if (snapshotsIdbAktifRef.current) {
+      void idbSet(SNAPSHOTS_IDB_KEY, localSnapshots);
+    } else {
+      safeSetItem(STORAGE_KEYS.SNAPSHOTS, JSON.stringify(localSnapshots));
+    }
   }, [localSnapshots]);
 
   useEffect(() => {
@@ -1688,6 +1746,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       const key = businessKey(item.siswa_id, item.tanggal, item.jenis);
       if (resetDateSet.has(item.tanggal) || tombstoneKeySet.has(key)) continue;
+      // Jaga-jaga: baris remote sebelum jendela sudah ada di olderLocal; jangan digandakan.
+      if (since && item.tanggal < since) continue;
       remoteByKey.set(key, item);
     }
 
