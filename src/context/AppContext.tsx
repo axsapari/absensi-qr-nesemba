@@ -45,6 +45,7 @@ import { mergeAfterSync } from '../lib/syncMerge';
 import { hitungBatasTarik, HISTORY_PULL_KEY } from '../lib/historyWindow';
 import { safeSetItem, ukurPenyimpanan, STORAGE_FULL_EVENT, STORAGE_WARN_EVENT } from '../lib/storageUsage';
 import { idbGet, idbSet } from '../lib/idbStore';
+import { ABSENSI_IDB_KEY, jendelaLokal, gabungRiwayat, buatPenulisRiwayat } from '../lib/absensiStore';
 import { processSyncToDatabase } from '../lib/syncService';
 import { getSupabaseClient, resetSupabaseClient } from '../lib/supabase';
 import { runDataAudit } from '../lib/dataAudit';
@@ -703,8 +704,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     safeSetItem(STORAGE_KEYS.KELAS, JSON.stringify(kelasList));
   }, [kelasList]);
 
+  // Riwayat absensi PENUH disimpan di IndexedDB (kapasitas jauh lebih besar). localStorage hanya
+  // menyimpan salinan kecil (45 hari terakhir + yang belum tersinkron) agar aplikasi bisa terbuka cepat.
+  // Selama IndexedDB belum siap/tidak tersedia, perilaku lama (semua di localStorage) tetap dipakai.
+  const absensiIdbSiapRef = useRef(false);
+  const absensiIdbAktifRef = useRef(false);
+  const tulisRiwayatIdbRef = useRef<ReturnType<typeof buatPenulisRiwayat> | null>(null);
+  if (!tulisRiwayatIdbRef.current) tulisRiwayatIdbRef.current = buatPenulisRiwayat();
+
   useEffect(() => {
-    safeSetItem(STORAGE_KEYS.ABSENSI, JSON.stringify(absensiList));
+    let batal = false;
+    (async () => {
+      const dariIdb = await idbGet<Absensi[]>(ABSENSI_IDB_KEY);
+      if (batal) return;
+      if (Array.isArray(dariIdb)) {
+        // Gabungkan lewat setState fungsional agar scan yang masuk selama pemuatan tidak hilang.
+        setAbsensiList((prev) => gabungRiwayat(prev, dariIdb));
+        absensiIdbAktifRef.current = true;
+      } else {
+        // Pertama kali: salin seluruh data saat ini ke IndexedDB. localStorage baru diperkecil setelah berhasil.
+        absensiIdbAktifRef.current = await idbSet(ABSENSI_IDB_KEY, absensiListRef.current);
+        if (batal) return;
+      }
+      absensiIdbSiapRef.current = true;
+      // Picu penulisan ulang (mempersempit localStorage & menyimpan hasil gabungan).
+      setAbsensiList((prev) => [...prev]);
+    })();
+    return () => { batal = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (absensiIdbSiapRef.current && absensiIdbAktifRef.current) {
+      tulisRiwayatIdbRef.current!(absensiList);
+      safeSetItem(STORAGE_KEYS.ABSENSI, JSON.stringify(jendelaLokal(absensiList, getTodayDateString())));
+    } else {
+      safeSetItem(STORAGE_KEYS.ABSENSI, JSON.stringify(absensiList));
+    }
     appendDiagnosticTrace('localstorage-write', absensiList, 'absensiList ditulis ke localStorage');
     const now = Date.now();
     if (now - lastStorageCheckRef.current > 5 * 60 * 1000) {
