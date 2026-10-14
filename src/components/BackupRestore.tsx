@@ -21,9 +21,11 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Info,
+  GraduationCap,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { ArsipSemester } from './ArsipSemester';
+import { NaikKelas } from './NaikKelas';
 
 export const BackupRestore: React.FC = () => {
   const {
@@ -41,7 +43,7 @@ export const BackupRestore: React.FC = () => {
     resetTodayAttendance,
   } = useApp();
 
-  const [activeSubTab, setActiveSubTab] = useState<'backup' | 'restore' | 'snapshots' | 'arsip' | 'danger'>('backup');
+  const [activeSubTab, setActiveSubTab] = useState<'backup' | 'restore' | 'snapshots' | 'arsip' | 'naikkelas' | 'danger'>('backup');
   const [snapshotLabelInput, setSnapshotLabelInput] = useState('');
   
   // Restore file state
@@ -286,6 +288,19 @@ export const BackupRestore: React.FC = () => {
         </button>
 
         <button
+          id="tab-btn-naikkelas"
+          onClick={() => setActiveSubTab('naikkelas')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition cursor-pointer ${
+            activeSubTab === 'naikkelas'
+              ? 'bg-emerald-600 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <GraduationCap className="w-4 h-4" />
+          <span>Naik Kelas</span>
+        </button>
+
+        <button
           id="tab-btn-danger"
           onClick={() => setActiveSubTab('danger')}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition cursor-pointer ml-auto ${
@@ -301,6 +316,9 @@ export const BackupRestore: React.FC = () => {
 
       {/* TAB: ARSIP SEMESTER */}
       {activeSubTab === 'arsip' && <ArsipSemester />}
+
+      {/* TAB: NAIK KELAS */}
+      {activeSubTab === 'naikkelas' && <NaikKelas />}
 
       {/* TAB 1: BACKUP */}
       {activeSubTab === 'backup' && (

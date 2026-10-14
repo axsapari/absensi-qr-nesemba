@@ -142,6 +142,8 @@ interface AppContextType {
   sendWeeklyWhatsAppSummary: (startDate?: string, endDate?: string, retryFailedOnly?: boolean) => Promise<{ success: boolean; sent: number; skipped: number; failed: number; message: string }>;
 
   updateSiswa: (id: string, siswa: Partial<Siswa>) => void;
+  /** Ubah banyak siswa sekaligus: satu tulis antrean + satu sinkron (dipakai Naik Kelas). */
+  updateSiswaBatch: (perubahan: { id: string; data: Partial<Siswa> }[]) => number;
   deleteSiswa: (id: string) => void;
 
   // CRUD Kelas
@@ -2784,6 +2786,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     queueSiswaUpsert(updatedRow);
   };
 
+  const updateSiswaBatch = (perubahan: { id: string; data: Partial<Siswa> }[]): number => {
+    const byId = new Map<string, Siswa>(siswaList.map((s): [string, Siswa] => [s.id, s]));
+    const baru = new Map<string, Siswa>();
+    for (const p of perubahan) {
+      const cur = byId.get(p.id);
+      if (cur) baru.set(p.id, { ...cur, ...p.data });
+    }
+    if (baru.size === 0) return 0;
+    setSiswaList((prev) => prev.map((s) => baru.get(s.id) ?? s));
+    // Satu kali baca + satu kali tulis antrean (bukan ratusan kali).
+    const ids = new Set(baru.keys());
+    const sisa = readPendingMutations().filter((m) => {
+      if (m.type === 'siswa_upsert') return !ids.has(m.row.id);
+      if (m.type === 'siswa_delete') return !ids.has(m.id);
+      return true;
+    });
+    writePendingMutations([...sisa, ...[...baru.values()].map((row) => ({ type: 'siswa_upsert' as const, row }))]);
+    scheduleAutoSync('siswa-change');
+    return baru.size;
+  };
+
   const deleteSiswa = (id: string) => {
     setSiswaList((prev) => prev.filter((s) => s.id !== id));
     queueSiswaDelete(id);
@@ -3468,6 +3491,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateOrtuBatch,
         sendWeeklyWhatsAppSummary,
         updateSiswa,
+        updateSiswaBatch,
         deleteSiswa,
         addKelas,
         updateKelas,
