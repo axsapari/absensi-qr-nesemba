@@ -28,6 +28,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onCancel }) => 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [modeEmail, setModeEmail] = useState(false);
+  const [emailMasuk, setEmailMasuk] = useState('');
 
   const handleSelectUser = (uname: string) => {
     setSelectedUsername(uname);
@@ -47,7 +49,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onCancel }) => 
     setIsLoading(true);
     setErrorMsg(null);
 
-    const res = await loginUser(selectedUsername, password);
+    const res = await loginUser(modeEmail ? emailMasuk : selectedUsername, password);
     setIsLoading(false);
 
     if (res.success) {
@@ -157,6 +159,22 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onCancel }) => 
                 </div>
               </div>
             )}
+
+            <div>
+              <button type="button" id="login-mode-email" onClick={() => { setModeEmail((v) => !v); setErrorMsg(null); }} className="text-xs text-blue-400 hover:text-blue-300 font-medium">
+                {modeEmail ? '← Pilih dari daftar pengguna' : 'Nama Anda tidak ada di daftar? Masuk dengan email'}
+              </button>
+              {modeEmail && (
+                <input
+                  id="login-email"
+                  type="email"
+                  value={emailMasuk}
+                  onChange={(e) => setEmailMasuk(e.target.value)}
+                  placeholder="email@smpn9banjar.sch.id"
+                  className="mt-2 w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              )}
+            </div>
 
             {/* Password Input */}
             <div>

@@ -43,6 +43,7 @@ import { soundManager } from '../lib/sound';
 import { DEFAULT_WA_CONFIG, formatPhoneNumber, formatHariTanggal } from '../lib/whatsapp';
 import { mergeAfterSync } from '../lib/syncMerge';
 import { hitungBatasTarik, HISTORY_PULL_KEY } from '../lib/historyWindow';
+import { gabungStaf, toStafRow, fromStafRow, type StafRow } from '../lib/stafProfil';
 import { safeSetItem, ukurPenyimpanan, STORAGE_FULL_EVENT, STORAGE_WARN_EVENT } from '../lib/storageUsage';
 import { idbGet, idbSet } from '../lib/idbStore';
 import { ABSENSI_IDB_KEY, jendelaLokal, gabungRiwayat, buatPenulisRiwayat } from '../lib/absensiStore';
@@ -283,7 +284,11 @@ type PendingMutation =
   | { type: 'absensi_reset_today'; tanggal: string }
   | { type: 'pengaturan_jam_upsert'; row: PengaturanJam }
   | { type: 'catatan_kehadiran_upsert'; row: CatatanKehadiran }
-  | { type: 'catatan_kehadiran_delete'; id: string; siswa_id?: string; tanggal?: string };
+  | { type: 'catatan_kehadiran_delete'; id: string; siswa_id?: string; tanggal?: string }
+  | { type: 'staf_upsert'; row: UserAccount }
+  | { type: 'staf_delete'; id: string };
+
+const STAF_DIUNGGAH_KEY = 'absensi_staf_diunggah_v1';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // 1. Initialize State with localStorage fallback
@@ -839,6 +844,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     safeSetItem(STORAGE_KEYS.USERS, JSON.stringify(users));
   }, [users]);
 
+  // Dipicu setelah unggah pertama profil staf: jadwalkan sinkron memakai closure yang segar.
+  const [stafPerluKirim, setStafPerluKirim] = useState(0);
+  useEffect(() => {
+    if (stafPerluKirim > 0) scheduleAutoSync('staf-change');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stafPerluKirim]);
+
+  // Setelah daftar profil berubah (mis. baru ditarik dari Supabase), cocokkan lagi sesi aktif:
+  // staf yang login di perangkat baru langsung dikenali, dan perubahan peran/kelas ikut terbarui.
+  useEffect(() => {
+    if (!activeSessionEmail) return;
+    const m = users.find((u) => u.email?.toLowerCase() === activeSessionEmail.toLowerCase());
+    if (!m) return;
+    if (!currentUser) {
+      setCurrentUser(m);
+      setIsAdminLoggedIn(true);
+    } else if (currentUser.email?.toLowerCase() === m.email?.toLowerCase()
+      && (currentUser.role !== m.role || currentUser.name !== m.name || currentUser.wali_kelas_id !== m.wali_kelas_id)) {
+      setCurrentUser({ ...m, lastLogin: currentUser.lastLogin });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [users, activeSessionEmail]);
+
   // Pantau sesi Supabase Auth -- ini sumber kebenaran status login sekarang, bukan
   // localStorage lokal. Efek ini: (1) mengecek sesi yang sudah ada saat app dibuka,
   // (2) berlangganan perubahan (login/logout/token refresh) dari mana pun perubahan
@@ -980,6 +1008,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             return next;
           });
           setSiswaList(siswaResult.data as Siswa[]);
+        }
+
+        // Profil guru/staf (nama, peran, kelas wali) -- supaya semua perangkat sama.
+        try {
+          const stafResult = await supabase.from('staf_profil').select('*');
+          if (stafResult.error) {
+            console.error('Supabase staf_profil SELECT (jalankan SQL patch 0018 bila tabel belum ada):', stafResult.error);
+          } else {
+            const pending = readPendingMutations();
+            const tertunda = {
+              upsertEmail: new Set(pending.flatMap((m) => (m.type === 'staf_upsert' ? [(m.row.email || '').toLowerCase()] : []))),
+              hapusId: new Set(pending.flatMap((m) => (m.type === 'staf_delete' ? [m.id] : []))),
+            };
+            let sudahDiunggah = false;
+            try { sudahDiunggah = localStorage.getItem(STAF_DIUNGGAH_KEY) === '1'; } catch { /* abaikan */ }
+            const hasil = gabungStaf(users, (stafResult.data ?? []) as StafRow[], tertunda, sudahDiunggah);
+            setUsers(hasil.users);
+            if (hasil.unggah.length > 0) {
+              for (const u of hasil.unggah) enqueueMutation({ type: 'staf_upsert', row: u });
+              setStafPerluKirim((n) => n + 1);
+            }
+            try { localStorage.setItem(STAF_DIUNGGAH_KEY, '1'); } catch { /* abaikan */ }
+          }
+        } catch (stafErr) {
+          console.error('Gagal menarik staf_profil:', stafErr);
         }
 
         const kelasCount = kelasResult.data?.length ?? 0;
@@ -1401,19 +1454,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const enqueueMutation = (mutation: PendingMutation) => {
     const current = readPendingMutations();
-    const key = mutation.type === 'siswa_upsert' || mutation.type === 'kelas_upsert' || mutation.type === 'pengaturan_jam_upsert' || mutation.type === 'catatan_kehadiran_upsert'
+    const key = mutation.type === 'siswa_upsert' || mutation.type === 'staf_upsert' || mutation.type === 'kelas_upsert' || mutation.type === 'pengaturan_jam_upsert' || mutation.type === 'catatan_kehadiran_upsert'
       ? mutation.row.id
       : mutation.type === 'absensi_reset_today'
         ? mutation.tanggal
         : mutation.id;
     const sameEntity = (m: PendingMutation) => {
-      const mk = m.type === 'siswa_upsert' || m.type === 'kelas_upsert' || m.type === 'pengaturan_jam_upsert' || m.type === 'catatan_kehadiran_upsert'
+      const mk = m.type === 'siswa_upsert' || m.type === 'staf_upsert' || m.type === 'kelas_upsert' || m.type === 'pengaturan_jam_upsert' || m.type === 'catatan_kehadiran_upsert'
         ? m.row.id
         : m.type === 'absensi_reset_today'
           ? m.tanggal
           : m.id;
       const family = mutation.type.startsWith('siswa_') ? 'siswa_'
         : mutation.type.startsWith('kelas_') ? 'kelas_'
+        : mutation.type.startsWith('staf_') ? 'staf_'
         : mutation.type.startsWith('pengaturan_jam_') ? 'pengaturan_jam_'
         : mutation.type.startsWith('catatan_kehadiran_') ? 'catatan_kehadiran_'
         : 'absensi_';
@@ -1423,13 +1477,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const removeMutation = (mutation: PendingMutation) => {
-    const key = mutation.type === 'siswa_upsert' || mutation.type === 'kelas_upsert' || mutation.type === 'pengaturan_jam_upsert' || mutation.type === 'catatan_kehadiran_upsert'
+    const key = mutation.type === 'siswa_upsert' || mutation.type === 'staf_upsert' || mutation.type === 'kelas_upsert' || mutation.type === 'pengaturan_jam_upsert' || mutation.type === 'catatan_kehadiran_upsert'
       ? mutation.row.id
       : mutation.type === 'absensi_reset_today'
         ? mutation.tanggal
         : mutation.id;
     const next = readPendingMutations().filter((m) => {
-      const mk = m.type === 'siswa_upsert' || m.type === 'kelas_upsert' || m.type === 'pengaturan_jam_upsert' || m.type === 'catatan_kehadiran_upsert'
+      const mk = m.type === 'siswa_upsert' || m.type === 'staf_upsert' || m.type === 'kelas_upsert' || m.type === 'pengaturan_jam_upsert' || m.type === 'catatan_kehadiran_upsert'
         ? m.row.id
         : m.type === 'absensi_reset_today'
           ? m.tanggal
@@ -1455,6 +1509,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         case 'kelas_upsert': return 0;
         case 'siswa_upsert': return 1;
         case 'pengaturan_jam_upsert': return 2;
+        case 'staf_upsert': return 2;
         case 'catatan_kehadiran_upsert': return 3;
         case 'siswa_delete': return 5;
         case 'kelas_delete': return 6;
@@ -1488,6 +1543,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setAbsensiList((prev) => prev.map((x) => x.siswa_id === mutation.row.id ? { ...x, siswa_id: canonicalId } : x));
             setLogNotifikasiList((prev) => prev.map((x) => x.siswa_id === mutation.row.id ? { ...x, siswa_id: canonicalId } : x));
           }
+        } else if (mutation.type === 'staf_upsert') {
+          const { error } = await supabase.from('staf_profil')
+            .upsert([toStafRow(mutation.row)], { onConflict: 'email' });
+          if (error) throw error;
+        } else if (mutation.type === 'staf_delete') {
+          const { error } = await supabase.from('staf_profil').delete().eq('id', mutation.id);
+          if (error) throw error;
         } else if (mutation.type === 'pengaturan_jam_upsert') {
           const row = mutation.row;
           const { error } = await supabase.from('pengaturan_jam').upsert({
@@ -3140,7 +3202,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const cleanUsername = username.trim().toLowerCase();
     const cleanPass = password;
 
-    const targetUser = users.find((u) => u.username.toLowerCase() === cleanUsername);
+    const lewatEmail = cleanUsername.includes('@');
+    const targetUser = users.find((u) => u.username.toLowerCase() === cleanUsername)
+      ?? (lewatEmail ? users.find((u) => u.email?.toLowerCase() === cleanUsername) : undefined);
+    if (!targetUser && lewatEmail) {
+      // Perangkat baru: profil belum ada di perangkat ini. Masuk lewat email, lalu ambil profil dari Supabase.
+      const sb = getSupabaseClient(supabaseConfig);
+      if (!sb) return { success: false, message: 'Supabase belum dikonfigurasi. Login memerlukan koneksi Supabase yang aktif.' };
+      const { data: auth, error: authErr } = await sb.auth.signInWithPassword({ email: cleanUsername, password: cleanPass });
+      if (authErr || !auth.session) return { success: false, message: 'Email atau kata sandi salah.' };
+      const { data: row } = await sb.from('staf_profil').select('*').eq('email', cleanUsername).maybeSingle();
+      if (!row) {
+        await sb.auth.signOut();
+        return { success: false, message: 'Email ini belum terdaftar sebagai profil guru. Minta Super Admin menambahkannya di menu Admin.' };
+      }
+      const baru: UserAccount = {
+        ...fromStafRow(row as StafRow),
+        lastLogin: new Date().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }),
+      };
+      setUsers((prev) => (prev.some((u) => u.email?.toLowerCase() === cleanUsername) ? prev.map((u) => (u.email?.toLowerCase() === cleanUsername ? { ...u, ...baru } : u)) : [...prev, baru]));
+      setCurrentUser(baru);
+      setIsAdminLoggedIn(true);
+      return { success: true, message: `Selamat datang, ${baru.name}!` };
+    }
     if (!targetUser) {
       return { success: false, message: `Pengguna dengan username "${username}" tidak ditemukan.` };
     }
@@ -3175,7 +3259,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCurrentUser(updatedUser);
     setIsAdminLoggedIn(true);
     setUsers((prev) =>
-      prev.map((u) => (u.username.toLowerCase() === cleanUsername ? updatedUser : u))
+      prev.map((u) => (u.id === targetUser.id ? updatedUser : u))
     );
 
     return { success: true, message: `Selamat datang, ${targetUser.name}!` };
@@ -3288,6 +3372,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setUsers((prev) => [...prev, createdUser]);
+    enqueueMutation({ type: 'staf_upsert', row: createdUser });
+    scheduleAutoSync('staf-change');
     return {
       success: true,
       message: `Profil @${cleanUsername} (${createdUser.name}) berhasil didaftarkan. Pastikan akun dengan email ${cleanEmail} sudah dibuat di Supabase Auth agar bisa login.`,
@@ -3315,6 +3401,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     setUsers((prev) => prev.filter((u) => u.id !== target.id));
+    enqueueMutation({ type: 'staf_delete', id: target.id });
+    scheduleAutoSync('staf-delete');
     return { success: true, message: `Akun @${target.username} (${target.name}) berhasil dihapus.` };
   };
 
