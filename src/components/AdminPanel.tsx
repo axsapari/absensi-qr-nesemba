@@ -32,6 +32,7 @@ import {
   ShieldAlert,
   Database,
   AlertTriangle,
+  Pencil,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -46,6 +47,7 @@ export const AdminPanel: React.FC = () => {
     isSuperAdmin,
     addUser,
     deleteUser,
+    updateUser,
     pengaturanJam,
     updatePengaturanJam,
     resetTodayAttendance,
@@ -75,6 +77,17 @@ export const AdminPanel: React.FC = () => {
   const [newUserKelasId, setNewUserKelasId] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [addUserFeedback, setAddUserFeedback] = useState<{ success?: boolean; message: string } | null>(null);
+
+  // Edit akun (nama / peran / kelas wali) -- Super Admin saja
+  const [editUser, setEditUser] = useState<{ id: string; username: string; name: string; role: 'admin' | 'petugas' | 'wali_kelas'; kelasId: string } | null>(null);
+  const [editFeedback, setEditFeedback] = useState<{ success?: boolean; message: string } | null>(null);
+  const handleSimpanEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editUser) return;
+    const res = updateUser(editUser.id, { name: editUser.name, role: editUser.role, wali_kelas_id: editUser.role === 'wali_kelas' ? editUser.kelasId : undefined });
+    setEditFeedback(res);
+    if (res.success) setTimeout(() => { setEditUser(null); setEditFeedback(null); }, 800);
+  };
 
   // Password reset modal for specific user
   const [passwordModalUser, setPasswordModalUser] = useState<string | null>(null);
@@ -1048,6 +1061,18 @@ export const AdminPanel: React.FC = () => {
                         </span>
                       )}
 
+                      {isSuperAdmin && (
+                        <button
+                          type="button"
+                          id={`edit-user-${u.username}`}
+                          onClick={() => { setEditFeedback(null); setEditUser({ id: u.id, username: u.username, name: u.name, role: u.role, kelasId: u.wali_kelas_id || '' }); }}
+                          className="p-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl transition-colors"
+                          title={`Ubah nama / peran @${u.username}`}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      )}
+
                       {/* Delete Action: Only Super Admin can delete, and Agus cannot be deleted */}
                       {isSuperAdmin && !isAgus && (
                         <button
@@ -1411,6 +1436,41 @@ export const AdminPanel: React.FC = () => {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Edit Akun Modal */}
+      {editUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm" id="edit-user-modal">
+          <form onSubmit={handleSimpanEdit} className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+            <h3 className="text-lg font-bold text-slate-900">Ubah Akun <span className="font-mono text-blue-700">@{editUser.username}</span></h3>
+            <label className="block text-xs font-semibold text-slate-600">Nama lengkap
+              <input id="edit-user-nama" value={editUser.name} onChange={(e) => setEditUser({ ...editUser, name: e.target.value })} required className="mt-1 w-full border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900" />
+            </label>
+            <label className="block text-xs font-semibold text-slate-600">Peran
+              <select id="edit-user-peran" value={editUser.role} disabled={editUser.username.toLowerCase() === 'agus'} onChange={(e) => setEditUser({ ...editUser, role: e.target.value as 'admin' | 'petugas' | 'wali_kelas' })} className="mt-1 w-full border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 disabled:bg-slate-100">
+                <option value="admin">Administrator Sekolah</option>
+                <option value="petugas">Petugas Gerbang</option>
+                <option value="wali_kelas">Wali Kelas</option>
+              </select>
+            </label>
+            {editUser.role === 'wali_kelas' && (
+              <label className="block text-xs font-semibold text-slate-600">Kelas yang diampu
+                <select id="edit-user-kelas" value={editUser.kelasId} onChange={(e) => setEditUser({ ...editUser, kelasId: e.target.value })} className="mt-1 w-full border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900">
+                  <option value="">— pilih kelas —</option>
+                  {kelasList.map((k) => <option key={k.id} value={k.id}>{k.nama_kelas}</option>)}
+                </select>
+              </label>
+            )}
+            <p className="text-[11px] text-slate-500">Email dan username tidak dapat diubah karena terikat ke akun login Supabase. Kata sandi diganti lewat tombol “Ubah Sandi”.</p>
+            {editFeedback && (
+              <div id="edit-user-feedback" className={`p-3 rounded-xl text-xs font-medium ${editFeedback.success ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-800'}`}>{editFeedback.message}</div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => { setEditUser(null); setEditFeedback(null); }} className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-100">Batal</button>
+              <button type="submit" id="edit-user-simpan" className="px-4 py-2 rounded-xl text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white">Simpan</button>
+            </div>
+          </form>
         </div>
       )}
 

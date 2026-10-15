@@ -63,8 +63,8 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
         setErrorMsg(res.message);
       }
     } else {
-      // Super Admin reset -- sekarang harus lewat Supabase Dashboard, lihat pesan yang dikembalikan
-      const res = adminResetUserPassword(activeUser, newPassword);
+      // Super Admin mengganti sandi akun lain lewat Edge Function (server)
+      const res = await adminResetUserPassword(activeUser, newPassword);
       if (res.success) {
         setSuccessMsg(res.message);
         setTimeout(() => {
@@ -132,7 +132,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Minimal 4 karakter"
+                placeholder="Minimal 6 karakter"
                 required
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />

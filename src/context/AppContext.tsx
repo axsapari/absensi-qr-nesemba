@@ -196,7 +196,9 @@ interface AppContextType {
   loginUser: (username: string, password: string) => Promise<{ success: boolean; message: string }>;
   logoutUser: () => void;
   changeUserPassword: (username: string, oldPass: string, newPass: string) => Promise<{ success: boolean; message: string }>;
-  adminResetUserPassword: (username: string, newPass: string) => { success: boolean; message: string };
+  adminResetUserPassword: (username: string, newPass: string) => Promise<{ success: boolean; message: string }>;
+  /** Super Admin: ubah nama, peran, dan kelas wali sebuah akun (tersinkron ke semua perangkat). */
+  updateUser: (id: string, patch: { name?: string; role?: UserAccount['role']; wali_kelas_id?: string }) => { success: boolean; message: string };
   addUser: (newUser: Omit<UserAccount, 'id'>) => { success: boolean; message: string };
   deleteUser: (userIdOrUsername: string) => { success: boolean; message: string };
 
@@ -3318,15 +3320,70 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // atau lewat Edge Function terpisah yang memakai Service Role Key di server.
   // Fungsi di bawah ini sengaja dinonaktifkan (bukan dihapus) supaya UI yang
   // memanggilnya tidak error, dan mengarahkan Super Admin ke cara yang benar.
-  const adminResetUserPassword = (
+  const adminResetUserPassword = async (
     username: string,
-    _newPass: string
+    newPass: string
+  ): Promise<{ success: boolean; message: string }> => {
+    if (currentUser?.username?.toLowerCase() !== 'agus') {
+      return { success: false, message: 'Akses Ditolak! Hanya Super Admin yang boleh mengganti kata sandi akun lain.' };
+    }
+    const target = users.find((u) => u.username.toLowerCase() === username.trim().toLowerCase());
+    if (!target?.email) return { success: false, message: 'Akun tidak ditemukan atau belum diatur emailnya.' };
+    if (newPass.length < 6) return { success: false, message: 'Kata sandi baru minimal 6 karakter (syarat Supabase Auth).' };
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (!supabase) return { success: false, message: 'Supabase belum dikonfigurasi.' };
+    // Penggantian sandi akun lain butuh Service Role Key, jadi dikerjakan Edge Function di server
+    // (hanya menerima panggilan dari Super Admin yang sudah login).
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-ubah-sandi', { body: { email: target.email, password: newPass } });
+      if (error) {
+        let pesan = error.message;
+        try {
+          const ctx = (error as { context?: { json?: () => Promise<{ error?: string }> } }).context;
+          const j = await ctx?.json?.();
+          if (j?.error) pesan = j.error;
+        } catch { /* pakai pesan bawaan */ }
+        if (/not found|404|Failed to send|fetch/i.test(pesan) && !/Akun /.test(pesan)) {
+          pesan = 'Fungsi server "admin-ubah-sandi" belum dipasang atau tidak terjangkau. Lihat BACA-DULU patch 0019. (' + pesan + ')';
+        }
+        return { success: false, message: pesan };
+      }
+      return { success: true, message: (data as { message?: string } | null)?.message || `Kata sandi @${target.username} berhasil diganti.` };
+    } catch (e) {
+      return { success: false, message: `Gagal menghubungi server: ${e instanceof Error ? e.message : String(e)}` };
+    }
+  };
+
+  // Super Admin mengubah nama / peran / kelas wali sebuah akun. Email & username tidak bisa diubah
+  // (email terikat ke akun Supabase Auth). Perubahan dikirim lewat antrean sinkron yang sama.
+  const updateUser = (
+    id: string,
+    patch: { name?: string; role?: UserAccount['role']; wali_kelas_id?: string }
   ): { success: boolean; message: string } => {
-    return {
-      success: false,
-      message:
-        'Reset password pengguna lain sekarang dilakukan lewat Supabase Dashboard > Authentication > Users, bukan dari aplikasi ini (demi keamanan).',
-    };
+    if (currentUser?.username?.toLowerCase() !== 'agus') {
+      return { success: false, message: 'Akses Ditolak! Hanya Super Admin yang berhak mengubah akun pengguna.' };
+    }
+    const target = users.find((u) => u.id === id);
+    if (!target) return { success: false, message: 'Akun pengguna tidak ditemukan.' };
+    const nama = (patch.name ?? target.name).trim();
+    if (!nama) return { success: false, message: 'Nama tidak boleh kosong.' };
+    const role = patch.role ?? target.role;
+    if (target.username.toLowerCase() === 'agus' && role !== 'admin') {
+      return { success: false, message: 'Peran Super Admin (@agus) tidak dapat diturunkan.' };
+    }
+    const kelasId = role === 'wali_kelas' ? (patch.wali_kelas_id ?? target.wali_kelas_id) : undefined;
+    if (role === 'wali_kelas' && !kelasId) {
+      return { success: false, message: 'Wali Kelas wajib memilih kelas yang menjadi tanggung jawabnya.' };
+    }
+    const {
+      wali_kelas_id: _lama,
+      ...tanpaKelas
+    } = target;
+    const baru: UserAccount = { ...tanpaKelas, name: nama, role, ...(kelasId ? { wali_kelas_id: kelasId } : {}) };
+    setUsers((prev) => prev.map((u) => (u.id === id ? baru : u)));
+    enqueueMutation({ type: 'staf_upsert', row: baru });
+    scheduleAutoSync('staf-change');
+    return { success: true, message: `Akun @${target.username} diperbarui.` };
   };
 
   // Only Super Admin 'agus' is permitted to add new users
@@ -3616,6 +3673,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         logoutUser,
         changeUserPassword,
         adminResetUserPassword,
+        updateUser,
         addUser,
         deleteUser,
         // Kalender Pendidikan & Hari Libur
