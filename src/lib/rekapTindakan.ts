@@ -13,6 +13,9 @@ export interface MetrikTindakan extends HitunganSiswa {
   streakTerpanjang: number;
   /** hari tidak hadir berturut-turut yang masih berjalan sampai hari efektif terakhir */
   streakTerkini: number;
+  /** hari ada scan masuk tetapi tidak ada scan pulang */
+  totalTidakPulang: number;
+  tanggalTidakPulang: string[];
 }
 
 const TIDAK_HADIR: StatusHari[] = ['alpa', 'bolos', 'kosong'];
@@ -25,8 +28,23 @@ export function hitungStreak(perTanggal: Record<string, StatusHari>, tanggalEfek
   return { terpanjang, terkini: cur };
 }
 
+/**
+ * Hari efektif yang punya scan masuk tetapi tanpa scan pulang. Hari "tidak bawa kartu" tidak dihitung
+ * (tanpa kartu memang tidak bisa scan). `kecualiTanggal` dipakai untuk hari ini yang belum waktunya pulang.
+ */
+export function hitungTidakPulang(siswaId: string, tanggalEfektif: string[], absensi: Absensi[], kecualiTanggal?: string): string[] {
+  const masuk = new Set<string>(), pulang = new Set<string>();
+  const efektif = new Set(tanggalEfektif);
+  for (const a of absensi) {
+    if (a.siswa_id !== siswaId || !efektif.has(a.tanggal)) continue;
+    (a.jenis === 'masuk' ? masuk : pulang).add(a.tanggal);
+  }
+  return tanggalEfektif.filter((d) => d !== kecualiTanggal && masuk.has(d) && !pulang.has(d));
+}
+
 export function hitungMetrikTindakan(
-  siswaList: Siswa[], kelasList: Kelas[], absensi: Absensi[], catatan: CatatanKehadiran[], tanggalEfektif: string[]
+  siswaList: Siswa[], kelasList: Kelas[], absensi: Absensi[], catatan: CatatanKehadiran[], tanggalEfektif: string[],
+  kecualiPulang?: string
 ): MetrikTindakan[] {
   const kelasById = new Map(kelasList.map((k) => [k.id, k]));
   return siswaList
@@ -34,11 +52,12 @@ export function hitungMetrikTindakan(
     .map((siswa) => {
       const h = hitungSiswa(siswa.id, tanggalEfektif, absensi, catatan);
       const st = hitungStreak(h.perTanggal, tanggalEfektif);
-      return { ...h, siswa, kelas: kelasById.get(siswa.kelas_id), streakTerpanjang: st.terpanjang, streakTerkini: st.terkini };
+      const tp = hitungTidakPulang(siswa.id, tanggalEfektif, absensi, kecualiPulang);
+      return { ...h, siswa, kelas: kelasById.get(siswa.kelas_id), streakTerpanjang: st.terpanjang, streakTerkini: st.terkini, totalTidakPulang: tp.length, tanggalTidakPulang: tp };
     });
 }
 
-export type KunciPeringkat = 'terbaik' | 'terlambat' | 'tanpaKartu' | 'alfa' | 'bolos';
+export type KunciPeringkat = 'terbaik' | 'terlambat' | 'tanpaKartu' | 'alfa' | 'bolos' | 'tidakPulang';
 
 const byNama = (a: MetrikTindakan, b: MetrikTindakan) => a.siswa.nama.localeCompare(b.siswa.nama, 'id');
 
@@ -46,6 +65,7 @@ const byNama = (a: MetrikTindakan, b: MetrikTindakan) => a.siswa.nama.localeComp
 export function peringkat(metrik: MetrikTindakan[], kunci: KunciPeringkat, batas = 10): MetrikTindakan[] {
   const nilai: Record<Exclude<KunciPeringkat, 'terbaik'>, (m: MetrikTindakan) => number> = {
     terlambat: (m) => m.totalTerlambat, tanpaKartu: (m) => m.totalTanpaKartu, alfa: (m) => m.totalAlfa, bolos: (m) => m.totalBolos,
+    tidakPulang: (m) => m.totalTidakPulang,
   };
   if (kunci === 'terbaik') {
     return metrik
@@ -57,10 +77,10 @@ export function peringkat(metrik: MetrikTindakan[], kunci: KunciPeringkat, batas
   return metrik.filter((m) => f(m) > 0).sort((a, b) => f(b) - f(a) || byNama(a, b)).slice(0, batas);
 }
 
-/** Apresiasi: hadir di semua hari efektif dan tidak pernah terlambat. */
+/** Apresiasi: hadir di semua hari efektif, tidak pernah terlambat, selalu bawa kartu, dan selalu scan pulang. */
 export function daftarApresiasi(metrik: MetrikTindakan[], minimalHari = 5): MetrikTindakan[] {
   return metrik
-    .filter((m) => m.totalDaysRecorded >= minimalHari && m.persentase === 100 && m.totalTerlambat === 0 && m.totalTanpaKartu === 0)
+    .filter((m) => m.totalDaysRecorded >= minimalHari && m.persentase === 100 && m.totalTerlambat === 0 && m.totalTanpaKartu === 0 && m.totalTidakPulang === 0)
     .sort((a, b) => (a.kelas?.nama_kelas ?? '').localeCompare(b.kelas?.nama_kelas ?? '', 'id', { numeric: true }) || byNama(a, b));
 }
 
@@ -69,7 +89,7 @@ export interface Saran { tingkat: Tingkat; teks: string }
 
 /** Ambang tindakan; ditampilkan di layar agar transparan dan mudah disesuaikan pihak sekolah. */
 export const AMBANG = {
-  bolosMendesak: 2, streakMendesak: 3, alfaMendesak: 5, alfaWaspada: 3, terlambatWaspada: 5, tanpaKartuInfo: 3,
+  bolosMendesak: 2, streakMendesak: 3, alfaMendesak: 5, alfaWaspada: 3, terlambatWaspada: 5, tanpaKartuInfo: 3, tidakPulangInfo: 3, tidakPulangWaspada: 6,
   persenRendah: 75, minimalHariPersen: 5,
 } as const;
 
@@ -92,6 +112,12 @@ export function sarankanTindakan(m: MetrikTindakan): Saran[] {
   if (m.totalTanpaKartu >= AMBANG.tanpaKartuInfo) {
     s.push({ tingkat: 'info', teks: `Tidak bawa kartu ${m.totalTanpaKartu} kali: ingatkan atau cetak ulang kartu` });
   }
+  if (m.totalTidakPulang >= AMBANG.tidakPulangInfo) {
+    s.push({
+      tingkat: m.totalTidakPulang >= AMBANG.tidakPulangWaspada ? 'waspada' : 'info',
+      teks: `Tidak scan pulang ${m.totalTidakPulang} hari: ingatkan scan pulang, dan cek apakah pulang sebelum waktunya tanpa izin`,
+    });
+  }
   if (m.totalDaysRecorded >= AMBANG.minimalHariPersen && m.persentase < AMBANG.persenRendah && m.totalAlfa < AMBANG.alfaWaspada) {
     s.push({ tingkat: 'waspada', teks: `Kehadiran ${m.persentase}% (di bawah ${AMBANG.persenRendah}%): tinjau alasan izin/sakit berulang` });
   }
@@ -112,7 +138,7 @@ export function daftarPerluTindakan(metrik: MetrikTindakan[]): PerluTindakan[] {
 }
 
 export interface PeringkatKelas {
-  kelas: Kelas; jumlahSiswa: number; persen: number; terlambat: number; tanpaKartu: number; alfa: number; bolos: number; perluTindakan: number;
+  kelas: Kelas; jumlahSiswa: number; persen: number; terlambat: number; tanpaKartu: number; alfa: number; bolos: number; tidakPulang: number; perluTindakan: number;
 }
 
 export function ringkasKelas(metrik: MetrikTindakan[], kelasList: Kelas[]): PeringkatKelas[] {
@@ -125,7 +151,7 @@ export function ringkasKelas(metrik: MetrikTindakan[], kelasList: Kelas[]): Peri
       return {
         kelas, jumlahSiswa: rows.length,
         persen: hari > 0 ? Math.round((sum((m) => m.totalHadir) / hari) * 1000) / 10 : 0,
-        terlambat: sum((m) => m.totalTerlambat), tanpaKartu: sum((m) => m.totalTanpaKartu), alfa: sum((m) => m.totalAlfa), bolos: sum((m) => m.totalBolos),
+        terlambat: sum((m) => m.totalTerlambat), tanpaKartu: sum((m) => m.totalTanpaKartu), alfa: sum((m) => m.totalAlfa), bolos: sum((m) => m.totalBolos), tidakPulang: sum((m) => m.totalTidakPulang),
         perluTindakan: rows.filter((m) => sarankanTindakan(m).length > 0).length,
       };
     })
@@ -160,7 +186,7 @@ export function polaHari(metrik: MetrikTindakan[], tanggalEfektif: string[]): Ha
 export function tautanWaWali(m: MetrikTindakan, periodeLabel: string, nomorInternasional: string): string {
   const baris = [
     `Yth. Bapak/Ibu wali dari ${m.siswa.nama}${m.kelas ? ` (kelas ${m.kelas.nama_kelas})` : ''}.`,
-    `Rekap kehadiran ${periodeLabel} (${m.totalDaysRecorded} hari efektif): hadir ${m.totalHadir}, terlambat ${m.totalTerlambat}, izin ${m.totalIzin}, sakit ${m.totalSakit}, alfa/tanpa keterangan ${m.totalAlfa}${m.totalBolos ? `, bolos ${m.totalBolos}` : ''}.`,
+    `Rekap kehadiran ${periodeLabel} (${m.totalDaysRecorded} hari efektif): hadir ${m.totalHadir}, terlambat ${m.totalTerlambat}, izin ${m.totalIzin}, sakit ${m.totalSakit}, alfa/tanpa keterangan ${m.totalAlfa}${m.totalBolos ? `, bolos ${m.totalBolos}` : ''}${m.totalTidakPulang ? `. Tidak tercatat scan pulang ${m.totalTidakPulang} hari` : ''}.`,
     'Mohon kerja samanya untuk membantu ananda hadir tepat waktu dan teratur. Bila ada kendala, silakan menghubungi wali kelas. Terima kasih.',
     '- SMP Negeri 9 Banjar',
   ];

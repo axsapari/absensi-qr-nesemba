@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { AlertTriangle, Award, CalendarDays, Clock, CreditCard, Download, MessageCircle, ShieldAlert, Trophy, UserX } from 'lucide-react';
+import { AlertTriangle, Award, CalendarDays, Clock, CreditCard, Download, LogOut, MessageCircle, ShieldAlert, Trophy, UserX } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { getTodayDateString } from '../data/initialData';
 import { formatPhoneNumber } from '../lib/whatsapp';
@@ -26,6 +26,7 @@ const KARTU: { kunci: KunciPeringkat; judul: string; ikon: React.ReactNode; warn
   { kunci: 'terlambat', judul: 'Terlambat Terbanyak', ikon: <Clock className="w-4 h-4" />, warna: 'text-amber-700 bg-amber-50 border-amber-200', nilai: (m) => `${m.totalTerlambat}x`, kosong: 'Tidak ada yang terlambat.' },
   { kunci: 'tanpaKartu', judul: 'Tidak Bawa Kartu Terbanyak', ikon: <CreditCard className="w-4 h-4" />, warna: 'text-sky-700 bg-sky-50 border-sky-200', nilai: (m) => `${m.totalTanpaKartu}x`, kosong: 'Semua membawa kartu.' },
   { kunci: 'alfa', judul: 'Alpa Terbanyak', ikon: <UserX className="w-4 h-4" />, warna: 'text-rose-700 bg-rose-50 border-rose-200', nilai: (m) => `${m.totalAlfa} hari`, kosong: 'Tidak ada alpa.' },
+  { kunci: 'tidakPulang', judul: 'Tidak Scan Pulang Terbanyak', ikon: <LogOut className="w-4 h-4" />, warna: 'text-indigo-700 bg-indigo-50 border-indigo-200', nilai: (m) => `${m.totalTidakPulang} hari`, kosong: 'Semua siswa scan pulang.' },
   { kunci: 'bolos', judul: 'Bolos Terbanyak', ikon: <ShieldAlert className="w-4 h-4" />, warna: 'text-orange-700 bg-orange-50 border-orange-200', nilai: (m) => `${m.totalBolos} hari`, kosong: 'Tidak ada bolos.' },
 ];
 
@@ -60,9 +61,16 @@ export const RekapTindakan: React.FC = () => {
     return hitungTanggalEfektif({ ...rentang, todayStr: today, isHariEfektif: (d) => getDateHariInfo(d).isHariEfektif, tanggalAdaData: ada });
   }, [siswaTerlihat, absensiList, catatanKehadiranList, rentang.start, rentang.end, today, getDateHariInfo]);
 
+  // Hari ini belum dihitung "tidak scan pulang" selama belum lewat jam pulang.
+  const kecualiPulang = useMemo(() => {
+    const now = new Date();
+    const jam = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    return jam < getDateHariInfo(today).jamPulangEfektif ? today : undefined;
+  }, [today, getDateHariInfo]);
+
   const metrik = useMemo(
-    () => hitungMetrikTindakan(siswaTerlihat, kelasList, absensiList, catatanKehadiranList, tanggalEfektif),
-    [siswaTerlihat, kelasList, absensiList, catatanKehadiranList, tanggalEfektif]
+    () => hitungMetrikTindakan(siswaTerlihat, kelasList, absensiList, catatanKehadiranList, tanggalEfektif, kecualiPulang),
+    [siswaTerlihat, kelasList, absensiList, catatanKehadiranList, tanggalEfektif, kecualiPulang]
   );
   const perluTindakan = useMemo(() => daftarPerluTindakan(metrik), [metrik]);
   const apresiasi = useMemo(() => daftarApresiasi(metrik), [metrik]);
@@ -78,7 +86,7 @@ export const RekapTindakan: React.FC = () => {
     const wb = XLSX.utils.book_new();
     const baris = (m: MetrikTindakan) => ({
       Kelas: m.kelas?.nama_kelas ?? '-', NISN: m.siswa.nisn, Nama: m.siswa.nama, 'Hari Efektif': m.totalDaysRecorded, Hadir: m.totalHadir,
-      Terlambat: m.totalTerlambat, 'Tidak Bawa Kartu': m.totalTanpaKartu, Izin: m.totalIzin, Sakit: m.totalSakit, Alpa: m.totalAlfa, Bolos: m.totalBolos,
+      Terlambat: m.totalTerlambat, 'Tidak Bawa Kartu': m.totalTanpaKartu, 'Tidak Scan Pulang': m.totalTidakPulang, Izin: m.totalIzin, Sakit: m.totalSakit, Alpa: m.totalAlfa, Bolos: m.totalBolos,
       '% Hadir': m.persentase, 'Tidak Hadir Berturut (terkini)': m.streakTerkini,
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(perluTindakan.map((x) => ({
@@ -89,7 +97,7 @@ export const RekapTindakan: React.FC = () => {
     }
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(apresiasi.map(baris)), 'Apresiasi');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(kelasRingkas.map((r) => ({
-      Kelas: r.kelas.nama_kelas, Siswa: r.jumlahSiswa, '% Hadir': r.persen, Terlambat: r.terlambat, 'Tidak Bawa Kartu': r.tanpaKartu, Alpa: r.alfa, Bolos: r.bolos, 'Perlu Tindakan': r.perluTindakan,
+      Kelas: r.kelas.nama_kelas, Siswa: r.jumlahSiswa, '% Hadir': r.persen, Terlambat: r.terlambat, 'Tidak Bawa Kartu': r.tanpaKartu, 'Tidak Scan Pulang': r.tidakPulang, Alpa: r.alfa, Bolos: r.bolos, 'Perlu Tindakan': r.perluTindakan,
     }))), 'Per Kelas');
     XLSX.writeFile(wb, `Rekap_Tindakan_${label.replace(/[^\w-]+/g, '_')}.xlsx`);
   };
@@ -151,7 +159,7 @@ export const RekapTindakan: React.FC = () => {
         <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
           <span className="font-black text-slate-800">Perlu Tindakan Segera ({perluTindakan.length})</span>
           <span className="text-[11px] text-slate-500">
-            Ambang: alpa ≥{AMBANG.alfaWaspada} waspada, ≥{AMBANG.alfaMendesak} mendesak · tidak hadir berturut ≥{AMBANG.streakMendesak} hari · bolos ≥1 · terlambat ≥{AMBANG.terlambatWaspada}x · tanpa kartu ≥{AMBANG.tanpaKartuInfo}x
+            Ambang: alpa ≥{AMBANG.alfaWaspada} waspada, ≥{AMBANG.alfaMendesak} mendesak · tidak hadir berturut ≥{AMBANG.streakMendesak} hari · bolos ≥1 · terlambat ≥{AMBANG.terlambatWaspada}x · tanpa kartu ≥{AMBANG.tanpaKartuInfo}x · tidak scan pulang ≥{AMBANG.tidakPulangInfo} hari
           </span>
         </div>
         {perluTindakan.length === 0 ? (
@@ -167,7 +175,7 @@ export const RekapTindakan: React.FC = () => {
                     <span className="text-xs text-slate-500">{m.kelas?.nama_kelas ?? '-'} · {m.persentase}% hadir</span>
                   </div>
                   <div className="text-[11px] text-slate-500 mt-1">
-                    Terlambat {m.totalTerlambat} · Tanpa kartu {m.totalTanpaKartu} · Izin {m.totalIzin} · Sakit {m.totalSakit} · Alpa {m.totalAlfa} · Bolos {m.totalBolos}
+                    Terlambat {m.totalTerlambat} · Tanpa kartu {m.totalTanpaKartu} · Tidak scan pulang {m.totalTidakPulang} · Izin {m.totalIzin} · Sakit {m.totalSakit} · Alpa {m.totalAlfa} · Bolos {m.totalBolos}
                   </div>
                   <ul className="mt-1.5 space-y-0.5">
                     {saran.map((s, i) => <li key={i} className="text-xs text-slate-700">• {s.teks}</li>)}
@@ -218,7 +226,7 @@ export const RekapTindakan: React.FC = () => {
         {/* APRESIASI */}
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
           <div className="px-4 py-3 border-b flex items-center gap-2 text-sm font-black text-violet-700 bg-violet-50 border-violet-200"><Award className="w-4 h-4" /> Layak Diapresiasi ({apresiasi.length})</div>
-          <p className="px-4 pt-2 text-[11px] text-slate-500">Hadir di semua hari efektif, tidak pernah terlambat, dan selalu membawa kartu (minimal 5 hari).</p>
+          <p className="px-4 pt-2 text-[11px] text-slate-500">Hadir di semua hari efektif, tidak pernah terlambat, selalu membawa kartu, dan selalu scan pulang (minimal 5 hari).</p>
           {apresiasi.length === 0 ? <div className="p-4 text-xs text-slate-400">Belum ada pada periode ini.</div> : (
             <ul className="p-4 pt-2 flex flex-wrap gap-1.5 max-h-56 overflow-y-auto">
               {apresiasi.map((m) => <li key={m.siswa.id} className="text-[11px] font-semibold bg-violet-50 text-violet-800 border border-violet-200 rounded-full px-2.5 py-1">{m.siswa.nama} · {m.kelas?.nama_kelas}</li>)}
@@ -251,7 +259,7 @@ export const RekapTindakan: React.FC = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-xs text-left">
               <thead className="bg-slate-50 text-slate-500 uppercase font-bold">
-                <tr><th className="px-4 py-2">Kelas</th><th className="px-2 py-2 text-right">% Hadir</th><th className="px-2 py-2 text-right">Telat</th><th className="px-2 py-2 text-right">Alpa</th><th className="px-2 py-2 text-right">Bolos</th><th className="px-3 py-2 text-right">Perlu tindakan</th></tr>
+                <tr><th className="px-4 py-2">Kelas</th><th className="px-2 py-2 text-right">% Hadir</th><th className="px-2 py-2 text-right">Telat</th><th className="px-2 py-2 text-right">Alpa</th><th className="px-2 py-2 text-right">Tdk pulang</th><th className="px-2 py-2 text-right">Bolos</th><th className="px-3 py-2 text-right">Perlu tindakan</th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {kelasRingkas.map((r) => (
@@ -260,6 +268,7 @@ export const RekapTindakan: React.FC = () => {
                     <td className="px-2 py-2 text-right font-black">{r.persen}%</td>
                     <td className="px-2 py-2 text-right">{r.terlambat}</td>
                     <td className="px-2 py-2 text-right">{r.alfa}</td>
+                    <td className="px-2 py-2 text-right">{r.tidakPulang}</td>
                     <td className="px-2 py-2 text-right">{r.bolos}</td>
                     <td className="px-3 py-2 text-right font-bold text-rose-700">{r.perluTindakan}</td>
                   </tr>
