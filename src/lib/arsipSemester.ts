@@ -7,7 +7,7 @@ import { sortKelas } from './classUtils';
  * Arsip semester: perhitungan rekap + berkas JSON & Excel.
  *
  * Aturan (sama dengan Dashboard Rekap):
- *  - Hari efektif  = tanggal yang punya scan masuk atau catatan "tidak bawa kartu" (minimal satu siswa)
+ *  - Hari efektif  = hari sekolah menurut kalender yang punya scan masuk atau catatan "tidak bawa kartu" (minimal satu siswa)
  *  - Per siswa per hari efektif (urutan prioritas):
  *      catatan bolos           -> Bolos
  *      scan masuk              -> Hadir (Tepat Waktu / Terlambat)
@@ -46,8 +46,10 @@ export function hitungArsip(input: {
   siswaList: Siswa[]; kelasList: Kelas[]; absensi: Absensi[]; catatan: CatatanKehadiran[];
   /** siswa_id (lokal maupun server) -> NISN. Wajib agar data dari beberapa perangkat tetap cocok. */
   resolveNisn: (siswaId: string) => string | undefined;
+  /** Kalender sekolah: bila diberikan, tanggal non-efektif (Minggu/libur) tidak dihitung hari efektif. */
+  isHariEfektif?: (tanggal: string) => boolean;
 }): HasilArsip {
-  const { siswaList, kelasList, absensi, catatan, resolveNisn } = input;
+  const { siswaList, kelasList, absensi, catatan, resolveNisn, isHariEfektif } = input;
   const kelasById = new Map(kelasList.map((k) => [k.id, k]));
   const siswaByNisn = new Map(siswaList.map((s) => [String(s.nisn).trim(), s]));
   const nisnOf = (id: string) => (resolveNisn(id) || '').trim();
@@ -75,7 +77,7 @@ export function hitungArsip(input: {
   const efektif = new Set<string>();
   for (const inner of masuk.values()) for (const t of inner.keys()) efektif.add(t);
   for (const inner of cat.values()) for (const [t, c] of inner) if (c.status === 'tidak_bawa_kartu') efektif.add(t);
-  const hariEfektif = Array.from(efektif).sort();
+  const hariEfektif = Array.from(efektif).filter((t) => !isHariEfektif || isHariEfektif(t)).sort();
 
   // siswa yang dilaporkan: aktif ATAU punya data pada periode
   const adaData = new Set<string>([...masuk.keys(), ...pulang.keys(), ...cat.keys()]);
@@ -194,7 +196,7 @@ export function bangunWorkbook(input: {
     ['Dibuat', dibuatAt], ['Sumber data', sumber === 'supabase' ? 'Supabase (lengkap)' : 'Perangkat lokal (mungkin tidak lengkap)'],
     ['Hari efektif', hasil.hariEfektif.length], ['Jumlah siswa', hasil.perSiswa.length],
     [], ['Aturan hitung'],
-    ['Hari efektif = tanggal yang punya scan masuk (atau catatan Tidak Bawa Kartu).'],
+    ['Hari efektif = hari sekolah menurut kalender yang punya scan masuk (atau catatan Tidak Bawa Kartu); scan di hari libur/Minggu tidak dihitung.'],
     ['Hadir = scan masuk + Tidak Bawa Kartu. Bolos mengalahkan scan masuk. % Kehadiran = Hadir / Hari efektif.'],
   ]), 'Info');
 

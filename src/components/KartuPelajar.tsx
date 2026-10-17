@@ -85,6 +85,7 @@ export const KartuPelajar: React.FC<{ initialSelectedId?: string }> = ({ initial
 
   // Filter students for batch or single
   const filteredStudents = siswaList.filter((s) => {
+    if (s.status_aktif === false) return false;
     const matchesKelas = selectedKelasId === 'all' || s.kelas_id === selectedKelasId;
     const matchesSearch =
       !searchFilter ||

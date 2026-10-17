@@ -40,16 +40,34 @@ import { SchoolLogo, LogoTutWuri, CityLogo } from './SchoolLogos';
 import { getFotoSiswaUrl, getFotoPlaceholder } from '../lib/fotoHelper';
 import { nextFotoCandidate } from '../lib/fotoFallback';
 import { sortKelas, sortSiswaByKelas } from '../lib/classUtils';
+import {
+  siswaAktif,
+  hitungSiswa,
+  hitungTanggalEfektif,
+  rentangBulan,
+  type StatusHari,
+} from '../lib/rekapKehadiran';
 import { RekapMakanSiangModal } from './RekapMakanSiang';
 import { LaporanTanpaKartu } from './LaporanTanpaKartu';
 
 type FilterMode = 'harian' | 'bulanan' | 'rentang';
 
+const MATRIKS_SEL: Record<StatusHari, { simbol: string; label: string; cls: string }> = {
+  tepat_waktu: { simbol: '✓', label: 'Hadir tepat waktu', cls: 'bg-emerald-100 text-emerald-800' },
+  terlambat: { simbol: 'T', label: 'Hadir terlambat', cls: 'bg-amber-100 text-amber-800' },
+  tidak_bawa_kartu: { simbol: 'K', label: 'Hadir (tidak bawa kartu)', cls: 'bg-sky-100 text-sky-800' },
+  izin: { simbol: 'I', label: 'Izin', cls: 'bg-blue-100 text-blue-800' },
+  sakit: { simbol: 'S', label: 'Sakit', cls: 'bg-purple-100 text-purple-800' },
+  bolos: { simbol: 'B', label: 'Bolos', cls: 'bg-orange-100 text-orange-800' },
+  alpa: { simbol: 'A', label: 'Alpa', cls: 'bg-rose-100 text-rose-700' },
+  kosong: { simbol: '-', label: 'Tanpa keterangan (dihitung Alpa)', cls: 'bg-rose-50 text-rose-500' },
+};
+
 export const RekapDashboard: React.FC = () => {
   const {
     absensiList,
     catatanKehadiranList,
-    siswaList,
+    siswaList: siswaListSemua,
     kelasList,
     logNotifikasiList,
     logRekapWAMingguanList,
@@ -62,6 +80,9 @@ export const RekapDashboard: React.FC = () => {
     currentUser,
     getDateHariInfo,
   } = useApp();
+
+  // Siswa nonaktif (pindah/lulus) tidak ikut dihitung di rekap, daftar, maupun total siswa.
+  const siswaList = useMemo(() => siswaAktif(siswaListSemua), [siswaListSemua]);
 
   const isWaliKelas = currentUser?.role === 'wali_kelas';
   const waliKelasId = currentUser?.wali_kelas_id || '';
@@ -134,17 +155,27 @@ export const RekapDashboard: React.FC = () => {
     return kelasList.find((k) => k.id === selectedKelasId) || null;
   }, [kelasList, selectedKelasId]);
 
-  // Distinct dates in the active filter period that have attendance
+  // Hari efektif pada periode aktif: hari sekolah menurut kalender (bukan Sabtu/Minggu/libur),
+  // sudah ada data scan/catatan siswa aktif, dan tidak melewati hari ini.
+  // Scan yang tercatat pada hari non-efektif (mis. Minggu) tidak dihitung.
   const distinctAttendanceDates = useMemo(() => {
-    const dates = new Set<string>();
-    absensiList.forEach((a) => {
-      if (isDateInActiveFilter(a.tanggal)) {
-        dates.add(a.tanggal);
-      }
+    const aktifIds = new Set(siswaList.map((s) => s.id));
+    const tanggalAdaData = new Set<string>();
+    absensiList.forEach((a) => { if (aktifIds.has(a.siswa_id)) tanggalAdaData.add(a.tanggal); });
+    catatanKehadiranList.forEach((c) => { if (aktifIds.has(c.siswa_id)) tanggalAdaData.add(c.tanggal); });
+    const rentang =
+      filterMode === 'harian'
+        ? { start: selectedDate, end: selectedDate }
+        : filterMode === 'bulanan'
+        ? rentangBulan(selectedYear, selectedMonth)
+        : { start: startDate, end: endDate };
+    return hitungTanggalEfektif({
+      ...rentang,
+      todayStr: getTodayDateString(),
+      isHariEfektif: (d) => getDateHariInfo(d).isHariEfektif,
+      tanggalAdaData,
     });
-    // Sort ascending
-    return Array.from(dates).sort();
-  }, [absensiList, filterMode, selectedDate, selectedMonth, selectedYear, startDate, endDate]);
+  }, [siswaList, absensiList, catatanKehadiranList, getDateHariInfo, filterMode, selectedDate, selectedMonth, selectedYear, startDate, endDate]);
 
   // 1. HARIAN: Filtered Daily List
   const selectedDateHariInfo = useMemo(() => getDateHariInfo(selectedDate), [selectedDate, getDateHariInfo]);
@@ -209,9 +240,6 @@ export const RekapDashboard: React.FC = () => {
 
   // 2. BULANAN & RENTANG: Aggregated Student Metrics across the period
   const periodicStudentMetrics = useMemo(() => {
-    // Total effective recorded dates
-    const totalDaysRecorded = Math.max(1, distinctAttendanceDates.length);
-
     return siswaList
       .filter((siswa) => {
         if (visibleKelasIds && !visibleKelasIds.has(siswa.kelas_id)) return false;
@@ -226,34 +254,8 @@ export const RekapDashboard: React.FC = () => {
       })
       .map((siswa) => {
         const studentClass = kelasList.find((k) => k.id === siswa.kelas_id);
-        
-        // Filter scans for this student in current period
-        const periodScans = absensiList.filter(
-          (a) => a.siswa_id === siswa.id && isDateInActiveFilter(a.tanggal)
-        );
-
-        const periodCatatan = catatanKehadiranList.filter(
-          (c) => c.siswa_id === siswa.id && isDateInActiveFilter(c.tanggal)
-        );
-        const totalTanpaKartu = periodCatatan.filter((c) => c.status === 'tidak_bawa_kartu').length;
-
-        // Count unique dates attended. Hari "tidak bawa kartu" tetap dihitung hadir
-        // (siswa datang ke sekolah tetapi tidak bisa scan).
-        const attendedDates = new Set(periodScans.filter((a) => a.jenis === 'masuk').map((a) => a.tanggal));
-        periodCatatan.filter((c) => c.status === 'tidak_bawa_kartu').forEach((c) => attendedDates.add(c.tanggal));
-        const totalHadir = attendedDates.size;
-
-        const totalTepatWaktu = periodScans.filter((a) => a.jenis === 'masuk' && a.status === 'tepat_waktu').length;
-        const totalTerlambat = periodScans.filter((a) => a.jenis === 'masuk' && a.status === 'terlambat').length;
-        const totalPulang = periodScans.filter((a) => a.jenis === 'pulang').length;
-        
-        const totalTanpaKeterangan = Math.max(0, totalDaysRecorded - totalHadir);
-        const persentase = Math.round((totalHadir / totalDaysRecorded) * 100);
-
-        const totalIzin = periodCatatan.filter((c) => c.status === 'izin').length;
-        const totalSakit = periodCatatan.filter((c) => c.status === 'sakit').length;
-        const totalBolos = periodCatatan.filter((c) => c.status === 'bolos').length;
-        const totalAlpa = periodCatatan.filter((c) => c.status === 'alpa').length;
+        const h = hitungSiswa(siswa.id, distinctAttendanceDates, absensiList, catatanKehadiranList);
+        const persentase = h.persentase;
 
         let predikat = 'Sangat Baik';
         if (persentase >= 90) predikat = 'Sangat Disiplin';
@@ -264,17 +266,7 @@ export const RekapDashboard: React.FC = () => {
         return {
           siswa,
           kelas: studentClass,
-          totalHadir,
-          totalTepatWaktu,
-          totalTerlambat,
-          totalPulang,
-          totalTanpaKeterangan,
-          totalIzin,
-          totalSakit,
-          totalBolos,
-          totalAlpa,
-          totalTanpaKartu,
-          totalDaysRecorded,
+          ...h,
           persentase,
           predikat,
         };
@@ -301,7 +293,11 @@ export const RekapDashboard: React.FC = () => {
       const tepatWaktuCount = masukScans.filter((a) => a.status === 'tepat_waktu').length;
       const terlambatCount = masukScans.filter((a) => a.status === 'terlambat').length;
       const pulangCount = classAbsensi.filter((a) => a.jenis === 'pulang').length;
-      const hadirTotal = new Set(masukScans.map((a) => a.siswa_id)).size;
+      const hadirIds = new Set(masukScans.map((a) => a.siswa_id));
+      catatanKehadiranList.forEach((c) => {
+        if (c.tanggal === selectedDate && c.status === 'tidak_bawa_kartu' && studentIdsInClass.has(c.siswa_id)) hadirIds.add(c.siswa_id);
+      });
+      const hadirTotal = hadirIds.size;
       const belumAbsenCount = Math.max(0, totalSiswa - hadirTotal);
       const kehadiranPercentage = totalSiswa > 0 ? Math.round((hadirTotal / totalSiswa) * 100) : 0;
 
@@ -345,7 +341,7 @@ export const RekapDashboard: React.FC = () => {
         totalHariSekolah: effectiveDays,
       };
     }
-  }, [siswaList, absensiList, selectedKelasId, filterMode, selectedDate, distinctAttendanceDates, periodicStudentMetrics]);
+  }, [siswaList, absensiList, catatanKehadiranList, selectedKelasId, filterMode, selectedDate, distinctAttendanceDates, periodicStudentMetrics]);
 
   // Per-Class Comparison Insights
   const classComparisonStats = useMemo(() => {
@@ -362,9 +358,11 @@ export const RekapDashboard: React.FC = () => {
         attendances = todayScans.length;
         lateCount = todayScans.filter((a) => a.status === 'terlambat').length;
       } else {
-        const periodScans = absensiList.filter((a) => isDateInActiveFilter(a.tanggal) && a.jenis === 'masuk' && studentIds.has(a.siswa_id));
-        attendances = periodScans.length;
-        lateCount = periodScans.filter((a) => a.status === 'terlambat').length;
+        studentsInClass.forEach((st) => {
+          const h = hitungSiswa(st.id, distinctAttendanceDates, absensiList, catatanKehadiranList);
+          attendances += h.totalHadir;
+          lateCount += h.totalTerlambat;
+        });
       }
 
       const totalPossible = filterMode === 'harian' ? totalStudents : totalStudents * Math.max(1, distinctAttendanceDates.length);
@@ -378,7 +376,7 @@ export const RekapDashboard: React.FC = () => {
         rate,
       };
     });
-  }, [kelasList, siswaList, absensiList, filterMode, selectedDate, distinctAttendanceDates]);
+  }, [kelasList, siswaList, absensiList, catatanKehadiranList, filterMode, selectedDate, distinctAttendanceDates]);
 
   // Top disciplined students & Top late students
   const studentRankings = useMemo(() => {
@@ -467,10 +465,10 @@ export const RekapDashboard: React.FC = () => {
         'Izin (I)': item.totalIzin,
         'Sakit (S)': item.totalSakit,
         'Bolos (B)': item.totalBolos,
-        'Alpa (A)': item.totalAlpa,
+        'Alpa (A)': item.totalAlfa,
         'Tidak Bawa Kartu (TBK)': item.totalTanpaKartu,
         'Pulang Tercatat (P)': item.totalPulang,
-        'Tanpa Keterangan': item.totalTanpaKeterangan,
+        'Tanpa Keterangan (bagian dari Alpa)': item.totalTanpaKeterangan,
         'Persentase Kehadiran (%)': `${item.persentase}%`,
         Predikat: item.predikat,
         'No WA Wali': item.siswa.nomor_wa_ortu,
@@ -568,7 +566,7 @@ export const RekapDashboard: React.FC = () => {
         item.totalIzin,
         item.totalSakit,
         item.totalBolos,
-        item.totalAlpa,
+        item.totalAlfa,
         item.totalTanpaKartu,
         `"${item.persentase}%"`,
         `"${item.predikat}"`,
@@ -1295,7 +1293,7 @@ export const RekapDashboard: React.FC = () => {
                             {item.totalTerlambat}
                           </td>
                           <td className="px-4 py-3 text-center font-semibold text-rose-700 bg-rose-50/40">
-                            {item.totalTanpaKeterangan}
+                            {item.totalAlfa}
                           </td>
                           <td className="px-4 py-3 text-center">
                             <div className="inline-flex items-center gap-2">
@@ -1361,16 +1359,13 @@ export const RekapDashboard: React.FC = () => {
                 Peta kedatangan siswa per tanggal dalam periode {activePeriodLabel}.
               </p>
             </div>
-            <div className="flex items-center gap-3 text-xs">
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block" /> Tepat Waktu (H)
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-full bg-amber-500 inline-block" /> Terlambat (TL)
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-full bg-rose-400 inline-block" /> Alfa / Belum (A)
-              </span>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+              {(['tepat_waktu', 'terlambat', 'tidak_bawa_kartu', 'izin', 'sakit', 'bolos', 'alpa', 'kosong'] as StatusHari[]).map((k) => (
+                <span key={k} className="flex items-center gap-1">
+                  <span className={`w-4 h-4 rounded font-bold inline-flex items-center justify-center text-[9px] ${MATRIKS_SEL[k].cls}`}>{MATRIKS_SEL[k].simbol}</span>
+                  {MATRIKS_SEL[k].label}
+                </span>
+              ))}
             </div>
           </div>
 
@@ -1395,6 +1390,8 @@ export const RekapDashboard: React.FC = () => {
                   })}
                   <th className="p-2 border-r border-slate-200 text-center w-12 bg-emerald-50 text-emerald-800">H</th>
                   <th className="p-2 border-r border-slate-200 text-center w-12 bg-amber-50 text-amber-800">TL</th>
+                  <th className="p-2 border-r border-slate-200 text-center w-12 bg-blue-50 text-blue-800">I</th>
+                  <th className="p-2 border-r border-slate-200 text-center w-12 bg-purple-50 text-purple-800">S</th>
                   <th className="p-2 border-r border-slate-200 text-center w-12 bg-rose-50 text-rose-800">A</th>
                   <th className="p-2 text-center w-14 font-black">%</th>
                 </tr>
@@ -1412,31 +1409,18 @@ export const RekapDashboard: React.FC = () => {
                       {item.kelas?.nama_kelas}
                     </td>
                     {distinctAttendanceDates.map((dateStr) => {
-                      const scan = absensiList.find(
-                        (a) => a.siswa_id === item.siswa.id && a.tanggal === dateStr && a.jenis === 'masuk'
-                      );
+                      const st: StatusHari = item.perTanggal[dateStr] ?? 'kosong';
+                      const sel = MATRIKS_SEL[st];
 
                       return (
                         <td
                           key={dateStr}
                           className="p-1 border-r border-slate-200 text-center"
-                          title={`${item.siswa.nama} - ${dateStr}: ${scan ? scan.status : 'Alfa'}`}
+                          title={`${item.siswa.nama} - ${dateStr}: ${sel.label}`}
                         >
-                          {scan ? (
-                            scan.status === 'tepat_waktu' ? (
-                              <span className="w-5 h-5 rounded bg-emerald-100 text-emerald-800 font-bold inline-flex items-center justify-center text-[10px]">
-                                ✓
-                              </span>
-                            ) : (
-                              <span className="w-5 h-5 rounded bg-amber-100 text-amber-800 font-bold inline-flex items-center justify-center text-[10px]">
-                                T
-                              </span>
-                            )
-                          ) : (
-                            <span className="w-5 h-5 rounded bg-rose-50 text-rose-500 font-bold inline-flex items-center justify-center text-[10px]">
-                              -
-                            </span>
-                          )}
+                          <span className={`w-5 h-5 rounded font-bold inline-flex items-center justify-center text-[10px] ${sel.cls}`}>
+                            {sel.simbol}
+                          </span>
                         </td>
                       );
                     })}
@@ -1446,8 +1430,14 @@ export const RekapDashboard: React.FC = () => {
                     <td className="p-2 border-r border-slate-200 text-center font-bold text-amber-700 bg-amber-50/20">
                       {item.totalTerlambat}
                     </td>
+                    <td className="p-2 border-r border-slate-200 text-center font-bold text-blue-700 bg-blue-50/20">
+                      {item.totalIzin}
+                    </td>
+                    <td className="p-2 border-r border-slate-200 text-center font-bold text-purple-700 bg-purple-50/20">
+                      {item.totalSakit}
+                    </td>
                     <td className="p-2 border-r border-slate-200 text-center font-bold text-rose-700 bg-rose-50/20">
-                      {item.totalTanpaKeterangan}
+                      {item.totalAlfa}
                     </td>
                     <td className="p-2 text-center font-black text-slate-900">
                       {item.persentase}%
@@ -1778,7 +1768,7 @@ export const RekapDashboard: React.FC = () => {
           </div>
           <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
             <div className="px-4 py-3 border-b bg-slate-50 text-xs font-bold text-slate-600">Riwayat Rekap WA Mingguan ({logRekapWAMingguanList.length})</div>
-            <div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead className="bg-white"><tr><th className="p-3">Periode</th><th className="p-3">Siswa</th><th className="p-3">No. Tujuan</th><th className="p-3">Status</th><th className="p-3">Waktu</th></tr></thead><tbody>{logRekapWAMingguanList.length === 0 ? <tr><td colSpan={5} className="p-8 text-center text-slate-400">Belum ada pengiriman rekap mingguan.</td></tr> : logRekapWAMingguanList.map((log) => { const st = siswaList.find((s) => s.id === log.siswa_id); return <tr key={log.id} className="border-t hover:bg-slate-50"><td className="p-3">{log.minggu_mulai} s/d {log.minggu_selesai}</td><td className="p-3 font-semibold">{st?.nama || log.siswa_id}</td><td className="p-3 font-mono">{log.nomor_tujuan}</td><td className="p-3"><span className={`px-2 py-1 rounded-full font-bold ${log.status_kirim === 'terkirim' ? 'bg-emerald-100 text-emerald-700' : log.status_kirim === 'gagal' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{log.status_kirim}</span></td><td className="p-3">{new Date(log.waktu_kirim).toLocaleString('id-ID')}</td></tr>; })}</tbody></table></div>
+            <div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead className="bg-white"><tr><th className="p-3">Periode</th><th className="p-3">Siswa</th><th className="p-3">No. Tujuan</th><th className="p-3">Status</th><th className="p-3">Waktu</th></tr></thead><tbody>{logRekapWAMingguanList.length === 0 ? <tr><td colSpan={5} className="p-8 text-center text-slate-400">Belum ada pengiriman rekap mingguan.</td></tr> : logRekapWAMingguanList.map((log) => { const st = siswaListSemua.find((s) => s.id === log.siswa_id); return <tr key={log.id} className="border-t hover:bg-slate-50"><td className="p-3">{log.minggu_mulai} s/d {log.minggu_selesai}</td><td className="p-3 font-semibold">{st?.nama || log.siswa_id}</td><td className="p-3 font-mono">{log.nomor_tujuan}</td><td className="p-3"><span className={`px-2 py-1 rounded-full font-bold ${log.status_kirim === 'terkirim' ? 'bg-emerald-100 text-emerald-700' : log.status_kirim === 'gagal' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{log.status_kirim}</span></td><td className="p-3">{new Date(log.waktu_kirim).toLocaleString('id-ID')}</td></tr>; })}</tbody></table></div>
           </div>
         </div>
       )}
@@ -2013,7 +2003,7 @@ export const RekapDashboard: React.FC = () => {
                               <td className="border border-black p-1.5 text-center">{item.totalIzin}</td>
                               <td className="border border-black p-1.5 text-center">{item.totalSakit}</td>
                               <td className="border border-black p-1.5 text-center">{item.totalBolos}</td>
-                              <td className="border border-black p-1.5 text-center">{item.totalAlpa}</td>
+                              <td className="border border-black p-1.5 text-center">{item.totalAlfa}</td>
                               <td className="border border-black p-1.5 text-center">{item.totalTanpaKartu}</td>
                               <td className="border border-black p-1.5 text-center font-bold">
                                 {item.persentase}%

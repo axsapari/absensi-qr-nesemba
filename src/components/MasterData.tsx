@@ -473,7 +473,7 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
       {activeTab === 'kelas' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {sortKelas(kelasList).map((k) => {
-            const countSiswa = siswaList.filter((s) => s.kelas_id === k.id).length;
+            const countSiswa = siswaList.filter((s) => s.kelas_id === k.id && s.status_aktif !== false).length;
             return (
               <div key={k.id} className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-3">
                 <div className="flex items-center justify-between">

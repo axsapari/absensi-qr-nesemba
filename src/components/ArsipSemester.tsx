@@ -15,7 +15,7 @@ const bacaCatatanArsip = (): CatatanArsip => { try { return JSON.parse(localStor
 const waktuLabel = (iso?: string) => (iso ? new Date(iso).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : '');
 
 export const ArsipSemester: React.FC = () => {
-  const { siswaList, kelasList, profilSekolah, ambilDataSemester, hapusDataLokalRentang, pullFullHistory, isSyncing } = useApp();
+  const { siswaList, kelasList, profilSekolah, ambilDataSemester, hapusDataLokalRentang, pullFullHistory, isSyncing, getDateHariInfo } = useApp();
   const today = getTodayDateString();
   const semesters = useMemo(() => daftarSemester(today, 6), [today]);
   const [pilihId, setPilihId] = useState<string>(semesters[1]?.id || semesters[0].id);
@@ -43,8 +43,9 @@ export const ArsipSemester: React.FC = () => {
     return hitungArsip({
       siswaList, kelasList, absensi: data.hasil.absensi, catatan: data.hasil.catatan,
       resolveNisn: (id) => data.hasil.nisnById[id],
+      isHariEfektif: (t) => getDateHariInfo(t).isHariEfektif,
     });
-  }, [data, semester.id, siswaList, kelasList]);
+  }, [data, semester.id, siswaList, kelasList, getDateHariInfo]);
 
   const riwayatMakanSiang = () => {
     try {
