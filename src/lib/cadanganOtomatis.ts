@@ -132,3 +132,74 @@ export const pesanGalatCadangan = (msg: string): string =>
     : /row-level security|policy|unauthorized|permission/i.test(msg)
     ? 'Akses ke bucket cadangan ditolak. Pastikan SUPABASE-MIGRATION-V23-CADANGAN-OTOMATIS.sql sudah dijalankan dan Anda login sebagai admin.'
     : msg;
+
+/* ------------------------------------------------------------------ */
+/* Pemulihan (hanya menambah/memperbarui; tidak pernah menghapus)       */
+/* ------------------------------------------------------------------ */
+
+/** Urutan penting: kelas -> siswa -> absensi/catatan (bergantung pada siswa). */
+export const TABEL_PEMULIHAN = ['kelas', 'siswa', 'absensi', 'catatan_kehadiran'] as const;
+export type TabelPemulihan = (typeof TABEL_PEMULIHAN)[number];
+const KONFLIK: Record<TabelPemulihan, string> = {
+  kelas: 'id', siswa: 'id', absensi: 'id', catatan_kehadiran: 'siswa_id,tanggal',
+};
+
+export function bagiBatch<T>(rows: T[], ukuran = 500): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < rows.length; i += ukuran) out.push(rows.slice(i, i + ukuran));
+  return out;
+}
+
+/** Mengembalikan pesan galat bila isi bukan cadangan yang valid, atau null bila aman dipakai. */
+export function validasiIsiCadangan(isi: unknown): string | null {
+  const x = isi as Partial<IsiCadangan> | null;
+  if (!x || typeof x !== 'object' || x.versi !== 1 || !x.data || typeof x.data !== 'object') return 'Berkas bukan cadangan otomatis yang valid.';
+  if (!Array.isArray(x.data.siswa) || !Array.isArray(x.data.kelas)) return 'Cadangan tidak memuat data siswa/kelas.';
+  return null;
+}
+
+export async function bacaIsiCadangan(supabase: SupabaseClient, nama: string): Promise<IsiCadangan> {
+  const { data, error } = await supabase.storage.from(BUCKET_CADANGAN).download(nama);
+  if (error || !data) throw new Error(error?.message || 'Gagal mengunduh cadangan');
+  let teks: string;
+  if (nama.endsWith('.gz')) {
+    if (typeof DecompressionStream === 'undefined') throw new Error('Browser ini tidak mendukung membuka .gz. Gunakan Chrome/Edge terbaru.');
+    teks = await new Response(data.stream().pipeThrough(new DecompressionStream('gzip'))).text();
+  } else teks = await data.text();
+  const isi = JSON.parse(teks);
+  const galat = validasiIsiCadangan(isi);
+  if (galat) throw new Error(galat);
+  return isi as IsiCadangan;
+}
+
+export async function hitungDiServer(supabase: SupabaseClient): Promise<Record<TabelPemulihan, number>> {
+  const out = {} as Record<TabelPemulihan, number>;
+  for (const t of TABEL_PEMULIHAN) {
+    const { count, error } = await supabase.from(t).select('id', { count: 'exact', head: true });
+    if (error) throw new Error(`${t}: ${error.message}`);
+    out[t] = count ?? 0;
+  }
+  return out;
+}
+
+export async function pulihkanCadangan(
+  supabase: SupabaseClient,
+  isi: IsiCadangan,
+  tabel: TabelPemulihan[],
+  onProgres?: (tabel: TabelPemulihan, selesai: number, total: number) => void
+): Promise<Record<string, number>> {
+  const hasil: Record<string, number> = {};
+  for (const t of TABEL_PEMULIHAN) {
+    if (!tabel.includes(t)) continue;
+    const rows = isi.data[t] ?? [];
+    let selesai = 0;
+    for (const batch of bagiBatch(rows)) {
+      const { error } = await supabase.from(t).upsert(batch, { onConflict: KONFLIK[t] });
+      if (error) throw new Error(`${t}: ${error.message} (sudah dipulihkan ${selesai} baris di tabel ini)`);
+      selesai += batch.length;
+      onProgres?.(t, selesai, rows.length);
+    }
+    hasil[t] = selesai;
+  }
+  return hasil;
+}

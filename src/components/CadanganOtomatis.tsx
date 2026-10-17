@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { CloudUpload, Download, Loader2, RefreshCw, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { CloudUpload, Download, Loader2, RefreshCw, RotateCcw, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { getSupabaseClient } from '../lib/supabase';
 import { getTodayDateString } from '../data/initialData';
 import {
   KUNCI_PENGATURAN, PENGATURAN_AWAL, daftarCadangan, jalankanCadangan, perluCadangan,
-  pesanGalatCadangan, unduhCadangan, type BerkasCadangan, type PengaturanCadangan,
+  pesanGalatCadangan, unduhCadangan, bacaIsiCadangan, hitungDiServer, pulihkanCadangan, TABEL_PEMULIHAN,
+  type BerkasCadangan, type IsiCadangan, type PengaturanCadangan, type TabelPemulihan,
 } from '../lib/cadanganOtomatis';
 
 const bacaPengaturan = (): PengaturanCadangan => {
@@ -62,12 +63,16 @@ export function useCadanganOtomatis(jalankanOtomatis = false) {
 export const CadanganRunner: React.FC = () => { useCadanganOtomatis(true); return null; };
 
 export const CadanganOtomatisPanel: React.FC = () => {
-  const { supabaseConfig, currentUser } = useApp();
+  const { supabaseConfig, currentUser, syncMasterData } = useApp();
   const { status, cadangkan } = useCadanganOtomatis();
   const [p, setP] = useState<PengaturanCadangan>(() => bacaPengaturan());
   const [berkas, setBerkas] = useState<BerkasCadangan[] | null>(null);
   const [galat, setGalat] = useState<string | null>(null);
   const [sibuk, setSibuk] = useState(false);
+  const [pulih, setPulih] = useState<{ nama: string; isi: IsiCadangan; server: Record<TabelPemulihan, number>; pilih: TabelPemulihan[] } | null>(null);
+  const [konfirmasi, setKonfirmasi] = useState('');
+  const [progres, setProgres] = useState<string | null>(null);
+  const [hasilPulih, setHasilPulih] = useState<{ ok: boolean; teks: string } | null>(null);
 
   const ubah = (patch: Partial<PengaturanCadangan>) => { const n = { ...p, ...patch }; setP(n); simpanPengaturan(n); };
 
@@ -83,6 +88,30 @@ export const CadanganOtomatisPanel: React.FC = () => {
   const unduh = async (nama: string) => {
     const supabase = getSupabaseClient(supabaseConfig);
     if (supabase) try { await unduhCadangan(supabase, nama); } catch (e) { setGalat(e instanceof Error ? e.message : String(e)); }
+  };
+
+  const siapkanPulih = async (nama: string) => {
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (!supabase) return;
+    setSibuk(true); setHasilPulih(null); setKonfirmasi('');
+    try {
+      const [isi, server] = await Promise.all([bacaIsiCadangan(supabase, nama), hitungDiServer(supabase)]);
+      setPulih({ nama, isi, server, pilih: [...TABEL_PEMULIHAN] });
+    } catch (e) { setHasilPulih({ ok: false, teks: pesanGalatCadangan(e instanceof Error ? e.message : String(e)) }); }
+    setSibuk(false);
+  };
+
+  const jalankanPulih = async () => {
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (!supabase || !pulih || konfirmasi.trim().toUpperCase() !== 'PULIHKAN' || pulih.pilih.length === 0) return;
+    setSibuk(true); setHasilPulih(null);
+    try {
+      const r = await pulihkanCadangan(supabase, pulih.isi, pulih.pilih, (t, a, b) => setProgres(`${t}: ${a}/${b}`));
+      await syncMasterData();
+      setHasilPulih({ ok: true, teks: `Pemulihan selesai (${Object.entries(r).map(([k, v]) => `${k} ${v}`).join(', ')}). Muat ulang halaman agar tampilan memakai data terbaru.` });
+      setPulih(null);
+    } catch (e) { setHasilPulih({ ok: false, teks: e instanceof Error ? e.message : String(e) }); }
+    setProgres(null); setSibuk(false);
   };
 
   const terbaru = berkas?.[0];
@@ -139,13 +168,50 @@ export const CadanganOtomatisPanel: React.FC = () => {
           {berkas.slice(0, 6).map((b) => (
             <div key={b.name} className="flex items-center justify-between px-3 py-2 text-xs">
               <span className="font-mono text-slate-700">{b.name}{b.ukuran ? ` · ${(b.ukuran / 1024).toFixed(0)} KB` : ''}</span>
-              <button type="button" onClick={() => unduh(b.name)} className="flex items-center gap-1 font-bold text-sky-700 hover:text-sky-900 cursor-pointer"><Download className="w-3.5 h-3.5" /> Unduh</button>
+              <span className="flex items-center gap-3">
+                <button type="button" onClick={() => unduh(b.name)} className="flex items-center gap-1 font-bold text-sky-700 hover:text-sky-900 cursor-pointer"><Download className="w-3.5 h-3.5" /> Unduh</button>
+                {currentUser?.role === 'admin' && (
+                  <button type="button" disabled={sibuk} onClick={() => siapkanPulih(b.name)} className="flex items-center gap-1 font-bold text-amber-700 hover:text-amber-900 disabled:opacity-50 cursor-pointer"><RotateCcw className="w-3.5 h-3.5" /> Pulihkan</button>
+                )}
+              </span>
             </div>
           ))}
         </div>
       )}
+      {hasilPulih && (
+        <div className={`text-xs font-semibold rounded-xl px-3 py-2 border ${hasilPulih.ok ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-rose-50 border-rose-200 text-rose-900'}`}>{hasilPulih.teks}</div>
+      )}
+      {pulih && (
+        <div className="border-2 border-amber-300 bg-amber-50/50 rounded-2xl p-4 space-y-3">
+          <div className="font-black text-slate-900 text-sm">Pulihkan dari {pulih.nama}</div>
+          <p className="text-xs text-slate-700 leading-relaxed">
+            Pemulihan hanya <b>menambah dan memperbarui</b> data di Supabase. Tidak ada data yang dihapus. Baris dengan ID yang sama akan ditimpa isi cadangan, sehingga perubahan setelah {pulih.isi.dibuatAt.slice(0, 10)} pada baris itu bisa hilang. Disarankan menekan "Cadangkan Sekarang" dulu agar kondisi saat ini juga tersimpan.
+          </p>
+          <table className="w-full text-xs">
+            <thead><tr className="text-left text-slate-500 uppercase"><th className="py-1">Pulihkan</th><th>Tabel</th><th className="text-right">Di cadangan</th><th className="text-right">Di server sekarang</th></tr></thead>
+            <tbody>
+              {TABEL_PEMULIHAN.map((t) => (
+                <tr key={t} className="border-t border-amber-200">
+                  <td className="py-1.5"><input type="checkbox" className="accent-amber-600" checked={pulih.pilih.includes(t)} onChange={(e) => setPulih({ ...pulih, pilih: e.target.checked ? [...pulih.pilih, t] : pulih.pilih.filter((x) => x !== t) })} /></td>
+                  <td className="font-semibold">{t}</td>
+                  <td className="text-right font-mono">{pulih.isi.jumlah[t] ?? pulih.isi.data[t]?.length ?? 0}</td>
+                  <td className="text-right font-mono">{pulih.server[t]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="flex flex-wrap items-center gap-2">
+            <input value={konfirmasi} onChange={(e) => setKonfirmasi(e.target.value)} placeholder="Ketik PULIHKAN" className="bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm font-mono w-44" />
+            <button type="button" onClick={jalankanPulih} disabled={sibuk || konfirmasi.trim().toUpperCase() !== 'PULIHKAN' || pulih.pilih.length === 0} className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white text-sm font-bold rounded-xl cursor-pointer">
+              {sibuk ? 'Memulihkan...' : 'Jalankan Pemulihan'}
+            </button>
+            <button type="button" onClick={() => setPulih(null)} disabled={sibuk} className="px-3 py-2 text-slate-600 text-sm font-bold cursor-pointer">Batal</button>
+            {progres && <span className="text-xs font-mono text-slate-600">{progres}</span>}
+          </div>
+        </div>
+      )}
       <p className="text-[11px] text-slate-500">
-        Berkas .json.gz dapat dibuka dengan 7-Zip/WinRAR. Cadangan ini jaring pengaman bila data Supabase rusak atau terhapus; pemulihannya dilakukan dengan bantuan pengembang. Untuk perlindungan ekstra, tetap unduh cadangan manual ke flashdisk setiap akhir semester.
+        Berkas .json.gz dapat dibuka dengan 7-Zip/WinRAR. Cadangan ini jaring pengaman bila data Supabase rusak atau terhapus; gunakan tombol Pulihkan bila data Supabase rusak atau terhapus. Untuk perlindungan ekstra, tetap unduh cadangan manual ke flashdisk setiap akhir semester.
       </p>
     </div>
   );

@@ -26,3 +26,18 @@ describe('retensi & keamanan', () => {
     expect(namaBerkasCadangan(new Date(), true)).toMatch(/^cadangan_\d{4}-\d{2}-\d{2}_\d{4}\.json\.gz$/);
   });
 });
+
+import { bagiBatch, validasiIsiCadangan } from '../cadanganOtomatis';
+
+describe('pemulihan', () => {
+  it('membagi baris ke batch', () => {
+    expect(bagiBatch([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
+    expect(bagiBatch([], 500)).toEqual([]);
+  });
+  it('menolak berkas yang bukan cadangan valid', () => {
+    expect(validasiIsiCadangan(null)).not.toBeNull();
+    expect(validasiIsiCadangan({ versi: 2, data: {} })).not.toBeNull();
+    expect(validasiIsiCadangan({ versi: 1, data: { siswa: [] } })).not.toBeNull();
+    expect(validasiIsiCadangan({ versi: 1, data: { siswa: [], kelas: [] } })).toBeNull();
+  });
+});
