@@ -49,6 +49,7 @@ import {
 } from '../lib/rekapKehadiran';
 import { RekapMakanSiangModal } from './RekapMakanSiang';
 import { LaporanTanpaKartu } from './LaporanTanpaKartu';
+import { RekapTindakan } from './RekapTindakan';
 
 type FilterMode = 'harian' | 'bulanan' | 'rentang';
 
@@ -111,7 +112,7 @@ export const RekapDashboard: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Active view tab
-  const [activeTab, setActiveTab] = useState<'rekap' | 'matriks' | 'siswa' | 'analisis' | 'tanpa_kartu' | 'wa_mingguan' | 'log_wa'>('rekap');
+  const [activeTab, setActiveTab] = useState<'rekap' | 'matriks' | 'siswa' | 'analisis' | 'tindakan' | 'tanpa_kartu' | 'wa_mingguan' | 'log_wa'>('rekap');
   const [weeklySending, setWeeklySending] = useState(false);
   const [weeklyMessage, setWeeklyMessage] = useState('');
   const [selectedStudentId, setSelectedStudentId] = useState<string>(siswaList[0]?.id || '');
@@ -968,6 +969,19 @@ export const RekapDashboard: React.FC = () => {
         </button>
 
         <button
+          id="tab-rekap-tindakan"
+          onClick={() => setActiveTab('tindakan')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+            activeTab === 'tindakan'
+              ? 'bg-rose-600 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <AlertCircle className="w-3.5 h-3.5" />
+          <span>Rekap Tindakan</span>
+        </button>
+
+        <button
           id="tab-tanpa-kartu"
           onClick={() => setActiveTab('tanpa_kartu')}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
@@ -1735,6 +1749,8 @@ export const RekapDashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {activeTab === 'tindakan' && <RekapTindakan />}
 
       {/* TAB CONTENT: REKAP WHATSAPP MINGGUAN */}
       {activeTab === 'tanpa_kartu' && (
