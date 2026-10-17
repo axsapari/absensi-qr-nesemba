@@ -168,7 +168,8 @@ interface AppContextType {
 
   // Backup & Restore
   localSnapshots: LocalSnapshot[];
-  getBackupPayload: () => AppBackupPayload;
+  /** sertakanRahasia=false (bawaan): token WhatsApp & sandi kios dikosongkan agar aman dibagikan/disimpan. */
+  getBackupPayload: (sertakanRahasia?: boolean) => AppBackupPayload;
   restoreBackupData: (
     payload: AppBackupPayload,
     mode: 'replace' | 'merge'
@@ -3001,9 +3002,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Backup & Restore Engine
-  const getBackupPayload = (): AppBackupPayload => {
+  const getBackupPayload = (sertakanRahasia = false): AppBackupPayload => {
     return {
-      version: '2.0',
+      version: '2.1',
       timestamp: new Date().toISOString(),
       app: 'Sistem Presensi QR/NISN & WhatsApp Gateway',
       sekolah: 'SMP NEGERI 9 BANJAR',
@@ -3013,6 +3014,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         total_absensi: absensiList.length,
         total_log_wa: logNotifikasiList.length,
         total_hari_khusus: customSchoolDays.length,
+        total_catatan_kehadiran: catatanKehadiranList.length,
       },
       data: {
         siswa: siswaList,
@@ -3021,9 +3023,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         log_notifikasi: logNotifikasiList,
         log_rekap_wa_mingguan: logRekapWAMingguanList,
         pengaturan_jam: pengaturanJam,
-        wa_config: waConfig,
-        supabase_config: supabaseConfig,
+        wa_config: sertakanRahasia ? waConfig : { ...waConfig, apiToken: '' },
+        supabase_config: sertakanRahasia ? supabaseConfig : { ...supabaseConfig, kioskPassword: undefined },
         hari_khusus: customSchoolDays,
+        catatan_kehadiran: catatanKehadiranList,
       },
     };
   };
@@ -3056,8 +3059,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setLogRekapWAMingguanList(incomingWeeklyLog);
         if (incomingHariKhusus) setCustomSchoolDays(incomingHariKhusus);
         if (payload.data.pengaturan_jam) setPengaturanJam(payload.data.pengaturan_jam);
-        if (payload.data.wa_config) setWaConfig(payload.data.wa_config);
-        if (payload.data.supabase_config) setSupabaseConfig(payload.data.supabase_config);
+        if (Array.isArray(payload.data.catatan_kehadiran)) setCatatanKehadiranList(payload.data.catatan_kehadiran);
+        // Cadangan baru tidak memuat token/sandi; pertahankan yang sudah ada di perangkat ini.
+        if (payload.data.wa_config) setWaConfig({ ...payload.data.wa_config, apiToken: payload.data.wa_config.apiToken || waConfig.apiToken });
+        if (payload.data.supabase_config) setSupabaseConfig({ ...payload.data.supabase_config, kioskPassword: payload.data.supabase_config.kioskPassword || supabaseConfig.kioskPassword });
 
         return {
           success: true,
@@ -3106,6 +3111,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
         setAbsensiList(mergedAbsensi);
 
+        if (Array.isArray(payload.data.catatan_kehadiran)) {
+          const kunci = (c: CatatanKehadiran) => `${c.siswa_id}|${c.tanggal}`;
+          const ada = new Set(catatanKehadiranList.map(kunci));
+          setCatatanKehadiranList([...catatanKehadiranList, ...payload.data.catatan_kehadiran.filter((c) => !ada.has(kunci(c)))]);
+        }
+
         const existingWeeklyIds = new Set(logRekapWAMingguanList.map((l) => l.id));
         setLogRekapWAMingguanList([...logRekapWAMingguanList, ...incomingWeeklyLog.filter((l) => !existingWeeklyIds.has(l.id))]);
 
@@ -3152,7 +3163,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const createLocalSnapshot = (label?: string) => {
-    const payload = getBackupPayload();
+    const payload = getBackupPayload(true); // snapshot hanya di browser ini, jadi lengkap agar pemulihan utuh
     const newSnapshot: LocalSnapshot = {
       id: 'snap-' + Date.now(),
       timestamp: new Date().toLocaleString('id-ID', {

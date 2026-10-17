@@ -135,6 +135,7 @@ export interface AppBackupPayload {
     total_absensi: number;
     total_log_wa: number;
     total_hari_khusus?: number;
+    total_catatan_kehadiran?: number;
   };
   data: {
     siswa: Siswa[];
@@ -146,6 +147,7 @@ export interface AppBackupPayload {
     wa_config: WAGatewayConfig;
     supabase_config?: SupabaseConfig;
     hari_khusus?: HariKhusus[];
+    catatan_kehadiran?: CatatanKehadiran[]; // izin/sakit/bolos/alpa/tidak bawa kartu (sejak cadangan v2.1)
   };
 }
 
