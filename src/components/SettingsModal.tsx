@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { SUPABASE_SQL_SCHEMA, getSupabaseClient } from '../lib/supabase';
 import { DEFAULT_WA_CONFIG, formatPhoneNumber } from '../lib/whatsapp';
+import { KalenderAkademik } from './KalenderAkademik';
 import {
   Clock,
   MessageSquare,
@@ -319,6 +320,7 @@ export const SettingsModal: React.FC = () => {
       {/* TAB: JADWAL KHUSUS */}
       {activeTab === 'khusus' && (
         <div className="space-y-6">
+          <KalenderAkademik />
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
             <h3 className="text-lg font-black text-slate-900 flex items-center gap-2"><CalendarDays className="w-5 h-5 text-emerald-600" /> Jadwal Khusus Per Tanggal</h3>
             <p className="text-xs text-slate-500 mt-1">Atur hari pulang cepat untuk event, rapat guru, atau kegiatan sekolah. Pengaturan hanya berlaku pada tanggal yang dipilih dan otomatis tidak berlaku pada tanggal lain.</p>

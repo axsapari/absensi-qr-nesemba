@@ -5,6 +5,7 @@ import { useApp, DataSemester } from '../context/AppContext';
 import { getTodayDateString } from '../data/initialData';
 import { daftarSemester, Semester, semesterSudahBerakhir, tanggalDalam } from '../lib/semester';
 import { bangunJsonArsip, bangunWorkbook, hitungArsip, namaBerkasArsip } from '../lib/arsipSemester';
+import { bangunBarisRapor, bangunWorkbookRapor, namaBerkasRapor } from '../lib/rekapRapor';
 import { formatUkuran, safeSetItem, ukurPenyimpanan } from '../lib/storageUsage';
 
 const RIWAYAT_ARSIP_KEY = 'absensi_arsip_riwayat_v1';
@@ -86,6 +87,15 @@ export const ArsipSemester: React.FC = () => {
     XLSX.writeFile(wb, namaBerkasArsip(semester, 'xlsx'));
     setDiunduh((d) => ({ ...d, xlsx: true }));
     simpanCatatan(semester.id, { xlsx: new Date().toISOString() });
+  };
+
+  const unduhRapor = () => {
+    if (!data || !ringkasan) return;
+    const wb = bangunWorkbookRapor({
+      semester, sekolah: profilSekolah.nama, kelasList, hariEfektif: ringkasan.hariEfektif.length,
+      baris: bangunBarisRapor(ringkasan, siswaList),
+    });
+    XLSX.writeFile(wb, namaBerkasRapor(semester));
   };
 
   const bolehBersihkan = berakhir && !!data && data.sem.id === semester.id && data.hasil.sumber === 'supabase' && diunduh.json && diunduh.xlsx;
@@ -184,6 +194,9 @@ export const ArsipSemester: React.FC = () => {
               </button>
               <button type="button" onClick={unduhExcel} className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-bold rounded-xl flex items-center gap-2 cursor-pointer">
                 <FileSpreadsheet className="w-4 h-4" /> 2b. Unduh Excel {diunduh.xlsx && <CheckCircle2 className="w-4 h-4 text-emerald-300" />}
+              </button>
+              <button type="button" onClick={unduhRapor} className="px-4 py-2 bg-white border border-emerald-600 text-emerald-700 hover:bg-emerald-50 text-sm font-bold rounded-xl flex items-center gap-2 cursor-pointer" title="Sakit, Izin, Tanpa Keterangan per kelas untuk isian rapor">
+                <FileSpreadsheet className="w-4 h-4" /> Rekap untuk Rapor
               </button>
               <span className="text-[11px] text-slate-500">Simpan kedua berkas di tempat aman (flashdisk / Google Drive sekolah).</span>
             </div>

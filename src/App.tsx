@@ -13,6 +13,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { LoginPage } from './components/LoginPage';
 import { SyncNotificationToast } from './components/SyncNotificationToast';
 import { BootstrapSupabase } from './BootstrapSupabase';
+import { CadanganRunner } from './components/CadanganOtomatis';
 
 // Halaman yang WAJIB login untuk diakses. Layar scan (kiosk) sengaja dikecualikan
 // karena itu memang layar publik yang dipakai penjaga gerbang tanpa perlu login tiap pagi.
@@ -72,6 +73,7 @@ function MainApp() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 font-sans flex flex-col">
+      <CadanganRunner />
       {/* 1. Left Sidebar Navigation (Desktop Fixed & Mobile Drawer) */}
       <Sidebar
         currentView={currentView}

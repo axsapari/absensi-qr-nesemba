@@ -212,6 +212,8 @@ interface AppContextType {
   addCustomSchoolDay: (item: Omit<HariKhusus, 'id' | 'sumber'>) => { success: boolean; message: string };
   updateCustomSchoolDay: (id: string, update: Partial<HariKhusus>) => { success: boolean; message: string };
   deleteCustomSchoolDay: (id: string) => { success: boolean; message: string };
+  /** Terapkan banyak hari khusus sekaligus (tambah/timpa per tanggal) dan/atau hapus beberapa id, dalam satu simpanan. */
+  terapkanHariKhususBanyak: (tambah: Omit<HariKhusus, 'id' | 'sumber'>[], hapusIds?: string[]) => { success: boolean; message: string };
   addNationalHoliday: (item: Omit<HariKhusus, 'id' | 'sumber'>) => { success: boolean; message: string };
   deleteNationalHoliday: (id: string) => { success: boolean; message: string };
   resetNationalHolidaysToDefault: () => void;
@@ -3494,6 +3496,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const terapkanHariKhususBanyak = (tambah: Omit<HariKhusus, 'id' | 'sumber'>[], hapusIds: string[] = []): { success: boolean; message: string } => {
+    const hapus = new Set(hapusIds);
+    const peta = new Map<string, HariKhusus>();
+    customSchoolDays.filter((d) => !hapus.has(d.id)).forEach((d) => peta.set(d.tanggal, d));
+    let n = 0;
+    for (const item of tambah) {
+      const tanggal = (item.tanggal || '').trim();
+      if (!tanggal || !item.nama.trim()) continue;
+      peta.set(tanggal, {
+        ...item,
+        tanggal,
+        id: 'custom-' + tanggal + '-' + Math.random().toString(36).substring(2, 6),
+        sumber: 'sekolah',
+        nama: item.nama.trim(),
+        keterangan: item.keterangan?.trim() || undefined,
+        jamPulangKustom: item.kategori === 'pulang_cepat' ? (item.jamPulangKustom || '10:30') : undefined,
+      });
+      n++;
+    }
+    const sorted = Array.from(peta.values()).sort((a, b) => a.tanggal.localeCompare(b.tanggal));
+    setCustomSchoolDays(sorted);
+    updatePengaturanJam({ hari_khusus: sorted });
+    return { success: true, message: `${n} tanggal ditandai, ${hapus.size} penanda dihapus.` };
+  };
+
   const updateCustomSchoolDay = (id: string, update: Partial<HariKhusus>): { success: boolean; message: string } => {
     const idx = customSchoolDays.findIndex((d) => d.id === id);
     if (idx === -1) {
@@ -3684,6 +3711,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         getDateHariInfo,
         getPeriodMetrics,
         addCustomSchoolDay,
+        terapkanHariKhususBanyak,
         updateCustomSchoolDay,
         deleteCustomSchoolDay,
         addNationalHoliday,
