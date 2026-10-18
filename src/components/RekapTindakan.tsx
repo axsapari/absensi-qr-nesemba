@@ -141,7 +141,12 @@ export const RekapTindakan: React.FC = () => {
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
           {[['Siswa', metrik.length, 'text-slate-900'], ['Hari efektif', tanggalEfektif.length, 'text-slate-900'], ['Rata-rata hadir', `${rataHadir}%`, 'text-emerald-700'], ['Perlu tindakan', `${perluTindakan.length} (${mendesak} mendesak)`, 'text-rose-700']].map(([k, v, c]) => (
-            <div key={String(k)} className="bg-slate-50 border border-slate-200 rounded-xl py-2.5">
+            <div
+              key={String(k)}
+              onClick={k === 'Perlu tindakan' ? () => document.getElementById('perlu-tindakan')?.scrollIntoView({ behavior: 'smooth' }) : undefined}
+              title={k === 'Perlu tindakan' ? 'Klik untuk ke daftar Perlu Tindakan Segera di bagian bawah' : undefined}
+              className={`bg-slate-50 border border-slate-200 rounded-xl py-2.5 ${k === 'Perlu tindakan' ? 'cursor-pointer hover:bg-rose-50' : ''}`}
+            >
               <div className={`text-lg font-black ${c}`}>{v}</div>
               <div className="text-[11px] text-slate-500 font-semibold">{k}</div>
             </div>
@@ -151,52 +156,6 @@ export const RekapTindakan: React.FC = () => {
           <div className="text-xs font-semibold bg-amber-50 border border-amber-200 text-amber-900 rounded-xl px-3 py-2">
             Tidak ada hari efektif dengan data pada periode ini (mungkin akhir pekan, libur, atau belum ada scan).
           </div>
-        )}
-      </div>
-
-      {/* PERLU TINDAKAN */}
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-          <span className="font-black text-slate-800">Perlu Tindakan Segera ({perluTindakan.length})</span>
-          <span className="text-[11px] text-slate-500">
-            Ambang: alpa ≥{AMBANG.alfaWaspada} waspada, ≥{AMBANG.alfaMendesak} mendesak · tidak hadir berturut ≥{AMBANG.streakMendesak} hari · bolos ≥1 · terlambat ≥{AMBANG.terlambatWaspada}x · tanpa kartu ≥{AMBANG.tanpaKartuInfo}x · tidak scan pulang ≥{AMBANG.tidakPulangInfo} hari
-          </span>
-        </div>
-        {perluTindakan.length === 0 ? (
-          <div className="p-6 text-sm text-slate-400">Tidak ada siswa yang memenuhi ambang tindakan pada periode ini. 🎉</div>
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {tampil.map(({ metrik: m, saran, tingkat }) => (
-              <div key={m.siswa.id} className="p-4 flex flex-col md:flex-row md:items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${WARNA_TINGKAT[tingkat]}`}>{LABEL_TINGKAT[tingkat]}</span>
-                    <span className="font-bold text-slate-900">{m.siswa.nama}</span>
-                    <span className="text-xs text-slate-500">{m.kelas?.nama_kelas ?? '-'} · {m.persentase}% hadir</span>
-                  </div>
-                  <div className="text-[11px] text-slate-500 mt-1">
-                    Terlambat {m.totalTerlambat} · Tanpa kartu {m.totalTanpaKartu} · Tidak scan pulang {m.totalTidakPulang} · Izin {m.totalIzin} · Sakit {m.totalSakit} · Alpa {m.totalAlfa} · Bolos {m.totalBolos}
-                  </div>
-                  <ul className="mt-1.5 space-y-0.5">
-                    {saran.map((s, i) => <li key={i} className="text-xs text-slate-700">• {s.teks}</li>)}
-                  </ul>
-                </div>
-                {m.siswa.nomor_wa_ortu && (
-                  <a
-                    href={tautanWaWali(m, label, formatPhoneNumber(m.siswa.nomor_wa_ortu))} target="_blank" rel="noopener noreferrer"
-                    className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-200"
-                  >
-                    <MessageCircle className="w-4 h-4" /> WA Wali
-                  </a>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-        {perluTindakan.length > 15 && (
-          <button type="button" onClick={() => setBukaSemua(!bukaSemua)} className="w-full py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 border-t border-slate-100 cursor-pointer">
-            {bukaSemua ? 'Ringkas daftar' : `Tampilkan semua (${perluTindakan.length})`}
-          </button>
         )}
       </div>
 
@@ -277,6 +236,52 @@ export const RekapTindakan: React.FC = () => {
             </table>
           </div>
         </div>
+      </div>
+
+      {/* PERLU TINDAKAN */}
+      <div id="perlu-tindakan" className="bg-white rounded-2xl border border-slate-200 overflow-hidden scroll-mt-4">
+        <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+          <span className="font-black text-slate-800">Perlu Tindakan Segera ({perluTindakan.length})</span>
+          <span className="text-[11px] text-slate-500">
+            Ambang: alpa ≥{AMBANG.alfaWaspada} waspada, ≥{AMBANG.alfaMendesak} mendesak · tidak hadir berturut ≥{AMBANG.streakMendesak} hari · bolos ≥1 · terlambat ≥{AMBANG.terlambatWaspada}x · tanpa kartu ≥{AMBANG.tanpaKartuInfo}x · tidak scan pulang ≥{AMBANG.tidakPulangInfo} hari
+          </span>
+        </div>
+        {perluTindakan.length === 0 ? (
+          <div className="p-6 text-sm text-slate-400">Tidak ada siswa yang memenuhi ambang tindakan pada periode ini. 🎉</div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {tampil.map(({ metrik: m, saran, tingkat }) => (
+              <div key={m.siswa.id} className="p-4 flex flex-col md:flex-row md:items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full border ${WARNA_TINGKAT[tingkat]}`}>{LABEL_TINGKAT[tingkat]}</span>
+                    <span className="font-bold text-slate-900">{m.siswa.nama}</span>
+                    <span className="text-xs text-slate-500">{m.kelas?.nama_kelas ?? '-'} · {m.persentase}% hadir</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-1">
+                    Terlambat {m.totalTerlambat} · Tanpa kartu {m.totalTanpaKartu} · Tidak scan pulang {m.totalTidakPulang} · Izin {m.totalIzin} · Sakit {m.totalSakit} · Alpa {m.totalAlfa} · Bolos {m.totalBolos}
+                  </div>
+                  <ul className="mt-1.5 space-y-0.5">
+                    {saran.map((s, i) => <li key={i} className="text-xs text-slate-700">• {s.teks}</li>)}
+                  </ul>
+                </div>
+                {m.siswa.nomor_wa_ortu && (
+                  <a
+                    href={tautanWaWali(m, label, formatPhoneNumber(m.siswa.nomor_wa_ortu))} target="_blank" rel="noopener noreferrer"
+                    className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-200"
+                  >
+                    <MessageCircle className="w-4 h-4" /> WA Wali
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {perluTindakan.length > 15 && (
+          <button type="button" onClick={() => setBukaSemua(!bukaSemua)} className="w-full py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 border-t border-slate-100 cursor-pointer">
+            {bukaSemua ? 'Ringkas daftar' : `Tampilkan semua (${perluTindakan.length})`}
+          </button>
+        )}
       </div>
     </div>
   );
