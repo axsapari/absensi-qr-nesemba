@@ -27,6 +27,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { getFotoSiswaUrl, getFotoPlaceholder } from '../lib/fotoHelper';
 import { nextFotoCandidate } from '../lib/fotoFallback';
+import { panaskanFotoSiswa } from '../lib/fotoPreload';
 import { KioskSyncIndicator } from './KioskSyncIndicator';
 
 export const ScanKiosk: React.FC = () => {
@@ -83,6 +84,17 @@ export const ScanKiosk: React.FC = () => {
       inputRef.current.focus();
     }
   };
+
+  // Pemanasan foto: muat foto semua siswa aktif ke cache browser sebelum ada yang scan, lalu ulangi
+  // tiap 45 menit (cache Supabase hanya 1 jam). Foto tampil cepat dan tidak bergantung sinyal saat scan.
+  useEffect(() => {
+    if (!supabaseConfig.url || siswaList.length === 0) return;
+    let batal = false;
+    const jalan = () => { if (navigator.onLine) void panaskanFotoSiswa(siswaList, supabaseConfig.url, { batalkan: () => batal }); };
+    const awal = window.setTimeout(jalan, 3000);
+    const ulang = window.setInterval(jalan, 45 * 60 * 1000);
+    return () => { batal = true; window.clearTimeout(awal); window.clearInterval(ulang); };
+  }, [siswaList.length, supabaseConfig.url]);
 
   useEffect(() => {
     ensureInputFocus();
@@ -344,6 +356,7 @@ export const ScanKiosk: React.FC = () => {
                 {/* Student Photo */}
                 <div className="relative">
                   <img
+                    key={lastScanResult.siswa?.id ?? 'tanpa-siswa'}
                     src={
                       lastScanResult.siswa
                         ? getFotoSiswaUrl(lastScanResult.siswa, supabaseConfig.url)
@@ -433,6 +446,7 @@ export const ScanKiosk: React.FC = () => {
                 {/* Student Photo */}
                 <div className="relative shrink-0">
                   <img
+                    key={lastScanResult.siswa?.id ?? 'tanpa-siswa'}
                     src={
                       lastScanResult.siswa
                         ? getFotoSiswaUrl(lastScanResult.siswa, supabaseConfig.url)

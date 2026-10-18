@@ -13,6 +13,13 @@ export const FOTO_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'JPG', 'JPEG', 'PN
 
 const EXT_RE = /\.(jpe?g|png|webp)(\?[^#]*)?(#.*)?$/i;
 
+/** URL yang sama dengan parameter anti-cache agar browser tidak memakai hasil gagal sebelumnya. */
+export function urlCobaUlang(url: string): string {
+  const [tanpaHash, hash = ''] = url.split('#');
+  const sambung = tanpaHash.includes('?') ? '&' : '?';
+  return `${tanpaHash}${sambung}coba=${Date.now()}${hash ? '#' + hash : ''}`;
+}
+
 /** Daftar URL alternatif (tanpa URL awal) untuk satu URL foto. Kosong bila bukan URL berekstensi gambar. */
 export function fotoAlternatives(url: string): string[] {
   const m = EXT_RE.exec(url);
@@ -31,6 +38,13 @@ export function fotoAlternatives(url: string): string[] {
 export function nextFotoCandidate(img: HTMLImageElement): boolean {
   const original = img.dataset.fotoAsal || img.src;
   if (!img.dataset.fotoAsal) img.dataset.fotoAsal = original;
+  // Gangguan jaringan sesaat sering terbaca sebagai "foto tidak ada". Coba ulang URL yang sama
+  // sekali (dengan penanda anti-cache) sebelum menjajal ekstensi lain / memasang placeholder.
+  if (!img.dataset.fotoUlang && /^https?:/i.test(original)) {
+    img.dataset.fotoUlang = '1';
+    img.src = urlCobaUlang(original);
+    return true;
+  }
   const alts = fotoAlternatives(original);
   const tried = Number(img.dataset.fotoCoba || '0');
   if (tried >= alts.length) return false;
