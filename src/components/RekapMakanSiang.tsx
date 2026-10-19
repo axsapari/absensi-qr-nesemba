@@ -136,7 +136,7 @@ export const RekapMakanSiangModal: React.FC<Props> = ({ onClose }) => {
         Bolos: k.bolos ?? 0,
         'Belum Scan': k.belumScan,
         'Tidak Bawa Kartu (hadir)': k.tanpaKartu,
-        'Porsi Makan Siang': k.porsi,
+        'Porsi MBG': k.porsi,
         'Belum Scan Dikurangi': snap.kurangiBelumScan ? 'Ya' : 'Tidak',
         'Disimpan Pukul': jamLabel(snap.disimpan_at),
         'Dicetak Pukul': jamLabel(snap.dicetak_at),
@@ -195,11 +195,12 @@ export const RekapMakanSiangModal: React.FC<Props> = ({ onClose }) => {
         <span>{labelPorsi}</span>
         <b>{data.porsi}</b>
       </div>
+      <div className="lunch-catatan">Jumlah ompreng kembali harus sama dengan jumlah porsi</div>
     </div>
   );
 
-  const kotakKelas = (r: RekapKelas) => renderKotak(r.kelasId, `KELAS ${r.namaKelas}`, r, 'PORSI MAKAN SIANG');
-  const kotakTotal = renderKotak('total', 'TOTAL SELURUH KELAS', grand, 'TOTAL PORSI', true);
+  const kotakKelas = (r: RekapKelas) => renderKotak(r.kelasId, `KELAS ${r.namaKelas}`, r, 'PORSI MBG');
+  const kotakTotal = renderKotak('total', 'TOTAL SELURUH KELAS', grand, 'TOTAL PORSI MBG', true);
 
   if (typeof document === 'undefined') return null;
 
@@ -249,8 +250,9 @@ export const RekapMakanSiangModal: React.FC<Props> = ({ onClose }) => {
         #print-lunch-modal .lunch-row b { text-align: right; }
         #print-lunch-modal .lunch-row-full { font-weight: 600; }
         #print-lunch-modal .lunch-row-muted { color: #444; font-style: italic; }
-        #print-lunch-modal .lunch-porsi { display: flex; justify-content: space-between; align-items: center; border: 0.5mm solid #000; padding: 0.25em 0.7em; font-weight: 800; font-size: 0.95em; }
-        #print-lunch-modal .lunch-porsi b { font-size: 2em; line-height: 1; }
+        #print-lunch-modal .lunch-porsi { display: flex; justify-content: space-between; align-items: center; border: 0.5mm solid #000; padding: 0.25em 0.7em; font-weight: 800; font-size: 1.3em; }
+        #print-lunch-modal .lunch-porsi b { font-size: 2.6em; line-height: 1; }
+        #print-lunch-modal .lunch-catatan { font-style: italic; font-size: 0.7em; text-align: center; margin-top: 0.3em; line-height: 1.15; }
 
         /* ---------- Cetak: F4 portrait, hanya lembar potong ---------- */
         @page { size: 215.9mm 330.2mm; margin: 7mm; }
@@ -280,7 +282,7 @@ export const RekapMakanSiangModal: React.FC<Props> = ({ onClose }) => {
         <div className="lunch-toolbar px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
           <div className="flex items-center gap-2 font-bold text-slate-800 text-sm">
             <Utensils className="w-4 h-4 text-amber-600" />
-            <span>Rekap Porsi Makan Siang (Cetak F4 &amp; Gunting)</span>
+            <span>Rekap Porsi MBG (Cetak F4 &amp; Gunting)</span>
           </div>
           <div className="flex items-center gap-2">
             <button
