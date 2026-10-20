@@ -183,3 +183,21 @@
     }
   }
 }
+
+/* Dropdown (select) di tema gelap: daftar pilihan dibuat browser dan tidak ikut
+   warna tulisan select, jadi latar dan warna teksnya ditetapkan eksplisit. */
+@media screen {
+  html.dark select { color-scheme: dark; }
+  html.dark select option,
+  html.dark select optgroup {
+    background-color: #111a2c;
+    color: #e2e8f0;
+  }
+  html.dark select option:disabled {
+    color: #64748b;
+  }
+  html.dark select option:checked {
+    background-color: #2563eb;
+    color: #fff;
+  }
+}
