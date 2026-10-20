@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./dark-theme.css";
 
 /* Cetak laporan resmi: hanya kertas laporan yang dicetak, tanpa modal/frame/pratinjau. */
 @page {

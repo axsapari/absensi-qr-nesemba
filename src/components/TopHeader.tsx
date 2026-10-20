@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { SyncStatusBadge } from './SyncStatusBadge';
 import { SchoolLogo } from './SchoolLogos';
+import { ThemeToggle } from './ThemeToggle';
 import { AppView } from './Sidebar';
 import {
   Menu,
@@ -108,6 +109,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         <div className="flex items-center gap-2 shrink-0">
           <SyncStatusBadge compact={false} className="hidden lg:flex" />
           <SyncStatusBadge compact={true} className="flex lg:hidden" />
+          <ThemeToggle />
 
           {currentUser ? (
             <button
