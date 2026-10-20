@@ -166,3 +166,20 @@
     padding-top: 2mm !important;
   }
 }
+
+/* Garis tabel/pembatas tanpa warna eksplisit: Tailwind v4 memakai currentColor
+   (putih di tema gelap, hitam di tema terang) sehingga terlalu mencolok.
+   Dibuat abu-abu lembut. Kelas warna eksplisit (border-slate-200, dst.) tetap menang
+   karena berada di layer utilities. Kertas cetak dikecualikan. */
+@layer base {
+  @media screen {
+    :where(*:not(:is(.printable-report, .card-wrapper, .lunch-sheet, .paper-light) *, .printable-report, .card-wrapper, .lunch-sheet, .paper-light)),
+    ::before, ::after {
+      border-color: #d7dde6;
+    }
+    html.dark :where(*:not(:is(.printable-report, .card-wrapper, .lunch-sheet, .paper-light) *, .printable-report, .card-wrapper, .lunch-sheet, .paper-light)),
+    html.dark ::before, html.dark ::after {
+      border-color: #2f3b52;
+    }
+  }
+}

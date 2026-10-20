@@ -9,7 +9,7 @@ COL='slate|gray|zinc|neutral|stone|emerald|green|teal|cyan|sky|blue|indigo|viole
 SL={'50':'#0b1220','100':'#172033','200':'#26324a','300':'#3a475f'}
 BG_SLATE={'50':'#0b1220','100':'#172033','200':'#26324a','300':'#334155'}
 TXT_SLATE={'900':'#f1f5f9','800':'#e8edf4','700':'#d5dde9','600':'#b6c2d4','500':'#94a3b8'}
-BR_SLATE={'100':'#1e293b','200':'#2b3a52','300':'#3b4b66'}
+BR_SLATE={'100':'#2a364d','200':'#2f3b52','300':'#3b4b66'}
 PAPER=':not(:is(.printable-report,.card-wrapper,.lunch-sheet,.paper-light) *):not(:is(.printable-report,.card-wrapper,.lunch-sheet,.paper-light))'
 def esc(t): return re.sub(r'([:/\[\]\.])',r'\\\1',t)
 rules=[]
@@ -38,8 +38,9 @@ for t in sorted(toks):
             h=BG_SLATE[step].lstrip('#'); r,g,b=[int(h[i:i+2],16) for i in(0,2,4)]
             add(t,f'background-color:rgba({r},{g},{b},{a})!important')
         elif kind=='text' and step in TXT_SLATE: add(t,f'color:{TXT_SLATE[step]}!important')
-        elif kind in('border','divide') and step in BR_SLATE:
-            if kind=='border': add(t,f'border-color:{BR_SLATE[step]}!important')
+        elif kind=='border' and step in BR_SLATE: add(t,f'border-color:{BR_SLATE[step]}!important')
+        elif kind=='divide' and step in BR_SLATE:
+            rules.append(f'html.dark .{esc(t)}>:not(:last-child){PAPER}{{border-color:{BR_SLATE[step]}!important}}')
         continue
     # warna bertinta
     if kind=='bg' and step_i in(50,100,200):
