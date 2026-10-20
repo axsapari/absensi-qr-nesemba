@@ -43,6 +43,7 @@ import { sortKelas, sortSiswaByKelas } from '../lib/classUtils';
 import {
   siswaAktif,
   hitungSiswa,
+  statusHari,
   hitungTanggalEfektif,
   rentangBulan,
   type StatusHari,
@@ -294,11 +295,22 @@ export const RekapDashboard: React.FC = () => {
       const tepatWaktuCount = masukScans.filter((a) => a.status === 'tepat_waktu').length;
       const terlambatCount = masukScans.filter((a) => a.status === 'terlambat').length;
       const pulangCount = classAbsensi.filter((a) => a.jenis === 'pulang').length;
-      const hadirIds = new Set(masukScans.map((a) => a.siswa_id));
+      // Status per siswa memakai aturan prioritas yang sama dengan rekap periodik
+      const masukPerSiswa = new Map<string, (typeof masukScans)[number]>(masukScans.map((a) => [a.siswa_id, a]));
+      const catatanPerSiswa = new Map<string, CatatanKehadiran>();
       catatanKehadiranList.forEach((c) => {
-        if (c.tanggal === selectedDate && c.status === 'tidak_bawa_kartu' && studentIdsInClass.has(c.siswa_id)) hadirIds.add(c.siswa_id);
+        if (c.tanggal === selectedDate && studentIdsInClass.has(c.siswa_id)) catatanPerSiswa.set(c.siswa_id, c);
       });
-      const hadirTotal = hadirIds.size;
+      let hadirTotal = 0, tanpaKartuCount = 0, sakitCount = 0, izinCount = 0, alpaCount = 0, bolosCount = 0;
+      targetStudents.forEach((st) => {
+        const sh = statusHari(masukPerSiswa.get(st.id), catatanPerSiswa.get(st.id));
+        if (sh === 'tepat_waktu' || sh === 'terlambat') hadirTotal++;
+        else if (sh === 'tidak_bawa_kartu') { hadirTotal++; tanpaKartuCount++; }
+        else if (sh === 'sakit') sakitCount++;
+        else if (sh === 'izin') izinCount++;
+        else if (sh === 'alpa') alpaCount++;
+        else if (sh === 'bolos') bolosCount++;
+      });
       const belumAbsenCount = Math.max(0, totalSiswa - hadirTotal);
       const kehadiranPercentage = totalSiswa > 0 ? Math.round((hadirTotal / totalSiswa) * 100) : 0;
 
@@ -310,6 +322,11 @@ export const RekapDashboard: React.FC = () => {
         pulangCount,
         belumAbsenCount,
         kehadiranPercentage,
+        tanpaKartuCount,
+        sakitCount,
+        izinCount,
+        alpaCount,
+        bolosCount,
         totalHariSekolah: 1,
       };
     } else {
@@ -320,12 +337,18 @@ export const RekapDashboard: React.FC = () => {
       let totalTepatWaktuAccum = 0;
       let totalTerlambatAccum = 0;
       let totalPulangAccum = 0;
+      let tanpaKartuAccum = 0, sakitAccum = 0, izinAccum = 0, alpaAccum = 0, bolosAccum = 0;
 
       periodicStudentMetrics.forEach((m) => {
         totalHadirAccum += m.totalHadir;
         totalTepatWaktuAccum += m.totalTepatWaktu;
         totalTerlambatAccum += m.totalTerlambat;
         totalPulangAccum += m.totalPulang;
+        tanpaKartuAccum += m.totalTanpaKartu;
+        sakitAccum += m.totalSakit;
+        izinAccum += m.totalIzin;
+        alpaAccum += m.totalAlfa;
+        bolosAccum += m.totalBolos;
       });
 
       const avgPercentage =
@@ -339,6 +362,11 @@ export const RekapDashboard: React.FC = () => {
         pulangCount: totalPulangAccum,
         belumAbsenCount: Math.max(0, totalPossibleAttendances - totalHadirAccum),
         kehadiranPercentage: avgPercentage,
+        tanpaKartuCount: tanpaKartuAccum,
+        sakitCount: sakitAccum,
+        izinCount: izinAccum,
+        alpaCount: alpaAccum,
+        bolosCount: bolosAccum,
         totalHariSekolah: effectiveDays,
       };
     }
@@ -906,10 +934,29 @@ export const RekapDashboard: React.FC = () => {
           <div className="text-2xl md:text-3xl font-black text-purple-700">{periodKpi.kehadiranPercentage}%</div>
           <div className="text-xs text-purple-600/80 mt-1">
             {filterMode === 'harian'
-              ? `${periodKpi.hadirTotal} hadir / ${periodKpi.belumAbsenCount} belum`
-              : `${periodKpi.totalHariSekolah} hari efektif belajar`}
+              ? `${periodKpi.hadirTotal} hadir (termasuk tanpa kartu) / ${periodKpi.belumAbsenCount} belum`
+              : `${periodKpi.totalHariSekolah} hari efektif • termasuk tanpa kartu`}
           </div>
         </div>
+      </div>
+
+      {/* RINCIAN KETIDAKHADIRAN & TANPA KARTU */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        {[
+          { label: 'Tidak Bawa Kartu', n: periodKpi.tanpaKartuCount, cls: 'border-sky-200 bg-sky-50/30 text-sky-700', ket: 'Dihitung hadir', Icon: CreditCard },
+          { label: 'Sakit', n: periodKpi.sakitCount, cls: 'border-rose-200 bg-rose-50/30 text-rose-700', ket: 'Tidak masuk (sakit)', Icon: AlertCircle },
+          { label: 'Izin', n: periodKpi.izinCount, cls: 'border-indigo-200 bg-indigo-50/30 text-indigo-700', ket: 'Tidak masuk (izin)', Icon: ClipboardList },
+          { label: 'Alpa', n: periodKpi.alpaCount, cls: 'border-red-200 bg-red-50/30 text-red-700', ket: filterMode === 'harian' ? 'Alpa tercatat' : 'Alpa + tanpa keterangan', Icon: X },
+        ].map(({ label, n, cls, ket, Icon }) => (
+          <div key={label} className={`p-4 md:p-5 rounded-2xl border shadow-xs ${cls}`}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold uppercase tracking-wider">{label}</span>
+              <Icon className="w-5 h-5 opacity-70" />
+            </div>
+            <div className="text-2xl md:text-3xl font-black">{n}</div>
+            <div className="text-xs opacity-80 mt-1">{filterMode === 'harian' ? 'siswa' : 'kejadian (siswa-hari)'} &bull; {ket}</div>
+          </div>
+        ))}
       </div>
 
       {/* NAVIGATION SUB-TABS */}
