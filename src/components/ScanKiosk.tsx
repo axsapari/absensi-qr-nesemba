@@ -29,26 +29,27 @@ import { getFotoSiswaUrl, getFotoPlaceholder } from '../lib/fotoHelper';
 import { nextFotoCandidate } from '../lib/fotoFallback';
 import { panaskanFotoSiswa } from '../lib/fotoPreload';
 import { KioskSyncIndicator } from './KioskSyncIndicator';
+import { CountdownPulang } from './CountdownPulang';
+import { useWakeLock } from '../lib/useWakeLock';
 
 export const ScanKiosk: React.FC = () => {
   const {
     processScanNisn,
     lastScanResult,
     clearLastScanResult,
-    recentScans,
     currentActiveTimeStr,
     currentActiveDateStr,
     pengaturanJam,
     siswaList,
     kelasList,
-    simulatedTime,
-    setSimulatedTime,
+    todayHariInfo,
     effectiveOnline,
     pendingSyncCount,
     supabaseConfig,
     kioskAuthStatus,
   } = useApp();
 
+  const wakeLock = useWakeLock();
   const [inputVal, setInputVal] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   // Semua input dari scanner USB masuk ke antrean yang sama. Ini mencegah scan kedua hilang
@@ -74,7 +75,6 @@ export const ScanKiosk: React.FC = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showManualInput, setShowManualInput] = useState(false);
   const [manualCode, setManualCode] = useState('');
-  const [testStudentId, setTestStudentId] = useState('');
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -167,11 +167,8 @@ export const ScanKiosk: React.FC = () => {
   const isFridayToday = currentDayOfWeek === 5;
   const isWeekend = currentDayOfWeek === 0 || currentDayOfWeek === 6;
 
-  const activeBatasPulangTime = isMondayToday && pengaturanJam.batas_jam_pulang_senin
-    ? pengaturanJam.batas_jam_pulang_senin
-    : isFridayToday && pengaturanJam.batas_jam_pulang_jumat
-    ? pengaturanJam.batas_jam_pulang_jumat
-    : (pengaturanJam.batas_jam_pulang || '14:15');
+  // Sumber yang sama dengan logika scan (termasuk hari pulang cepat / jadwal khusus)
+  const activeBatasPulangTime = (todayHariInfo.jamPulangEfektif || pengaturanJam.batas_jam_pulang || '14:15').slice(0, 5);
 
   const batasPulang = activeBatasPulangTime + ':00';
   const batasTepatWaktu = (pengaturanJam.batas_tepat_waktu || '07:15') + ':00';
@@ -263,20 +260,14 @@ export const ScanKiosk: React.FC = () => {
 
         {/* Live Clock & Quick Controls */}
         <div className="flex items-center gap-3">
-          {/* Simulation indicator */}
-          {simulatedTime && (
-            <div className="bg-purple-950/80 border border-purple-800/80 text-purple-300 text-xs px-3 py-1.5 rounded-lg flex items-center gap-2">
-              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-              <span>Simulasi Jam: <strong>{simulatedTime}</strong></span>
-              <button
-                id="reset-sim-time-btn"
-                onClick={() => setSimulatedTime(null)}
-                className="text-purple-300 hover:text-white underline text-[11px] ml-1 cursor-pointer"
-              >
-                Reset
-              </button>
+          {/* Jam pulang hari ini */}
+          <div className="bg-blue-950/60 border border-blue-800/70 px-4 py-2 rounded-xl text-right">
+            <div className="text-[10px] md:text-xs font-semibold uppercase tracking-wider text-blue-300/90">Jam pulang hari ini</div>
+            <div className="text-2xl md:text-3xl font-mono font-black text-blue-300 leading-tight">
+              {todayHariInfo.isHariEfektif ? activeBatasPulangTime : '--:--'}
             </div>
-          )}
+            {todayHariInfo.isPulangCepat && <div className="text-[10px] font-bold text-amber-300">Pulang cepat</div>}
+          </div>
 
           {/* Big Digital Clock */}
           <div className="bg-slate-900/90 border border-slate-800 px-5 py-2 rounded-xl text-right">
@@ -287,6 +278,13 @@ export const ScanKiosk: React.FC = () => {
               {currentActiveDateStr}
             </div>
           </div>
+
+          <span
+            title={wakeLock === 'aktif' ? 'Layar dan komputer ditahan agar tidak sleep selama halaman ini terbuka' : wakeLock === 'tidak_didukung' ? 'Browser ini tidak mendukung penahan sleep. Atur sleep komputer secara manual.' : 'Penahan sleep belum aktif (butuh tab terlihat dan HTTPS)'}
+            className={`hidden 2xl:inline-flex whitespace-nowrap text-[11px] font-semibold px-2 py-1 rounded-lg border ${wakeLock === 'aktif' ? 'text-emerald-300 border-emerald-800 bg-emerald-950/50' : 'text-amber-300 border-amber-800 bg-amber-950/40'}`}
+          >
+            {wakeLock === 'aktif' ? 'Anti-sleep aktif' : 'Anti-sleep mati'}
+          </span>
 
           {/* Sound & Screen Controls */}
           <button
@@ -308,6 +306,15 @@ export const ScanKiosk: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* BAR HITUNG MUNDUR menuju scan pulang */}
+      <CountdownPulang
+        sekarang={currentActiveTimeStr}
+        mulai={(pengaturanJam.jam_buka_pos || '06:00').slice(0, 5)}
+        pulang={activeBatasPulangTime}
+        aktif={todayHariInfo.isHariEfektif}
+        keterangan={todayHariInfo.catatanStatus}
+      />
 
       {/* CENTER STAGE: Giant Distance-Readable Feedback Screen */}
       <div className="my-auto py-6 max-w-5xl w-full mx-auto">
@@ -581,110 +588,18 @@ export const ScanKiosk: React.FC = () => {
         </AnimatePresence>
       </div>
 
-      {/* BOTTOM FOOTER: Live Recent Scans Ticker & Fast Testing Bar */}
-      <div className="pt-4 border-t border-slate-800/80 space-y-4">
-        {/* Recent 5 Scans Ticker */}
-        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
-          <div className="text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0 flex items-center gap-1.5">
-            <UserCheck className="w-4 h-4 text-emerald-400" />
-            Absensi Hari Ini Terakhir ({recentScans.length} Terekam):
-          </div>
-
-          <div className="flex items-center gap-2 overflow-x-auto w-full pb-1 scrollbar-thin">
-            {recentScans.length === 0 ? (
-              <span className="text-xs text-slate-500 italic">Belum ada scan hari ini</span>
-            ) : (
-              recentScans.slice(0, 6).map((item) => (
-                <div
-                  key={item.absensi.id}
-                  className="shrink-0 flex items-center gap-2 bg-slate-900/90 border border-slate-800 hover:border-slate-700 px-3 py-1.5 rounded-xl text-xs"
-                >
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      item.absensi.status === 'terlambat'
-                        ? 'bg-amber-400'
-                        : item.absensi.jenis === 'pulang'
-                        ? 'bg-blue-400'
-                        : 'bg-emerald-400'
-                    }`}
-                  />
-                  <span className="font-semibold text-slate-200 truncate max-w-[120px]">{item.siswa.nama}</span>
-                  <span className="text-slate-400 text-[11px]">{item.kelas?.nama_kelas}</span>
-                  <span className="text-slate-500 font-mono text-[11px]">
-                    {item.absensi.waktu_scan.substring(0, 5)}
-                  </span>
-                  {item.absensi.synced ? (
-                    <span title="Tersinkron ke server" className="text-emerald-400" aria-label="Tersinkron">
-                      <Cloud className="w-3.5 h-3.5" />
-                    </span>
-                  ) : (
-                    <span title="Tersimpan lokal di perangkat (menunggu sinkronisasi)" className="text-amber-400" aria-label="Belum Sinkron">
-                      <HardDrive className="w-3.5 h-3.5" />
-                    </span>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Quick Simulator & Manual Input Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/70 border border-slate-800/80 p-3 rounded-2xl">
-          {/* Quick Simulation Dropdown */}
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-slate-400 font-medium">Uji Coba Scan:</span>
-            {siswaList.slice(0, 4).map((s) => (
-              <button
-                key={s.id}
-                id={`quick-scan-${s.id}`}
-                onClick={() => handleQuickTestScan(s.nisn)}
-                disabled={isProcessing}
-                className="px-2.5 py-1.5 bg-slate-800 hover:bg-emerald-600/30 hover:border-emerald-500 border border-slate-700 rounded-lg text-slate-300 hover:text-white transition cursor-pointer"
-              >
-                Scan {s.nama.split(' ')[0]} ({s.nisn.slice(-4)})
-              </button>
-            ))}
-
-            {/* Quick time simulation buttons */}
-            <div className="h-4 w-px bg-slate-700 mx-1 hidden sm:block" />
-            <span className="text-slate-400 font-medium hidden sm:inline">Set Jam:</span>
-            <button
-              id="set-jam-pagi-btn"
-              onClick={() => setSimulatedTime('07:05:00')}
-              className="px-2 py-1 bg-emerald-950/80 border border-emerald-800 text-emerald-300 hover:bg-emerald-900 rounded-md transition text-[11px] cursor-pointer"
-            >
-              07:05 (Pagi)
-            </button>
-            <button
-              id="set-jam-telat-btn"
-              onClick={() => setSimulatedTime('07:35:00')}
-              className="px-2 py-1 bg-amber-950/80 border border-amber-800 text-amber-300 hover:bg-amber-900 rounded-md transition text-[11px] cursor-pointer"
-            >
-              07:35 (Terlambat)
-            </button>
-            <button
-              id="set-jam-pulang-btn"
-              onClick={() => setSimulatedTime('13:10:00')}
-              className="px-2 py-1 bg-blue-950/80 border border-blue-800 text-blue-300 hover:bg-blue-900 rounded-md transition text-[11px] cursor-pointer"
-            >
-              13:10 (Pulang)
-            </button>
-          </div>
-
-          {/* Manual Input Dialog Toggle */}
-          <div className="flex items-center gap-2">
-            <button
-              id="open-manual-input-btn"
-              onClick={() => {
-                setShowManualInput(!showManualInput);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-xl text-xs font-medium transition cursor-pointer"
-            >
-              <Search className="w-3.5 h-3.5" />
-              <span>Ketik Manual NISN</span>
-            </button>
-          </div>
-        </div>
+      {/* BOTTOM FOOTER: input manual */}
+      <div className="pt-4 border-t border-slate-800/80 flex justify-end">
+        <button
+          id="open-manual-input-btn"
+          onClick={() => {
+            setShowManualInput(!showManualInput);
+          }}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-xl text-xs font-medium transition cursor-pointer"
+        >
+          <Search className="w-3.5 h-3.5" />
+          <span>Ketik Manual NISN</span>
+        </button>
       </div>
 
       {/* MANUAL INPUT MODAL */}
