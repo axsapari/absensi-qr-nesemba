@@ -51,6 +51,7 @@ import {
 import { RekapMakanSiangModal } from './RekapMakanSiang';
 import { LaporanTanpaKartu } from './LaporanTanpaKartu';
 import { RekapTindakan } from './RekapTindakan';
+import { DispensasiKegiatan } from './DispensasiKegiatan';
 
 type FilterMode = 'harian' | 'bulanan' | 'rentang';
 
@@ -58,6 +59,7 @@ const MATRIKS_SEL: Record<StatusHari, { simbol: string; label: string; cls: stri
   tepat_waktu: { simbol: '✓', label: 'Hadir tepat waktu', cls: 'bg-emerald-100 text-emerald-800' },
   terlambat: { simbol: 'T', label: 'Hadir terlambat', cls: 'bg-amber-100 text-amber-800' },
   tidak_bawa_kartu: { simbol: 'K', label: 'Hadir (tidak bawa kartu)', cls: 'bg-sky-100 text-sky-800' },
+  dispensasi: { simbol: 'D', label: 'Dispensasi (kegiatan sekolah, dihitung hadir)', cls: 'bg-teal-100 text-teal-800' },
   izin: { simbol: 'I', label: 'Izin', cls: 'bg-blue-100 text-blue-800' },
   sakit: { simbol: 'S', label: 'Sakit', cls: 'bg-purple-100 text-purple-800' },
   bolos: { simbol: 'B', label: 'Bolos', cls: 'bg-orange-100 text-orange-800' },
@@ -109,6 +111,7 @@ export const RekapDashboard: React.FC = () => {
   // Class & Status Filter
   const [selectedKelasId, setSelectedKelasId] = useState<string>(currentUser?.role === 'wali_kelas' ? (currentUser.wali_kelas_id || 'all') : 'all');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('all');
+  const [dispensasiOpen, setDispensasiOpen] = useState(false);
   const [izinSakitTarget, setIzinSakitTarget] = useState<{ siswa: Siswa; catatan?: CatatanKehadiran } | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -207,9 +210,11 @@ export const RekapDashboard: React.FC = () => {
           (c) => c.siswa_id === siswa.id && c.tanggal === selectedDate
         );
 
-        let overallStatus: 'tepat_waktu' | 'terlambat' | 'izin' | 'sakit' | 'bolos' | 'alpa' | 'tidak_bawa_kartu' | 'belum_absen' = 'belum_absen';
+        let overallStatus: 'tepat_waktu' | 'terlambat' | 'izin' | 'sakit' | 'bolos' | 'alpa' | 'tidak_bawa_kartu' | 'dispensasi' | 'belum_absen' = 'belum_absen';
         if (catatan?.status === 'bolos') {
           overallStatus = 'bolos';
+        } else if (catatan?.status === 'dispensasi') {
+          overallStatus = 'dispensasi';
         } else if (scanMasuk) {
           overallStatus = scanMasuk.status;
         } else if (catatan) {
@@ -235,6 +240,7 @@ export const RekapDashboard: React.FC = () => {
         if (selectedStatusFilter === 'bolos') return item.overallStatus === 'bolos';
         if (selectedStatusFilter === 'alpa') return item.overallStatus === 'alpa';
         if (selectedStatusFilter === 'tidak_bawa_kartu') return item.overallStatus === 'tidak_bawa_kartu';
+        if (selectedStatusFilter === 'dispensasi') return item.overallStatus === 'dispensasi';
         if (selectedStatusFilter === 'pulang') return !!item.scanPulang;
         return true;
       });
@@ -301,11 +307,12 @@ export const RekapDashboard: React.FC = () => {
       catatanKehadiranList.forEach((c) => {
         if (c.tanggal === selectedDate && studentIdsInClass.has(c.siswa_id)) catatanPerSiswa.set(c.siswa_id, c);
       });
-      let hadirTotal = 0, tanpaKartuCount = 0, sakitCount = 0, izinCount = 0, alpaCount = 0, bolosCount = 0;
+      let hadirTotal = 0, tanpaKartuCount = 0, dispensasiCount = 0, sakitCount = 0, izinCount = 0, alpaCount = 0, bolosCount = 0;
       targetStudents.forEach((st) => {
         const sh = statusHari(masukPerSiswa.get(st.id), catatanPerSiswa.get(st.id));
         if (sh === 'tepat_waktu' || sh === 'terlambat') hadirTotal++;
         else if (sh === 'tidak_bawa_kartu') { hadirTotal++; tanpaKartuCount++; }
+        else if (sh === 'dispensasi') { hadirTotal++; dispensasiCount++; }
         else if (sh === 'sakit') sakitCount++;
         else if (sh === 'izin') izinCount++;
         else if (sh === 'alpa') alpaCount++;
@@ -323,6 +330,7 @@ export const RekapDashboard: React.FC = () => {
         belumAbsenCount,
         kehadiranPercentage,
         tanpaKartuCount,
+        dispensasiCount,
         sakitCount,
         izinCount,
         alpaCount,
@@ -337,7 +345,7 @@ export const RekapDashboard: React.FC = () => {
       let totalTepatWaktuAccum = 0;
       let totalTerlambatAccum = 0;
       let totalPulangAccum = 0;
-      let tanpaKartuAccum = 0, sakitAccum = 0, izinAccum = 0, alpaAccum = 0, bolosAccum = 0;
+      let tanpaKartuAccum = 0, dispensasiAccum = 0, sakitAccum = 0, izinAccum = 0, alpaAccum = 0, bolosAccum = 0;
 
       periodicStudentMetrics.forEach((m) => {
         totalHadirAccum += m.totalHadir;
@@ -345,6 +353,7 @@ export const RekapDashboard: React.FC = () => {
         totalTerlambatAccum += m.totalTerlambat;
         totalPulangAccum += m.totalPulang;
         tanpaKartuAccum += m.totalTanpaKartu;
+        dispensasiAccum += m.totalDispensasi;
         sakitAccum += m.totalSakit;
         izinAccum += m.totalIzin;
         alpaAccum += m.totalAlfa;
@@ -363,6 +372,7 @@ export const RekapDashboard: React.FC = () => {
         belumAbsenCount: Math.max(0, totalPossibleAttendances - totalHadirAccum),
         kehadiranPercentage: avgPercentage,
         tanpaKartuCount: tanpaKartuAccum,
+        dispensasiCount: dispensasiAccum,
         sakitCount: sakitAccum,
         izinCount: izinAccum,
         alpaCount: alpaAccum,
@@ -454,6 +464,8 @@ export const RekapDashboard: React.FC = () => {
         'Jam Masuk': item.scanMasuk ? item.scanMasuk.waktu_scan : '-',
         'Status Kedatangan': item.catatan?.status === 'bolos'
           ? 'Bolos'
+          : item.catatan?.status === 'dispensasi'
+          ? 'Dispensasi (Kegiatan Sekolah)'
           : item.scanMasuk
           ? item.scanMasuk.status === 'terlambat'
             ? 'Terlambat'
@@ -491,6 +503,7 @@ export const RekapDashboard: React.FC = () => {
         'Hadir (H)': item.totalHadir,
         'Tepat Waktu (T)': item.totalTepatWaktu,
         'Terlambat (TL)': item.totalTerlambat,
+        'Dispensasi (D)': item.totalDispensasi,
         'Izin (I)': item.totalIzin,
         'Sakit (S)': item.totalSakit,
         'Bolos (B)': item.totalBolos,
@@ -534,6 +547,8 @@ export const RekapDashboard: React.FC = () => {
         item.scanMasuk ? item.scanMasuk.waktu_scan : '-',
         item.catatan?.status === 'bolos'
           ? 'Bolos'
+          : item.catatan?.status === 'dispensasi'
+          ? 'Dispensasi (Kegiatan Sekolah)'
           : item.scanMasuk
           ? item.scanMasuk.status === 'terlambat'
             ? 'Terlambat'
@@ -575,6 +590,7 @@ export const RekapDashboard: React.FC = () => {
         'Hadir (H)',
         'Tepat Waktu (T)',
         'Terlambat (TL)',
+        'Dispensasi (D)',
         'Izin (I)',
         'Sakit (S)',
         'Bolos (B)',
@@ -592,6 +608,7 @@ export const RekapDashboard: React.FC = () => {
         item.totalHadir,
         item.totalTepatWaktu,
         item.totalTerlambat,
+        item.totalDispensasi,
         item.totalIzin,
         item.totalSakit,
         item.totalBolos,
@@ -642,6 +659,17 @@ export const RekapDashboard: React.FC = () => {
             <Printer className="w-4 h-4 text-slate-300" />
             <span>Cetak Laporan Resmi</span>
           </button>
+
+          {canEditCatatan && (
+            <button
+              id="btn-dispensasi"
+              onClick={() => setDispensasiOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
+            >
+              <Award className="w-4 h-4" />
+              <span>Dispensasi Kegiatan</span>
+            </button>
+          )}
 
           {!isWaliKelas && (
             <button
@@ -835,6 +863,7 @@ export const RekapDashboard: React.FC = () => {
                 <option value="bolos">Bolos</option>
                 <option value="alpa">Alpa</option>
                 <option value="tidak_bawa_kartu">Tidak Bawa Kartu</option>
+                <option value="dispensasi">Dispensasi</option>
                 <option value="belum_absen">Belum Hadir</option>
               </select>
             </div>
@@ -941,9 +970,10 @@ export const RekapDashboard: React.FC = () => {
       </div>
 
       {/* RINCIAN KETIDAKHADIRAN & TANPA KARTU */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
         {[
           { label: 'Tidak Bawa Kartu', n: periodKpi.tanpaKartuCount, cls: 'border-sky-200 bg-sky-50/30 text-sky-700', ket: 'Dihitung hadir', Icon: CreditCard },
+          { label: 'Dispensasi', n: periodKpi.dispensasiCount, cls: 'border-teal-200 bg-teal-50/30 text-teal-700', ket: 'Kegiatan sekolah, dihitung hadir', Icon: Award },
           { label: 'Sakit', n: periodKpi.sakitCount, cls: 'border-rose-200 bg-rose-50/30 text-rose-700', ket: 'Tidak masuk (sakit)', Icon: AlertCircle },
           { label: 'Izin', n: periodKpi.izinCount, cls: 'border-indigo-200 bg-indigo-50/30 text-indigo-700', ket: 'Tidak masuk (izin)', Icon: ClipboardList },
           { label: 'Alpa', n: periodKpi.alpaCount, cls: 'border-red-200 bg-red-50/30 text-red-700', ket: filterMode === 'harian' ? 'Alpa tercatat' : 'Alpa + tanpa keterangan', Icon: X },
@@ -1161,7 +1191,11 @@ export const RekapDashboard: React.FC = () => {
                             )}
                           </td>
                           <td className="px-4 py-3">
-                            {item.scanMasuk ? (
+                            {item.catatan?.status === 'dispensasi' ? (
+                              <span className="inline-flex items-center gap-1 bg-teal-100 text-teal-800 font-bold px-2.5 py-1 rounded-full text-xs" title={item.catatan.keterangan || ''}>
+                                Dispensasi{item.catatan.keterangan ? ` • ${item.catatan.keterangan}` : ''}
+                              </span>
+                            ) : item.scanMasuk ? (
                               item.scanMasuk.status === 'terlambat' ? (
                                 <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-800 font-bold px-2.5 py-1 rounded-full text-xs">
                                   <AlertCircle className="w-3.5 h-3.5" />
@@ -1248,7 +1282,7 @@ export const RekapDashboard: React.FC = () => {
                                   <ClipboardList className="w-5 h-5" />
                                 </button>
                               )}
-                              {item.catatan && (!isWaliKelas || ['izin', 'sakit', 'tidak_bawa_kartu'].includes(item.catatan.status)) && (
+                              {item.catatan && (!isWaliKelas || ['izin', 'sakit', 'tidak_bawa_kartu', 'dispensasi'].includes(item.catatan.status)) && (
                                 <button
                                   title={`Hapus catatan ${item.catatan.status}`}
                                   onClick={() => {
@@ -1421,7 +1455,7 @@ export const RekapDashboard: React.FC = () => {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-              {(['tepat_waktu', 'terlambat', 'tidak_bawa_kartu', 'izin', 'sakit', 'bolos', 'alpa', 'kosong'] as StatusHari[]).map((k) => (
+              {(['tepat_waktu', 'terlambat', 'tidak_bawa_kartu', 'dispensasi', 'izin', 'sakit', 'bolos', 'alpa', 'kosong'] as StatusHari[]).map((k) => (
                 <span key={k} className="flex items-center gap-1">
                   <span className={`w-4 h-4 rounded font-bold inline-flex items-center justify-center text-[9px] ${MATRIKS_SEL[k].cls}`}>{MATRIKS_SEL[k].simbol}</span>
                   {MATRIKS_SEL[k].label}
@@ -1451,6 +1485,7 @@ export const RekapDashboard: React.FC = () => {
                   })}
                   <th className="p-2 border-r border-slate-200 text-center w-12 bg-emerald-50 text-emerald-800">H</th>
                   <th className="p-2 border-r border-slate-200 text-center w-12 bg-amber-50 text-amber-800">TL</th>
+                  <th className="p-2 border-r border-slate-200 text-center w-12 bg-teal-50 text-teal-800" title="Dispensasi (dihitung hadir)">D</th>
                   <th className="p-2 border-r border-slate-200 text-center w-12 bg-blue-50 text-blue-800">I</th>
                   <th className="p-2 border-r border-slate-200 text-center w-12 bg-purple-50 text-purple-800">S</th>
                   <th className="p-2 border-r border-slate-200 text-center w-12 bg-rose-50 text-rose-800">A</th>
@@ -1490,6 +1525,9 @@ export const RekapDashboard: React.FC = () => {
                     </td>
                     <td className="p-2 border-r border-slate-200 text-center font-bold text-amber-700 bg-amber-50/20">
                       {item.totalTerlambat}
+                    </td>
+                    <td className="p-2 border-r border-slate-200 text-center font-bold text-teal-700 bg-teal-50/20">
+                      {item.totalDispensasi}
                     </td>
                     <td className="p-2 border-r border-slate-200 text-center font-bold text-blue-700 bg-blue-50/20">
                       {item.totalIzin}
@@ -2009,6 +2047,7 @@ export const RekapDashboard: React.FC = () => {
                             <th className="border border-black p-1.5 text-center">Hadir</th>
                             <th className="border border-black p-1.5 text-center">Tepat</th>
                             <th className="border border-black p-1.5 text-center">Terlambat</th>
+                            <th className="border border-black p-1.5 text-center">Disp.</th>
                             <th className="border border-black p-1.5 text-center">Izin</th>
                             <th className="border border-black p-1.5 text-center">Sakit</th>
                             <th className="border border-black p-1.5 text-center">Bolos</th>
@@ -2063,6 +2102,7 @@ export const RekapDashboard: React.FC = () => {
                               <td className="border border-black p-1.5 text-center">{item.totalHadir} Hari</td>
                               <td className="border border-black p-1.5 text-center">{item.totalTepatWaktu}</td>
                               <td className="border border-black p-1.5 text-center">{item.totalTerlambat}</td>
+                              <td className="border border-black p-1.5 text-center">{item.totalDispensasi}</td>
                               <td className="border border-black p-1.5 text-center">{item.totalIzin}</td>
                               <td className="border border-black p-1.5 text-center">{item.totalSakit}</td>
                               <td className="border border-black p-1.5 text-center">{item.totalBolos}</td>
@@ -2101,6 +2141,10 @@ export const RekapDashboard: React.FC = () => {
         </div>
       ), document.body) : null}
 
+      {dispensasiOpen && (
+        <DispensasiKegiatan tanggalAwal={selectedDate} kelasTerbatas={visibleKelasIds} onClose={() => setDispensasiOpen(false)} />
+      )}
+
       {izinSakitTarget && (
         <IzinSakitModal
           siswa={izinSakitTarget.siswa}
@@ -2121,7 +2165,7 @@ export const RekapDashboard: React.FC = () => {
 // =========================================================================
 // MODAL INPUT IZIN/SAKIT/BOLOS/TIDAK BAWA KARTU
 // =========================================================================
-type StatusCatatanManual = 'izin' | 'sakit' | 'bolos' | 'tidak_bawa_kartu';
+type StatusCatatanManual = 'izin' | 'sakit' | 'bolos' | 'tidak_bawa_kartu' | 'dispensasi';
 
 const IzinSakitModal: React.FC<{
   siswa: Siswa;
@@ -2135,6 +2179,7 @@ const IzinSakitModal: React.FC<{
     { value: 'izin', label: 'Izin', active: 'border-sky-500 bg-sky-50 text-sky-700' },
     { value: 'sakit', label: 'Sakit', active: 'border-violet-500 bg-violet-50 text-violet-700' },
     { value: 'tidak_bawa_kartu', label: 'Tidak Bawa Kartu', active: 'border-teal-500 bg-teal-50 text-teal-700' },
+    { value: 'dispensasi', label: 'Dispensasi', active: 'border-emerald-500 bg-emerald-50 text-emerald-700' },
     ...(allowBolos
       ? [{ value: 'bolos' as StatusCatatanManual, label: 'Bolos', active: 'border-orange-500 bg-orange-50 text-orange-700' }]
       : []),
@@ -2142,6 +2187,7 @@ const IzinSakitModal: React.FC<{
   const initialStatus: StatusCatatanManual =
     catatan?.status === 'sakit' ? 'sakit'
     : catatan?.status === 'tidak_bawa_kartu' ? 'tidak_bawa_kartu'
+    : catatan?.status === 'dispensasi' ? 'dispensasi'
     : (allowBolos && catatan?.status === 'bolos') ? 'bolos'
     : 'izin';
   const [status, setStatus] = useState<StatusCatatanManual>(initialStatus);
@@ -2173,6 +2219,12 @@ const IzinSakitModal: React.FC<{
               </button>
             ))}
           </div>
+          {status === 'dispensasi' && (
+            <p className="mt-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
+              Siswa mengikuti <b>kegiatan sekolah</b>: dihitung <b>hadir</b> dan <b>tidak masuk porsi makan siang kelas</b>.
+              Isi nama kegiatannya pada keterangan. Untuk banyak siswa/hari, pakai tombol &ldquo;Dispensasi Kegiatan&rdquo;.
+            </p>
+          )}
           {status === 'tidak_bawa_kartu' && (
             <p className="mt-2 text-xs text-teal-700 bg-teal-50 border border-teal-100 rounded-lg px-3 py-2">
               Siswa dihitung <b>hadir</b> (datang ke sekolah tetapi lupa membawa kartu).

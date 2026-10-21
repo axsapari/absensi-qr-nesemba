@@ -161,7 +161,7 @@ interface AppContextType {
 
   // Attendance Actions
   deleteAbsensi: (id: string) => void;
-  setCatatanIzinSakit: (siswaId: string, tanggal: string, status: 'izin' | 'sakit' | 'bolos' | 'tidak_bawa_kartu', keterangan: string) => void;
+  setCatatanIzinSakit: (siswaId: string, tanggal: string, status: 'izin' | 'sakit' | 'bolos' | 'tidak_bawa_kartu' | 'dispensasi', keterangan: string) => void;
   deleteCatatanKehadiran: (id: string) => void;
   resetTodayAttendance: () => void;
   reloadInitialData: () => void;
@@ -2755,6 +2755,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (catatan?.status === 'bolos') {
         bolos++;
         lines.push(`${dayName}: BOLOS${catatan.keterangan ? ` (${catatan.keterangan})` : ''}${masuk ? ` | Scan masuk ${masuk.waktu_scan.slice(0, 5)}` : ''}`);
+      } else if (catatan?.status === 'dispensasi') {
+        hadir++;
+        lines.push(`${dayName}: DISPENSASI (kegiatan sekolah)${catatan.keterangan ? ` - ${catatan.keterangan}` : ''}`);
       } else if (masuk) {
         hadir++;
         if (masuk.status === 'terlambat') terlambat++;
@@ -2946,7 +2949,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setCatatanIzinSakit = (
     siswaId: string,
     tanggal: string,
-    status: 'izin' | 'sakit' | 'bolos' | 'tidak_bawa_kartu',
+    status: 'izin' | 'sakit' | 'bolos' | 'tidak_bawa_kartu' | 'dispensasi',
     keterangan: string
   ) => {
     const id = `catatan-${siswaId}-${tanggal}`;

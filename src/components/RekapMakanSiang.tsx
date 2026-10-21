@@ -134,6 +134,7 @@ export const RekapMakanSiangModal: React.FC<Props> = ({ onClose }) => {
         Izin: k.izin,
         Alpa: k.alpa,
         Bolos: k.bolos ?? 0,
+        'Dispensasi (makan dipisah)': k.dispensasi ?? 0,
         'Belum Scan': k.belumScan,
         'Tidak Bawa Kartu (hadir)': k.tanpaKartu,
         'Porsi MBG': k.porsi,
@@ -158,7 +159,7 @@ export const RekapMakanSiangModal: React.FC<Props> = ({ onClose }) => {
   const lebarKotakMm = 201 / kolom;
   const fontMm = Math.max(
     2.2,
-    Math.min((tinggiKotakMm - 4) / 12.5, (lebarKotakMm - 4) / 17.8, 4.4)
+    Math.min((tinggiKotakMm - 4) / 16.2, (lebarKotakMm - 4) / 17.8, 4.4)
   );
 
   const tanggalLabel = new Date(`${tanggalAktif}T00:00:00`).toLocaleDateString('id-ID', {
@@ -171,7 +172,7 @@ export const RekapMakanSiangModal: React.FC<Props> = ({ onClose }) => {
   const renderKotak = (
     key: string,
     judul: string,
-    data: { total: number; sakit: number; izin: number; alpa: number; bolos: number; belumScan: number; tanpaKartu: number; porsi: number },
+    data: { total: number; sakit: number; izin: number; alpa: number; bolos: number; dispensasi?: number; belumScan: number; tanpaKartu: number; porsi: number },
     labelPorsi: string,
     total = false
   ) => (
@@ -190,6 +191,7 @@ export const RekapMakanSiangModal: React.FC<Props> = ({ onClose }) => {
           <div className={`lunch-row ${kurangiAktif ? '' : 'lunch-row-muted'}`}><span>Belum scan</span><b>{data.belumScan}</b></div>
           <div className="lunch-row lunch-row-muted"><span>Tdk bawa kartu</span><b>{data.tanpaKartu}</b></div>
         </div>
+        <div className="lunch-row lunch-row-full"><span>Dispensasi (makan pisah)</span><b>{data.dispensasi ?? 0}</b></div>
       </div>
       <div className="lunch-porsi">
         <span>{labelPorsi}</span>
@@ -411,8 +413,8 @@ export const RekapMakanSiangModal: React.FC<Props> = ({ onClose }) => {
         </div>
 
         <div className="lunch-controls px-6 py-2.5 border-t border-slate-200 text-[11px] text-slate-500 bg-slate-50">
-          Porsi = jumlah siswa &minus; (sakit + izin + alpa + bolos{kurangiAktif ? ' + belum scan' : ''}). Siswa &ldquo;tidak bawa kartu&rdquo;
-          tetap dihitung hadir. Gunting mengikuti garis putus-putus.
+          Porsi = jumlah siswa &minus; (sakit + izin + alpa + bolos + dispensasi{kurangiAktif ? ' + belum scan' : ''}). Siswa &ldquo;tidak bawa kartu&rdquo;
+          tetap dihitung hadir. Siswa dispensasi (kegiatan sekolah) tidak masuk porsi kelas karena makan siangnya diurus terpisah. Gunting mengikuti garis putus-putus.
         </div>
       </div>
     </div>,

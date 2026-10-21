@@ -18,12 +18,12 @@ import { sortKelas } from './classUtils';
  */
 export interface BarisSiswa {
   nisn: string; nama: string; kelas: string; kelasId: string;
-  hariEfektif: number; hadir: number; tepatWaktu: number; terlambat: number; tanpaKartu: number;
+  hariEfektif: number; hadir: number; tepatWaktu: number; terlambat: number; tanpaKartu: number; dispensasi: number;
   izin: number; sakit: number; bolos: number; alpa: number; tanpaKeterangan: number; persen: number;
 }
 export interface BarisKelas {
   kelas: string; jumlahSiswa: number; hariEfektif: number; hadir: number; tepatWaktu: number; terlambat: number;
-  tanpaKartu: number; izin: number; sakit: number; bolos: number; alpa: number; tanpaKeterangan: number; persen: number;
+  tanpaKartu: number; dispensasi: number; izin: number; sakit: number; bolos: number; alpa: number; tanpaKeterangan: number; persen: number;
 }
 export interface BarisDetail {
   tanggal: string; kelas: string; nisn: string; nama: string;
@@ -38,7 +38,7 @@ export interface HasilArsip {
 }
 
 const labelCatatan: Record<string, string> = {
-  izin: 'Izin', sakit: 'Sakit', alpa: 'Alpa', bolos: 'Bolos', tidak_bawa_kartu: 'Tidak Bawa Kartu',
+  izin: 'Izin', sakit: 'Sakit', alpa: 'Alpa', bolos: 'Bolos', tidak_bawa_kartu: 'Tidak Bawa Kartu', dispensasi: 'Dispensasi',
 };
 const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 1000) / 10 : 0);
 
@@ -87,13 +87,14 @@ export function hitungArsip(input: {
     const nisn = String(s.nisn).trim();
     const r: BarisSiswa = {
       nisn, nama: s.nama, kelas: kelasById.get(s.kelas_id)?.nama_kelas || '-', kelasId: s.kelas_id,
-      hariEfektif: hariEfektif.length, hadir: 0, tepatWaktu: 0, terlambat: 0, tanpaKartu: 0,
+      hariEfektif: hariEfektif.length, hadir: 0, tepatWaktu: 0, terlambat: 0, tanpaKartu: 0, dispensasi: 0,
       izin: 0, sakit: 0, bolos: 0, alpa: 0, tanpaKeterangan: 0, persen: 0,
     };
     for (const t of hariEfektif) {
       const c = cat.get(nisn)?.get(t);
       const m = masuk.get(nisn)?.get(t);
       if (c?.status === 'bolos') r.bolos++;
+      else if (c?.status === 'dispensasi') { r.hadir++; r.dispensasi++; }
       else if (m) { r.hadir++; if (m.status === 'terlambat') r.terlambat++; else r.tepatWaktu++; }
       else if (c?.status === 'tidak_bawa_kartu') { r.hadir++; r.tanpaKartu++; }
       else if (c?.status === 'izin') r.izin++;
@@ -116,7 +117,7 @@ export function hitungArsip(input: {
       const hadir = sum((s) => s.hadir);
       return {
         kelas: k.nama_kelas, jumlahSiswa: rows.length, hariEfektif: hariEfektif.length, hadir,
-        tepatWaktu: sum((s) => s.tepatWaktu), terlambat: sum((s) => s.terlambat), tanpaKartu: sum((s) => s.tanpaKartu),
+        tepatWaktu: sum((s) => s.tepatWaktu), terlambat: sum((s) => s.terlambat), tanpaKartu: sum((s) => s.tanpaKartu), dispensasi: sum((s) => s.dispensasi),
         izin: sum((s) => s.izin), sakit: sum((s) => s.sakit), bolos: sum((s) => s.bolos), alpa: sum((s) => s.alpa),
         tanpaKeterangan: sum((s) => s.tanpaKeterangan), persen: pct(hadir, rows.length * hariEfektif.length),
       };
@@ -197,18 +198,18 @@ export function bangunWorkbook(input: {
     ['Hari efektif', hasil.hariEfektif.length], ['Jumlah siswa', hasil.perSiswa.length],
     [], ['Aturan hitung'],
     ['Hari efektif = hari sekolah menurut kalender yang punya scan masuk (atau catatan Tidak Bawa Kartu); scan di hari libur/Minggu tidak dihitung.'],
-    ['Hadir = scan masuk + Tidak Bawa Kartu. Bolos mengalahkan scan masuk. % Kehadiran = Hadir / Hari efektif.'],
+    ['Hadir = scan masuk + Tidak Bawa Kartu + Dispensasi. Bolos mengalahkan scan masuk. % Kehadiran = Hadir / Hari efektif.'],
   ]), 'Info');
 
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hasil.perKelas.map((k) => ({
     Kelas: k.kelas, 'Jumlah Siswa': k.jumlahSiswa, 'Hari Efektif': k.hariEfektif, 'Hadir (siswa-hari)': k.hadir,
-    'Tepat Waktu': k.tepatWaktu, Terlambat: k.terlambat, 'Tidak Bawa Kartu': k.tanpaKartu, Izin: k.izin, Sakit: k.sakit,
+    'Tepat Waktu': k.tepatWaktu, Terlambat: k.terlambat, 'Tidak Bawa Kartu': k.tanpaKartu, Dispensasi: k.dispensasi, Izin: k.izin, Sakit: k.sakit,
     Bolos: k.bolos, Alpa: k.alpa, 'Tanpa Keterangan': k.tanpaKeterangan, '% Kehadiran': k.persen,
   }))), 'Ringkasan Kelas');
 
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hasil.perSiswa.map((s, i) => ({
     No: i + 1, NISN: s.nisn, Nama: s.nama, Kelas: s.kelas, 'Hari Efektif': s.hariEfektif, Hadir: s.hadir,
-    'Tepat Waktu': s.tepatWaktu, Terlambat: s.terlambat, 'Tidak Bawa Kartu': s.tanpaKartu, Izin: s.izin, Sakit: s.sakit,
+    'Tepat Waktu': s.tepatWaktu, Terlambat: s.terlambat, 'Tidak Bawa Kartu': s.tanpaKartu, Dispensasi: s.dispensasi, Izin: s.izin, Sakit: s.sakit,
     Bolos: s.bolos, Alpa: s.alpa, 'Tanpa Keterangan': s.tanpaKeterangan, '% Kehadiran': s.persen,
   }))), 'Rekap Per Siswa');
 

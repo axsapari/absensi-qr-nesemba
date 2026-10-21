@@ -6,12 +6,14 @@ import { sortKelas } from './classUtils';
  *
  * Prioritas penentuan status tiap siswa aktif:
  *   1. Catatan bolos                       -> mengurangi porsi (walau sudah scan pagi)
+ *   1b. Catatan dispensasi (kegiatan sekolah) -> TIDAK masuk porsi kelas; dipisah dan ditampilkan
+ *       sebagai jumlah tersendiri karena makan siangnya diurus khusus (walau sudah scan pagi)
  *   2. Ada scan masuk                      -> hadir
  *   3. Catatan tidak_bawa_kartu            -> hadir (hanya informasi)
  *   4. Catatan sakit / izin / alpa         -> mengurangi porsi
  *   5. Tanpa scan & tanpa catatan          -> "belum scan" (dikurangi bila kurangiBelumScan = true)
  *
- * porsi = total - sakit - izin - alpa - bolos (- belumScan bila kurangiBelumScan)
+ * porsi = total - sakit - izin - alpa - bolos - dispensasi (- belumScan bila kurangiBelumScan)
  */
 export interface RekapKelasMakan {
   kelasId: string;
@@ -21,6 +23,8 @@ export interface RekapKelasMakan {
   izin: number;
   alpa: number;
   bolos: number;
+  /** siswa dispensasi: tidak dihitung di porsi, makan siangnya dipisah khusus */
+  dispensasi?: number;
   tanpaKartu: number;
   belumScan: number;
   porsi: number;
@@ -44,11 +48,12 @@ export function hitungRekapMakanSiang(input: {
 
   return sortKelas(kelasList).map((kelas) => {
     const siswaKelas = siswaList.filter((s) => s.kelas_id === kelas.id && s.status_aktif !== false);
-    let sakit = 0, izin = 0, alpa = 0, bolos = 0, tanpaKartu = 0, belumScan = 0;
+    let sakit = 0, izin = 0, alpa = 0, bolos = 0, dispensasi = 0, tanpaKartu = 0, belumScan = 0;
 
     for (const s of siswaKelas) {
       const catatan = catatanMap.get(s.id);
       if (catatan === 'bolos') { bolos++; continue; }
+      if (catatan === 'dispensasi') { dispensasi++; continue; }
       if (scanMasukIds.has(s.id)) continue;
       if (catatan === 'sakit') sakit++;
       else if (catatan === 'izin') izin++;
@@ -58,11 +63,11 @@ export function hitungRekapMakanSiang(input: {
     }
 
     const total = siswaKelas.length;
-    const pengurang = sakit + izin + alpa + bolos + (kurangiBelumScan ? belumScan : 0);
+    const pengurang = sakit + izin + alpa + bolos + dispensasi + (kurangiBelumScan ? belumScan : 0);
     return {
       kelasId: kelas.id,
       namaKelas: kelas.nama_kelas,
-      total, sakit, izin, alpa, bolos, tanpaKartu, belumScan,
+      total, sakit, izin, alpa, bolos, dispensasi, tanpaKartu, belumScan,
       porsi: Math.max(0, total - pengurang),
     };
   });
@@ -76,10 +81,11 @@ export function jumlahkanRekap(rows: RekapKelasMakan[]) {
       izin: acc.izin + r.izin,
       alpa: acc.alpa + r.alpa,
       bolos: acc.bolos + (r.bolos ?? 0),
+      dispensasi: acc.dispensasi + (r.dispensasi ?? 0),
       tanpaKartu: acc.tanpaKartu + r.tanpaKartu,
       belumScan: acc.belumScan + r.belumScan,
       porsi: acc.porsi + r.porsi,
     }),
-    { total: 0, sakit: 0, izin: 0, alpa: 0, bolos: 0, tanpaKartu: 0, belumScan: 0, porsi: 0 }
+    { total: 0, sakit: 0, izin: 0, alpa: 0, bolos: 0, dispensasi: 0, tanpaKartu: 0, belumScan: 0, porsi: 0 }
   );
 }

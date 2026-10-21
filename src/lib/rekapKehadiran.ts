@@ -10,7 +10,8 @@ import type { Absensi, CatatanKehadiran, Siswa } from '../types';
  *    DAN sudah ada data (scan/catatan) pada hari itu, dan tidak melewati hari ini.
  *    Scan di hari non-efektif (mis. Minggu) diabaikan.
  *  - Prioritas status per siswa per hari:
- *    bolos > scan masuk (tepat/terlambat) > tidak bawa kartu (dihitung hadir)
+ *    bolos > dispensasi (kegiatan sekolah, dihitung hadir) > scan masuk (tepat/terlambat)
+ *    > tidak bawa kartu (dihitung hadir)
  *    > izin / sakit / alpa > tanpa keterangan.
  */
 
@@ -18,6 +19,7 @@ export type StatusHari =
   | 'tepat_waktu'
   | 'terlambat'
   | 'tidak_bawa_kartu'
+  | 'dispensasi'
   | 'izin'
   | 'sakit'
   | 'bolos'
@@ -69,6 +71,7 @@ export function statusHari(
   catatan: Pick<CatatanKehadiran, 'status'> | undefined
 ): StatusHari {
   if (catatan?.status === 'bolos') return 'bolos';
+  if (catatan?.status === 'dispensasi') return 'dispensasi';
   if (scanMasuk) return scanMasuk.status === 'terlambat' ? 'terlambat' : 'tepat_waktu';
   if (catatan?.status === 'tidak_bawa_kartu') return 'tidak_bawa_kartu';
   if (catatan?.status === 'izin') return 'izin';
@@ -83,6 +86,8 @@ export interface HitunganSiswa {
   totalTepatWaktu: number;
   totalTerlambat: number;
   totalTanpaKartu: number;
+  /** dispensasi (kegiatan sekolah): dihitung hadir, dipisah dari tanpa kartu */
+  totalDispensasi: number;
   totalIzin: number;
   totalSakit: number;
   totalBolos: number;
@@ -122,7 +127,7 @@ export function hitungSiswa(
 
   const h: HitunganSiswa = {
     perTanggal: {},
-    totalHadir: 0, totalTepatWaktu: 0, totalTerlambat: 0, totalTanpaKartu: 0,
+    totalHadir: 0, totalTepatWaktu: 0, totalTerlambat: 0, totalTanpaKartu: 0, totalDispensasi: 0,
     totalIzin: 0, totalSakit: 0, totalBolos: 0, totalAlpa: 0, totalTanpaKeterangan: 0,
     totalAlfa: 0, totalPulang, totalDaysRecorded: tanggalEfektif.length, persentase: 0,
   };
@@ -133,6 +138,7 @@ export function hitungSiswa(
       case 'tepat_waktu': h.totalTepatWaktu++; h.totalHadir++; break;
       case 'terlambat': h.totalTerlambat++; h.totalHadir++; break;
       case 'tidak_bawa_kartu': h.totalTanpaKartu++; h.totalHadir++; break;
+      case 'dispensasi': h.totalDispensasi++; h.totalHadir++; break;
       case 'izin': h.totalIzin++; break;
       case 'sakit': h.totalSakit++; break;
       case 'bolos': h.totalBolos++; break;

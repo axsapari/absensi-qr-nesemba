@@ -39,7 +39,7 @@ export interface Absensi {
   synced_at?: string; // waktu sinkronisasi
 }
 
-export type StatusKehadiran = 'izin' | 'sakit' | 'bolos' | 'alpa' | 'tidak_bawa_kartu';
+export type StatusKehadiran = 'izin' | 'sakit' | 'bolos' | 'alpa' | 'tidak_bawa_kartu' | 'dispensasi';
 
 export interface CatatanKehadiran {
   id: string;
