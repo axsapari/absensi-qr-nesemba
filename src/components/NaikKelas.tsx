@@ -39,7 +39,7 @@ export const NaikKelas: React.FC = () => {
   const [pesan, setPesan] = useState<{ ok: boolean; teks: string } | null>(null);
   const [konfirmUrungkan, setKonfirmUrungkan] = useState(false);
 
-  const rencana = useMemo(() => rencanakanNaikKelas(siswaList, kelasList, kecualikan), [siswaList, kelasList, kecualikan]);
+  const rencana = useMemo(() => rencanakanNaikKelas(siswaList, kelasList, kecualikan, getTodayDateString()), [siswaList, kelasList, kecualikan]);
   const kesiapan = useMemo(
     () => cekKesiapan({
       today,

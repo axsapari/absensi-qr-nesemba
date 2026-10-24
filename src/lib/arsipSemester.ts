@@ -85,12 +85,20 @@ export function hitungArsip(input: {
 
   const perSiswa: BarisSiswa[] = daftar.map((s) => {
     const nisn = String(s.nisn).trim();
+    // Siswa yang sudah keluar hanya dihitung sampai tanggal keluarnya. Data lama tanpa tanggal keluar:
+    // dihitung sampai hari terakhir ia punya scan/catatan, supaya hari sesudahnya tidak jadi "alpa".
+    let hariSiswa = hariEfektif;
+    if (s.status_aktif === false) {
+      const terakhirAdaData = [...(masuk.get(nisn)?.keys() ?? []), ...(pulang.get(nisn)?.keys() ?? []), ...(cat.get(nisn)?.keys() ?? [])].sort().pop();
+      const batas = s.tanggal_keluar || terakhirAdaData || '';
+      hariSiswa = hariEfektif.filter((t) => t <= batas);
+    }
     const r: BarisSiswa = {
       nisn, nama: s.nama, kelas: kelasById.get(s.kelas_id)?.nama_kelas || '-', kelasId: s.kelas_id,
-      hariEfektif: hariEfektif.length, hadir: 0, tepatWaktu: 0, terlambat: 0, tanpaKartu: 0, dispensasi: 0,
+      hariEfektif: hariSiswa.length, hadir: 0, tepatWaktu: 0, terlambat: 0, tanpaKartu: 0, dispensasi: 0,
       izin: 0, sakit: 0, bolos: 0, alpa: 0, tanpaKeterangan: 0, persen: 0,
     };
-    for (const t of hariEfektif) {
+    for (const t of hariSiswa) {
       const c = cat.get(nisn)?.get(t);
       const m = masuk.get(nisn)?.get(t);
       if (c?.status === 'bolos') r.bolos++;
@@ -119,7 +127,7 @@ export function hitungArsip(input: {
         kelas: k.nama_kelas, jumlahSiswa: rows.length, hariEfektif: hariEfektif.length, hadir,
         tepatWaktu: sum((s) => s.tepatWaktu), terlambat: sum((s) => s.terlambat), tanpaKartu: sum((s) => s.tanpaKartu), dispensasi: sum((s) => s.dispensasi),
         izin: sum((s) => s.izin), sakit: sum((s) => s.sakit), bolos: sum((s) => s.bolos), alpa: sum((s) => s.alpa),
-        tanpaKeterangan: sum((s) => s.tanpaKeterangan), persen: pct(hadir, rows.length * hariEfektif.length),
+        tanpaKeterangan: sum((s) => s.tanpaKeterangan), persen: pct(hadir, sum((s) => s.hariEfektif)),
       };
     })
     .filter((k) => k.jumlahSiswa > 0);

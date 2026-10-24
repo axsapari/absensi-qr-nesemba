@@ -3,6 +3,7 @@ import { CreditCard, FileSpreadsheet, AlertTriangle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { CatatanKehadiran, Kelas, Siswa } from '../types';
 import { sortSiswaByKelas, sortKelas } from '../lib/classUtils';
+import { AMBANG_SARAN_CETAK_ULANG, labelKartuPengganti } from '../lib/kartuPengganti';
 
 /**
  * v22 — Laporan "Sering Tidak Bawa Kartu".
@@ -80,6 +81,8 @@ export const LaporanTanpaKartu: React.FC<Props> = ({
       'Nama Siswa': r.siswa.nama,
       Kelas: r.kelas?.nama_kelas || '-',
       'Jumlah Lupa Kartu': r.kejadian.length,
+      'Kartu Sudah Diganti (kali)': r.siswa.kartu_ganti_jumlah ?? 0,
+      'Saran': r.kejadian.length >= AMBANG_SARAN_CETAK_ULANG && !(r.siswa.kartu_ganti_jumlah ?? 0) ? 'Periksa kartu / cetak ulang' : '',
       'Persen dari Hari Efektif': hariEfektif > 0 ? `${Math.round((r.kejadian.length / hariEfektif) * 100)}%` : '-',
       Tanggal: r.kejadian.map((k) => k.tanggal).join(', '),
       Keterangan: r.kejadian.map((k) => k.keterangan).filter(Boolean).join('; '),
@@ -148,12 +151,13 @@ export const LaporanTanpaKartu: React.FC<Props> = ({
                 <th className="px-4 py-3">Kelas</th>
                 <th className="px-4 py-3 text-center">Lupa Kartu</th>
                 <th className="px-4 py-3">Tanggal</th>
+                <th className="px-4 py-3">Kartu</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {ditampilkan.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-10 text-center text-slate-400 italic">
+                  <td colSpan={6} className="px-6 py-10 text-center text-slate-400 italic">
                     {semua.length === 0
                       ? 'Tidak ada catatan "Tidak Bawa Kartu" pada periode ini.'
                       : `Tidak ada siswa dengan ${minKejadian} kali lupa kartu atau lebih. Turunkan batas minimal di atas.`}
@@ -182,6 +186,15 @@ export const LaporanTanpaKartu: React.FC<Props> = ({
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-600">
                         {r.kejadian.map((k) => fmtTanggal(k.tanggal)).join(', ')}
+                      </td>
+                      <td className="px-4 py-3 text-xs">
+                        {(r.siswa.kartu_ganti_jumlah ?? 0) > 0 ? (
+                          <span className="text-slate-600">{labelKartuPengganti(r.siswa)}</span>
+                        ) : parah ? (
+                          <span className="font-bold text-rose-700">Periksa kartu / cetak ulang</span>
+                        ) : (
+                          <span className="text-slate-300">-</span>
+                        )}
                       </td>
                     </tr>
                   );

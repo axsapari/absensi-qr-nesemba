@@ -67,6 +67,8 @@ export function rencanakanNaikKelas(
   siswaList: Siswa[],
   kelasList: Kelas[],
   kecualikan: ReadonlySet<string> = new Set(),
+  /** tanggal eksekusi: dicatat sebagai tanggal keluar siswa yang lulus agar rekap lama tetap utuh */
+  tanggalKeluar?: string,
 ): Rencana {
   const kelasById = new Map(kelasList.map((k) => [k.id, k]));
   const baris: RencanaSiswa[] = [];
@@ -95,7 +97,12 @@ export function rencanakanNaikKelas(
     }
     if (dari.tingkat === '9') {
       baris.push({ siswa: s, aksi: 'lulus', dariKelas: dari, keKelas: null, dikecualikan: false });
-      perubahan.push({ id: s.id, data: { status_aktif: false } });
+      perubahan.push({
+        id: s.id,
+        data: tanggalKeluar
+          ? { status_aktif: false, tanggal_keluar: tanggalKeluar, alasan_keluar: 'lulus' }
+          : { status_aktif: false },
+      });
       continue;
     }
     const tujuan = cariTujuan(dari);
@@ -199,6 +206,13 @@ export function cekKesiapan(i: KesiapanInput): Kesiapan {
 /* Data urungkan                                                       */
 /* ------------------------------------------------------------------ */
 
+/** null (bukan undefined) supaya kolom di database ikut dikosongkan saat disinkronkan. */
+export const KOSONGKAN_KELUAR = {
+  tanggal_keluar: null,
+  alasan_keluar: null,
+  keterangan_keluar: null,
+} as unknown as Pick<Siswa, 'tanggal_keluar' | 'alasan_keluar' | 'keterangan_keluar'>;
+
 export interface DataUrungkan {
   at: number;
   tahunAjaran: string;
@@ -218,5 +232,13 @@ export function perubahanUrungkan(d: DataUrungkan, siswaList: Siswa[]): Perubaha
   const ada = new Set(siswaList.map((s) => s.id));
   return d.siswa
     .filter((s) => ada.has(s.id))
-    .map((s) => ({ id: s.id, data: { kelas_id: s.kelas_id, status_aktif: s.status_aktif } }));
+    .map((s) => ({
+      id: s.id,
+      data: {
+        kelas_id: s.kelas_id,
+        status_aktif: s.status_aktif,
+        // bila diaktifkan kembali, hapus data keluar (null dikirim agar kolom di server ikut kosong)
+        ...(s.status_aktif ? KOSONGKAN_KELUAR : {}),
+      },
+    }));
 }

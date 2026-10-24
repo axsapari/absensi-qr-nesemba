@@ -18,6 +18,15 @@ export interface Siswa {
   jenis_kelamin: JenisKelamin;
   foto_url: string;
   status_aktif: boolean;
+  /** hari terakhir siswa masih dihitung di rekap (diisi saat dinonaktifkan) */
+  tanggal_keluar?: string;
+  alasan_keluar?: 'pindah' | 'lulus' | 'berhenti' | 'lainnya';
+  /** mis. sekolah tujuan */
+  keterangan_keluar?: string;
+  /** riwayat penggantian kartu pelajar (hilang/rusak) */
+  kartu_ganti_jumlah?: number;
+  kartu_ganti_terakhir?: string;
+  kartu_ganti_alasan?: 'hilang' | 'rusak' | 'lainnya';
   tempat_lahir?: string;
   tanggal_lahir?: string;
   alamat?: string;

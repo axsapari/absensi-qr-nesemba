@@ -7,6 +7,9 @@ import { downloadExcelTemplate, exportStudentsToExcel } from '../lib/excelHelper
 import { getFotoSiswaUrl, getFotoPlaceholder } from '../lib/fotoHelper';
 import { nextFotoCandidate } from '../lib/fotoFallback';
 import { sortKelas } from '../lib/classUtils';
+import { labelKeluar } from '../lib/mutasi';
+import { KOSONGKAN_KELUAR } from '../lib/naikKelas';
+import { MutasiSiswaDialog } from './MutasiSiswaDialog';
 import {
   Plus,
   Search,
@@ -46,6 +49,7 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
   // Excel Modal State
   const [showImportModal, setShowImportModal] = useState(false);
   const [showImportOrtuModal, setShowImportOrtuModal] = useState(false);
+  const [mutasiTarget, setMutasiTarget] = useState<Siswa | null>(null);
 
   // Modal State for Siswa
   const [showSiswaModal, setShowSiswaModal] = useState(false);
@@ -393,6 +397,9 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
                                 Nonaktif
                               </span>
                             )}
+                            {!s.status_aktif && labelKeluar(s) && (
+                              <div className="text-[10px] font-sans font-normal text-slate-500">{labelKeluar(s)}</div>
+                            )}
                           </td>
                           <td className="px-4 py-3">
                             <span className="font-semibold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
@@ -425,9 +432,10 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
                               <button
                                 title={s.status_aktif ? 'Tandai Lulus / Nonaktifkan' : 'Aktifkan Kembali'}
                                 onClick={() => {
-                                  const aksi = s.status_aktif ? 'menonaktifkan (lulus/pindah)' : 'mengaktifkan kembali';
-                                  if (confirm(`Yakin ingin ${aksi} siswa ${s.nama}?`)) {
-                                    updateSiswa(s.id, { status_aktif: !s.status_aktif });
+                                  if (s.status_aktif) {
+                                    setMutasiTarget(s);
+                                  } else if (confirm(`Yakin ingin mengaktifkan kembali siswa ${s.nama}?`)) {
+                                    updateSiswa(s.id, { status_aktif: true, ...KOSONGKAN_KELUAR });
                                   }
                                 }}
                                 className={`p-1.5 rounded-lg transition cursor-pointer ${
@@ -815,6 +823,17 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
       )}
 
       {/* IMPORT EXCEL MODAL */}
+      {mutasiTarget && (
+        <MutasiSiswaDialog
+          siswa={mutasiTarget}
+          onClose={() => setMutasiTarget(null)}
+          onSimpan={(data) => {
+            updateSiswa(mutasiTarget.id, { status_aktif: false, ...data });
+            setMutasiTarget(null);
+          }}
+        />
+      )}
+
       <ImportOrtuModal isOpen={showImportOrtuModal} onClose={() => setShowImportOrtuModal(false)} />
 
       <ImportExcelModal

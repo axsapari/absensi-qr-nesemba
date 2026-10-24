@@ -30,6 +30,7 @@ import { nextFotoCandidate } from '../lib/fotoFallback';
 import { panaskanFotoSiswa } from '../lib/fotoPreload';
 import { KioskSyncIndicator } from './KioskSyncIndicator';
 import { CountdownPulang } from './CountdownPulang';
+import { KioskKesehatan } from './KioskKesehatan';
 import { useWakeLock } from '../lib/useWakeLock';
 
 export const ScanKiosk: React.FC = () => {
@@ -306,6 +307,13 @@ export const ScanKiosk: React.FC = () => {
           </button>
         </div>
       </div>
+
+      <KioskKesehatan
+        sekarang={currentActiveTimeStr}
+        hariEfektif={todayHariInfo.isHariEfektif}
+        jamPulang={activeBatasPulangTime}
+        fokuskan={ensureInputFocus}
+      />
 
       {/* BAR HITUNG MUNDUR menuju scan pulang */}
       <CountdownPulang

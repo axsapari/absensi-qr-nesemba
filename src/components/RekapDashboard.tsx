@@ -49,6 +49,7 @@ import {
   type StatusHari,
 } from '../lib/rekapKehadiran';
 import { RekapMakanSiangModal } from './RekapMakanSiang';
+import { siswaDalamRentang, tanggalUntukSiswa } from '../lib/mutasi';
 import { LaporanTanpaKartu } from './LaporanTanpaKartu';
 import { RekapTindakan } from './RekapTindakan';
 import { DispensasiKegiatan } from './DispensasiKegiatan';
@@ -85,9 +86,6 @@ export const RekapDashboard: React.FC = () => {
     getDateHariInfo,
   } = useApp();
 
-  // Siswa nonaktif (pindah/lulus) tidak ikut dihitung di rekap, daftar, maupun total siswa.
-  const siswaList = useMemo(() => siswaAktif(siswaListSemua), [siswaListSemua]);
-
   const isWaliKelas = currentUser?.role === 'wali_kelas';
   const waliKelasId = currentUser?.wali_kelas_id || '';
   const visibleKelasIds = useMemo(() => isWaliKelas ? new Set(waliKelasId ? [waliKelasId] : []) : null, [isWaliKelas, waliKelasId]);
@@ -108,10 +106,49 @@ export const RekapDashboard: React.FC = () => {
   });
   const [endDate, setEndDate] = useState<string>(getTodayDateString());
 
+  // Laporan satu halaman untuk kepala sekolah: pekan lalu (Senin-Minggu), diunduh sebagai PDF.
+  const unduhLaporanMingguan = async () => {
+    setPdfJalan(true);
+    try {
+      const hariIni = getTodayDateString();
+      const { rentangMingguLalu, susunLaporanKepsek } = await import('../lib/laporanMingguan');
+      const { unduhPdfLaporanKepsek, tanggalIndo } = await import('../lib/laporanMingguanPdf');
+      const { start, end } = rentangMingguLalu(hariIni);
+      const lap = susunLaporanKepsek(
+        { siswaList: siswaListSemua, kelasList, absensi: absensiList, catatan: catatanKehadiranList, isHariEfektif: (d) => getDateHariInfo(d).isHariEfektif, hariIni },
+        start, end
+      );
+      await unduhPdfLaporanKepsek(lap, { sekolah: profilSekolah.nama || 'SMP Negeri 9 Banjar', dibuat: tanggalIndo(hariIni) });
+    } catch (e) {
+      alert(`Gagal membuat PDF: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setPdfJalan(false);
+    }
+  };
+
+  // Rentang tanggal periode aktif
+  const rentangPeriode = useMemo(
+    () =>
+      filterMode === 'harian'
+        ? { start: selectedDate, end: selectedDate }
+        : filterMode === 'bulanan'
+        ? rentangBulan(selectedYear, selectedMonth)
+        : { start: startDate, end: endDate },
+    [filterMode, selectedDate, selectedMonth, selectedYear, startDate, endDate]
+  );
+
+  // Siswa aktif + siswa yang sudah keluar (pindah/lulus) tetapi masih terdaftar pada sebagian periode:
+  // mereka dihitung sampai tanggal keluarnya. Siswa nonaktif tanpa tanggal keluar tidak dihitung.
+  const siswaList = useMemo(
+    () => siswaDalamRentang(siswaListSemua, rentangPeriode.start, rentangPeriode.end),
+    [siswaListSemua, rentangPeriode]
+  );
+
   // Class & Status Filter
   const [selectedKelasId, setSelectedKelasId] = useState<string>(currentUser?.role === 'wali_kelas' ? (currentUser.wali_kelas_id || 'all') : 'all');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('all');
   const [dispensasiOpen, setDispensasiOpen] = useState(false);
+  const [pdfJalan, setPdfJalan] = useState(false);
   const [izinSakitTarget, setIzinSakitTarget] = useState<{ siswa: Siswa; catatan?: CatatanKehadiran } | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -168,19 +205,13 @@ export const RekapDashboard: React.FC = () => {
     const tanggalAdaData = new Set<string>();
     absensiList.forEach((a) => { if (aktifIds.has(a.siswa_id)) tanggalAdaData.add(a.tanggal); });
     catatanKehadiranList.forEach((c) => { if (aktifIds.has(c.siswa_id)) tanggalAdaData.add(c.tanggal); });
-    const rentang =
-      filterMode === 'harian'
-        ? { start: selectedDate, end: selectedDate }
-        : filterMode === 'bulanan'
-        ? rentangBulan(selectedYear, selectedMonth)
-        : { start: startDate, end: endDate };
     return hitungTanggalEfektif({
-      ...rentang,
+      ...rentangPeriode,
       todayStr: getTodayDateString(),
       isHariEfektif: (d) => getDateHariInfo(d).isHariEfektif,
       tanggalAdaData,
     });
-  }, [siswaList, absensiList, catatanKehadiranList, getDateHariInfo, filterMode, selectedDate, selectedMonth, selectedYear, startDate, endDate]);
+  }, [siswaList, absensiList, catatanKehadiranList, getDateHariInfo, rentangPeriode]);
 
   // 1. HARIAN: Filtered Daily List
   const selectedDateHariInfo = useMemo(() => getDateHariInfo(selectedDate), [selectedDate, getDateHariInfo]);
@@ -262,7 +293,7 @@ export const RekapDashboard: React.FC = () => {
       })
       .map((siswa) => {
         const studentClass = kelasList.find((k) => k.id === siswa.kelas_id);
-        const h = hitungSiswa(siswa.id, distinctAttendanceDates, absensiList, catatanKehadiranList);
+        const h = hitungSiswa(siswa.id, tanggalUntukSiswa(siswa, distinctAttendanceDates), absensiList, catatanKehadiranList);
         const persentase = h.persentase;
 
         let predikat = 'Sangat Baik';
@@ -340,7 +371,7 @@ export const RekapDashboard: React.FC = () => {
     } else {
       // Periodic Aggregate
       const effectiveDays = Math.max(1, distinctAttendanceDates.length);
-      const totalPossibleAttendances = totalSiswa * effectiveDays;
+      const totalPossibleAttendances = targetStudents.reduce((n, st) => n + tanggalUntukSiswa(st, distinctAttendanceDates).length, 0) || totalSiswa * effectiveDays;
       let totalHadirAccum = 0;
       let totalTepatWaktuAccum = 0;
       let totalTerlambatAccum = 0;
@@ -398,13 +429,15 @@ export const RekapDashboard: React.FC = () => {
         lateCount = todayScans.filter((a) => a.status === 'terlambat').length;
       } else {
         studentsInClass.forEach((st) => {
-          const h = hitungSiswa(st.id, distinctAttendanceDates, absensiList, catatanKehadiranList);
+          const h = hitungSiswa(st.id, tanggalUntukSiswa(st, distinctAttendanceDates), absensiList, catatanKehadiranList);
           attendances += h.totalHadir;
           lateCount += h.totalTerlambat;
         });
       }
 
-      const totalPossible = filterMode === 'harian' ? totalStudents : totalStudents * Math.max(1, distinctAttendanceDates.length);
+      const totalPossible = filterMode === 'harian'
+        ? totalStudents
+        : studentsInClass.reduce((n, st) => n + tanggalUntukSiswa(st, distinctAttendanceDates).length, 0) || totalStudents;
       const rate = totalPossible > 0 ? Math.round((attendances / totalPossible) * 100) : 0;
 
       return {
@@ -668,6 +701,19 @@ export const RekapDashboard: React.FC = () => {
             >
               <Award className="w-4 h-4" />
               <span>Dispensasi Kegiatan</span>
+            </button>
+          )}
+
+          {!isWaliKelas && (
+            <button
+              id="btn-laporan-mingguan-pdf"
+              onClick={unduhLaporanMingguan}
+              disabled={pdfJalan}
+              title="Ringkasan satu halaman untuk kepala sekolah: pekan lalu (Senin–Minggu)"
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
+            >
+              <FileText className="w-4 h-4" />
+              <span>{pdfJalan ? 'Membuat PDF...' : 'Laporan Mingguan (PDF)'}</span>
             </button>
           )}
 

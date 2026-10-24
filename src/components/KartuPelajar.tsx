@@ -6,6 +6,8 @@ import { SchoolLogo, LogoOSIS } from './SchoolLogos';
 import { getFotoSiswaUrl, getFotoPlaceholder } from '../lib/fotoHelper';
 import { nextFotoCandidate } from '../lib/fotoFallback';
 import { sortKelas } from '../lib/classUtils';
+import { catatKartuPengganti, labelKartuPengganti, LABEL_ALASAN_KARTU, type AlasanKartu } from '../lib/kartuPengganti';
+import { getTodayDateString } from '../data/initialData';
 import {
   Printer,
   Download,
@@ -18,7 +20,7 @@ import {
 } from 'lucide-react';
 
 export const KartuPelajar: React.FC<{ initialSelectedId?: string }> = ({ initialSelectedId }) => {
-  const { siswaList, kelasList, profilSekolah, updateProfilSekolah } = useApp();
+  const { siswaList, kelasList, profilSekolah, updateProfilSekolah, updateSiswa } = useApp();
 
   const [selectedKelasId, setSelectedKelasId] = useState<string>('all');
   const [selectedSiswaId, setSelectedSiswaId] = useState<string>(
@@ -28,6 +30,8 @@ export const KartuPelajar: React.FC<{ initialSelectedId?: string }> = ({ initial
   const [searchFilter, setSearchFilter] = useState('');
   const [qrCodeUrls, setQrCodeUrls] = useState<Record<string, string>>({});
   const [showTemplatePanel, setShowTemplatePanel] = useState(false);
+  const [cariSingle, setCariSingle] = useState('');
+  const [alasanKartu, setAlasanKartu] = useState<AlasanKartu>('hilang');
 
   const handleUploadTemplate = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -98,6 +102,8 @@ export const KartuPelajar: React.FC<{ initialSelectedId?: string }> = ({ initial
     modeCetak === 'single'
       ? siswaList.filter((s) => s.id === selectedSiswaId)
       : filteredStudents;
+
+  const siswaTerpilih = siswaList.find((s) => s.id === selectedSiswaId);
 
   const handlePrint = () => {
     document.body.classList.add('printing-student-cards');
@@ -223,13 +229,26 @@ export const KartuPelajar: React.FC<{ initialSelectedId?: string }> = ({ initial
 
           {/* Selectors */}
           {modeCetak === 'single' ? (
-            <div className="relative">
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Cari nama / NISN..."
+                  value={cariSingle}
+                  onChange={(e) => setCariSingle(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 text-slate-800 text-xs rounded-xl px-3 py-2 pl-8 focus:outline-none w-40"
+                />
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+              </div>
               <select
                 value={selectedSiswaId}
                 onChange={(e) => setSelectedSiswaId(e.target.value)}
                 className="bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold rounded-xl px-3 py-2 focus:outline-none cursor-pointer pr-8"
               >
-                {siswaList.map((s) => {
+                {siswaList.filter((s) => {
+                  const q = cariSingle.trim().toLowerCase();
+                  return s.id === selectedSiswaId || !q || s.nama.toLowerCase().includes(q) || s.nisn.includes(q);
+                }).map((s) => {
                   const k = kelasList.find((item) => item.id === s.kelas_id);
                   return (
                     <option key={s.id} value={s.id}>
@@ -278,6 +297,40 @@ export const KartuPelajar: React.FC<{ initialSelectedId?: string }> = ({ initial
           </button>
         </div>
       </div>
+
+      {/* Kartu pengganti (hilang / rusak) - hanya mode Per Siswa */}
+      {modeCetak === 'single' && siswaTerpilih && (
+        <div className="no-print bg-white border border-slate-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+          <div className="text-xs text-slate-600">
+            <div className="font-bold text-slate-900 text-sm">Kartu pengganti: {siswaTerpilih.nama}</div>
+            <div className="mt-0.5">
+              {labelKartuPengganti(siswaTerpilih) || 'Belum pernah diganti.'}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <select
+              value={alasanKartu}
+              onChange={(e) => setAlasanKartu(e.target.value as AlasanKartu)}
+              className="bg-slate-50 border border-slate-200 text-slate-800 font-bold rounded-xl px-3 py-2 focus:outline-none cursor-pointer"
+            >
+              {(Object.keys(LABEL_ALASAN_KARTU) as AlasanKartu[]).map((k) => (
+                <option key={k} value={k}>{LABEL_ALASAN_KARTU[k]}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => {
+                updateSiswa(siswaTerpilih.id, catatKartuPengganti(siswaTerpilih, alasanKartu, getTodayDateString()));
+                handlePrint();
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl shadow-xs cursor-pointer"
+              title="Mencatat penggantian kartu (+1) lalu mencetak kartu siswa ini"
+            >
+              <Printer className="w-4 h-4" /> Catat Penggantian &amp; Cetak
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Info Badge + Template Upload Toggle */}
       <div className="no-print bg-indigo-50/70 border border-indigo-200/80 rounded-2xl p-4 text-xs text-indigo-900 space-y-3">
