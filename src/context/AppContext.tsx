@@ -49,6 +49,7 @@ import { idbGet, idbSet } from '../lib/idbStore';
 import { ABSENSI_IDB_KEY, jendelaLokal, gabungRiwayat, buatPenulisRiwayat } from '../lib/absensiStore';
 import { processSyncToDatabase } from '../lib/syncService';
 import { getSupabaseClient, resetSupabaseClient } from '../lib/supabase';
+import { gabungkanKonfigSupabase } from '../lib/defaultConfig';
 import { runDataAudit } from '../lib/dataAudit';
 
 interface RecentScanItem {
@@ -156,6 +157,8 @@ interface AppContextType {
   updatePengaturanJam: (pengaturan: Partial<PengaturanJam>) => void;
   updateWAConfig: (config: Partial<WAGatewayConfig>) => void;
   updateSupabaseConfig: (config: Partial<SupabaseConfig>) => void;
+  /** Simpan akun kiosk ke database agar perangkat lain mengambilnya otomatis setelah satu kali login staf. */
+  bagikanAkunKiosk: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
   syncMasterData: () => Promise<{ success: boolean; message: string; kelas: number; siswa: number }>;
   auditDataIntegrity: (diagnosticNisn?: string) => Promise<DataAuditReport>;
 
@@ -431,9 +434,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [supabaseConfig, setSupabaseConfig] = useState<SupabaseConfig>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.CONFIG_SUPABASE);
-      return saved ? JSON.parse(saved) : { url: '', anonKey: '', connected: false };
+      // Perangkat baru: URL & anon key otomatis terisi dari bawaan (lib/defaultConfig).
+      return gabungkanKonfigSupabase<SupabaseConfig>(saved ? JSON.parse(saved) : null);
     } catch {
-      return { url: '', anonKey: '', connected: false };
+      return gabungkanKonfigSupabase<SupabaseConfig>(null);
     }
   });
 
@@ -888,6 +892,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return;
     }
 
+    // Setelah staf login, ambil akun kiosk dari database supaya perangkat baru (atau yang sandinya sudah
+    // diganti) otomatis login sebagai kiosk saat staf logout, tanpa mengetik email/password.
+    const ambilAkunKioskDariServer = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('kiosk_akun').select('email,password').eq('id', 'default').maybeSingle();
+        if (error || !data?.email || !data?.password) return;
+        const email = String(data.email), password = String(data.password);
+        // Database menjadi sumber kebenaran: perangkat lama pun ikut terbarui bila sandi kiosk diganti.
+        setSupabaseConfig((prev) =>
+          prev.kioskEmail === email && prev.kioskPassword === password ? prev : { ...prev, kioskEmail: email, kioskPassword: password }
+        );
+      } catch (err) {
+        console.error('Gagal mengambil akun kiosk dari database:', err);
+      }
+    };
+
     const resolveUserFromSession = (email: string | undefined) => {
       setActiveSessionEmail(email || null);
       if (!email) {
@@ -897,6 +918,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       const matchedStaff = users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
       if (matchedStaff) {
+        void ambilAkunKioskDariServer();
         // Sesi ini adalah staf (admin/petugas) yang benar-benar login
         setCurrentUser(matchedStaff);
         setIsAdminLoggedIn(true);
@@ -2921,6 +2943,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSyncBanner({ type: 'syncing', message: 'Konfigurasi Supabase diperbarui. Memeriksa koneksi...' });
   };
 
+  const bagikanAkunKiosk = async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
+    const supabase = getSupabaseClient(supabaseConfig);
+    if (!supabase) return { success: false, message: 'Supabase belum dikonfigurasi.' };
+    const { data: sesi } = await supabase.auth.getSession();
+    if (!sesi.session) return { success: false, message: 'Login sebagai staf dulu untuk membagikan akun kiosk ke perangkat lain.' };
+    const { error } = await supabase.from('kiosk_akun').upsert(
+      [{ id: 'default', email: email.trim(), password, updated_at: new Date().toISOString() }],
+      { onConflict: 'id' }
+    );
+    if (error) {
+      const hint = /relation|does not exist|schema cache/i.test(error.message) ? ' Jalankan SUPABASE-MIGRATION-V26-KIOSK-AKUN.sql di Supabase SQL Editor.' : '';
+      return { success: false, message: `Gagal menyimpan akun kiosk ke database: ${error.message}.${hint}` };
+    }
+    return { success: true, message: 'Akun kiosk tersimpan di database. Perangkat baru akan mengambilnya otomatis setelah satu kali login staf.' };
+  };
+
   const deleteAbsensi = (id: string) => {
     const target = absensiList.find((a) => a.id === id);
     if (!target) return;
@@ -3685,6 +3723,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updatePengaturanJam,
         updateWAConfig,
         updateSupabaseConfig,
+        bagikanAkunKiosk,
         syncMasterData,
         auditDataIntegrity,
         deleteAbsensi,

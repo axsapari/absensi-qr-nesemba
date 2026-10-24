@@ -28,6 +28,7 @@ export const SettingsModal: React.FC = () => {
     updateWAConfig,
     supabaseConfig,
     updateSupabaseConfig,
+    bagikanAkunKiosk,
     syncMasterData,
     siswaList,
     kelasList,
@@ -48,6 +49,7 @@ export const SettingsModal: React.FC = () => {
   const [jamForm, setJamForm] = useState(pengaturanJam);
   const [waForm, setWaForm] = useState(waConfig);
   const [supabaseForm, setSupabaseForm] = useState(supabaseConfig);
+  const [infoKiosk, setInfoKiosk] = useState<{ success: boolean; message: string } | null>(null);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [specialDate, setSpecialDate] = useState('');
   const [specialName, setSpecialName] = useState('');
@@ -74,6 +76,9 @@ export const SettingsModal: React.FC = () => {
   const handleSaveSupabase = (e: React.FormEvent) => {
     e.preventDefault();
     updateSupabaseConfig(supabaseForm);
+    if (supabaseForm.kioskEmail && supabaseForm.kioskPassword) {
+      void bagikanAkunKiosk(supabaseForm.kioskEmail, supabaseForm.kioskPassword).then((h) => setInfoKiosk(h));
+    }
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2500);
   };
@@ -544,7 +549,8 @@ export const SettingsModal: React.FC = () => {
               <p className="text-[11px] text-slate-400 mb-2">
                 Akun teknis khusus supaya PC pos gerbang bisa akses data (nama siswa, kirim absensi)
                 tanpa penjaga perlu login manual tiap pagi. Buat dulu akun ini di Supabase Dashboard {'>'}{' '}
-                Authentication {'>'} Users, lalu masukkan email & password-nya di sini.
+                Authentication {'>'} Users, lalu masukkan email & password-nya di sini. Setelah disimpan, akun ini dibagikan
+                lewat database: perangkat baru cukup login staf satu kali, pos gerbang aktif otomatis.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <input
@@ -563,6 +569,12 @@ export const SettingsModal: React.FC = () => {
                 />
               </div>
             </div>
+
+            {infoKiosk && (
+              <div className={`text-xs font-semibold rounded-xl px-3 py-2 border ${infoKiosk.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
+                {infoKiosk.message}
+              </div>
+            )}
 
             <div className="flex items-center justify-end pt-2">
               <button

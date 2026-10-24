@@ -202,12 +202,14 @@ export const ScanKiosk: React.FC = () => {
           <div>
             <span className="font-bold">
               {kioskAuthStatus === 'not_configured'
-                ? 'Akun kiosk belum diatur di perangkat ini.'
+                ? 'Pos gerbang belum aktif di perangkat ini.'
                 : 'Akun kiosk gagal login ke Supabase.'}
             </span>{' '}
             Absensi hanya tersimpan lokal di perangkat ini dan TIDAK akan tersinkron ke database
-            sampai ini diperbaiki. Buka Pengaturan {'>'} Supabase {'>'} Akun Kiosk Pos Gerbang
-            {kioskAuthStatus === 'failed' ? ', periksa kembali email/password-nya.' : '.'}
+            sampai diaktifkan.{' '}
+            {kioskAuthStatus === 'failed'
+              ? 'Akun kiosk gagal login: periksa email/password-nya di Pengaturan > Supabase > Akun Kiosk, atau login staf lagi lalu logout agar data terbaru diambil.'
+              : 'Cukup login SEKALI dengan akun staf (tombol Login Pengguna), lalu logout. Setelah itu pos gerbang aktif sendiri, tanpa mengisi apa pun.'}
           </div>
         </div>
       )}
