@@ -1,5 +1,10 @@
 @import "tailwindcss";
 @import "./dark-theme.css";
+@import "./retro-colors.css";
+@import "./neo.css";
+@import "./clay.css";
+@import "./retro.css";
+@import "./tema-kertas.css";
 
 /* Cetak laporan resmi: hanya kertas laporan yang dicetak, tanpa modal/frame/pratinjau. */
 @page {

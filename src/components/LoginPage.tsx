@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ThemeToggle } from './ThemeToggle';
 import { useApp } from '../context/AppContext';
 import { SchoolLogo } from './SchoolLogos';
 import {
@@ -68,6 +69,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onCancel }) => 
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 flex items-center justify-center p-4 selection:bg-blue-600 selection:text-white">
+      <div className="absolute top-3 right-3 z-20"><ThemeToggle /></div>
       {/* Decorative backdrop glow */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl" />

@@ -1,62 +1,75 @@
 #!/usr/bin/env python3
-"""Membangun src/dark-theme.css dari class Tailwind yang dipakai di src/.
+"""Membangun src/dark-theme.css (tema Gelap) dan src/retro-colors.css (palet Retro)
+dari class Tailwind yang dipakai di src/.
 Jalankan ulang bila menambah warna terang baru:  python3 scripts/gen-dark.py"""
-import re, glob, os
+import re, glob
 toks=set()
 for f in glob.glob('src/**/*.tsx',recursive=True):
     toks|=set(re.findall(r'[A-Za-z0-9:/\[\]\.\-_]+',open(f).read()))
 COL='slate|gray|zinc|neutral|stone|emerald|green|teal|cyan|sky|blue|indigo|violet|purple|pink|rose|red|orange|amber|yellow|lime'
-SL={'50':'#0b1220','100':'#172033','200':'#26324a','300':'#3a475f'}
-BG_SLATE={'50':'#0b1220','100':'#172033','200':'#26324a','300':'#334155'}
-TXT_SLATE={'900':'#f1f5f9','800':'#e8edf4','700':'#d5dde9','600':'#b6c2d4','500':'#94a3b8'}
-BR_SLATE={'100':'#2a364d','200':'#2f3b52','300':'#3b4b66'}
-PAPER=':not(:is(.printable-report,.card-wrapper,.lunch-sheet,.paper-light) *):not(:is(.printable-report,.card-wrapper,.lunch-sheet,.paper-light))'
+PAPER=':not(:is(.printable-report,.card-wrapper,.lunch-sheet,.paper-light,.paper) *):not(:is(.printable-report,.card-wrapper,.lunch-sheet,.paper-light,.paper))'
 def esc(t): return re.sub(r'([:/\[\]\.])',r'\\\1',t)
-rules=[]
-def add(t,decl):
-    m=re.match(r'^((?:hover|focus|disabled|group-hover|even|odd|placeholder):)?([a-z\-]+)-(.+)$',t)
-    pre=m.group(1) if m else None
-    sel='.'+esc(t)
-    if pre in ('hover:',): sel+=':hover'
-    elif pre in ('focus:',): sel+=':focus'
-    elif pre=='disabled:': sel+=':disabled'
-    elif pre=='even:': sel+=':nth-child(even)'
-    elif pre=='odd:': sel+=':nth-child(odd)'
-    elif pre: return
-    rules.append(f'html.dark {sel}{PAPER}{{{decl}}}')
-for t in sorted(toks):
-    m=re.match(rf'^(hover:|focus:|disabled:|even:|odd:)?(bg|text|border|divide|ring|from|to)-({COL}|white)(?:-(\d+))?(?:/(\d+))?$',t)
-    if not m: continue
-    pre,kind,col,step,op=m.groups(); 
-    if col=='white':
-        if kind=='bg' and not step: add(t,'background-color:'+('#111a2c' if not op else f'rgba(17,26,44,{int(op)/100})')+'!important')
-        continue
-    if not step: continue
-    step_i=int(step); a=(int(op)/100) if op else 1
-    if col in('slate','gray','zinc','neutral','stone'):
-        if kind=='bg' and step in BG_SLATE:
-            h=BG_SLATE[step].lstrip('#'); r,g,b=[int(h[i:i+2],16) for i in(0,2,4)]
-            add(t,f'background-color:rgba({r},{g},{b},{a})!important')
-        elif kind=='text' and step in TXT_SLATE: add(t,f'color:{TXT_SLATE[step]}!important')
-        elif kind=='border' and step in BR_SLATE: add(t,f'border-color:{BR_SLATE[step]}!important')
-        elif kind=='divide' and step in BR_SLATE:
-            rules.append(f'html.dark .{esc(t)}>:not(:last-child){PAPER}{{border-color:{BR_SLATE[step]}!important}}')
-        continue
-    # warna bertinta
-    if kind=='bg' and step_i in(50,100,200):
-        mix={50:14,100:20,200:28}[step_i]*a
-        add(t,f'background-color:color-mix(in srgb,var(--color-{col}-500) {round(mix)}%,#0f172a)!important')
-    elif kind=='border' and step_i in(100,200,300):
-        pct={100:30,200:40,300:50}[step_i]
-        add(t,f'border-color:color-mix(in srgb,var(--color-{col}-400) {pct}%,#0f172a)!important')
-    elif kind=='text' and step_i in(600,700,800,900):
-        tgt={600:400,700:300,800:200,900:200}[step_i]
-        add(t,f'color:var(--color-{col}-{tgt})!important')
-out=['/* DIHASILKAN oleh scripts/gen-dark.py — jangan sunting manual. */',
-'@media screen{','html.dark{color-scheme:dark}',
-'html.dark body{background:#0b1220}',
-'html.dark input,html.dark select,html.dark textarea{color-scheme:dark}',
-'html.dark ::placeholder{color:#64748b}']
-out+=rules+['}']
-open('src/dark-theme.css','w').write('\n'.join(out)+'\n')
-print(len(rules),'aturan')
+PALETTES={
+ 'dark':dict(sel='html.dark',out='src/dark-theme.css',
+  BG={'50':'#0b1220','100':'#172033','200':'#26324a','300':'#334155'},
+  TXT={'900':'#f1f5f9','800':'#e8edf4','700':'#d5dde9','600':'#b6c2d4','500':'#94a3b8'},
+  BR={'100':'#2a364d','200':'#2f3b52','300':'#3b4b66'},
+  WHITE='#111a2c',BASE='#0f172a',BODY='#0b1220',PH='#64748b'),
+ 'retro':dict(sel='html.retro',out='src/retro-colors.css',
+  BG={'50':'#020a04','100':'#04140a','200':'#082010','300':'#0d3018'},
+  TXT={'900':'#9dffb4','800':'#8af5a2','700':'#6fe38a','600':'#4fc76d','500':'#3a9f55'},
+  BR={'100':'#0f4a22','200':'#14612c','300':'#1a7a38'},
+  WHITE='#04140a',BASE='#031006',BODY='#010603',PH='#2f7a45'),
+}
+def build(P):
+    SEL=P['sel']; BG=P['BG']; TXT=P['TXT']; BR=P['BR']; rules=[]
+    def hexrgb(h):
+        h=h.lstrip('#'); return [int(h[i:i+2],16) for i in(0,2,4)]
+    def add(t,decl):
+        m=re.match(r'^((?:hover|focus|disabled|group-hover|even|odd|placeholder):)?([a-z\-]+)-(.+)$',t)
+        pre=m.group(1) if m else None
+        sel='.'+esc(t)
+        if pre=='hover:': sel+=':hover'
+        elif pre=='focus:': sel+=':focus'
+        elif pre=='disabled:': sel+=':disabled'
+        elif pre=='even:': sel+=':nth-child(even)'
+        elif pre=='odd:': sel+=':nth-child(odd)'
+        elif pre: return
+        rules.append(f'{SEL} {sel}{PAPER}{{{decl}}}')
+    for t in sorted(toks):
+        m=re.match(rf'^(hover:|focus:|disabled:|even:|odd:)?(bg|text|border|divide|ring|from|to)-({COL}|white)(?:-(\d+))?(?:/(\d+))?$',t)
+        if not m: continue
+        pre,kind,col,step,op=m.groups()
+        if col=='white':
+            if kind=='bg' and not step:
+                r,g,b=hexrgb(P['WHITE'])
+                add(t,'background-color:'+(P['WHITE'] if not op else f'rgba({r},{g},{b},{int(op)/100})')+'!important')
+            continue
+        if not step: continue
+        step_i=int(step); a=(int(op)/100) if op else 1
+        if col in('slate','gray','zinc','neutral','stone'):
+            if kind=='bg' and step in BG:
+                r,g,b=hexrgb(BG[step]); add(t,f'background-color:rgba({r},{g},{b},{a})!important')
+            elif kind=='text' and step in TXT: add(t,f'color:{TXT[step]}!important')
+            elif kind=='border' and step in BR: add(t,f'border-color:{BR[step]}!important')
+            elif kind=='divide' and step in BR:
+                rules.append(f'{SEL} .{esc(t)}>:not(:last-child){PAPER}{{border-color:{BR[step]}!important}}')
+            continue
+        if kind=='bg' and step_i in(50,100,200):
+            pct=round({50:14,100:20,200:28}[step_i]*a)
+            add(t,f'background-color:color-mix(in srgb,var(--color-{col}-500) {pct}%,{P["BASE"]})!important')
+        elif kind=='border' and step_i in(100,200,300):
+            pct={100:30,200:40,300:50}[step_i]
+            add(t,f'border-color:color-mix(in srgb,var(--color-{col}-400) {pct}%,{P["BASE"]})!important')
+        elif kind=='text' and step_i in(600,700,800,900):
+            tgt={600:400,700:300,800:200,900:200}[step_i]
+            add(t,f'color:var(--color-{col}-{tgt})!important')
+    out=['/* DIHASILKAN oleh scripts/gen-dark.py — jangan sunting manual. */',
+    '@media screen{',f'{SEL}{{color-scheme:dark}}',
+    f'{SEL} body{{background:{P["BODY"]}}}',
+    f'{SEL} input,{SEL} select,{SEL} textarea{{color-scheme:dark}}',
+    f'{SEL} ::placeholder{{color:{P["PH"]}}}']
+    out+=rules+['}']
+    open(P['out'],'w').write('\n'.join(out)+'\n')
+    print(P['out'],len(rules),'aturan')
+for P in PALETTES.values(): build(P)

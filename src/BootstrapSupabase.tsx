@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Database, Save, ShieldCheck } from 'lucide-react';
+import { ThemeToggle } from './components/ThemeToggle';
 import { useApp } from './context/AppContext';
 
 /**
@@ -22,6 +23,7 @@ export const BootstrapSupabase: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-5">
+      <div className="absolute top-3 right-3 z-20"><ThemeToggle /></div>
       <div className="w-full max-w-xl bg-white rounded-3xl shadow-2xl overflow-hidden">
         <div className="bg-slate-900 text-white p-7">
           <div className="flex items-center gap-3">

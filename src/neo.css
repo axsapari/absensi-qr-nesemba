@@ -1,0 +1,47 @@
+/* Tema Neo-brutalism: krem + titik, garis hitam tebal, sudut kotak, bayangan keras. */
+@media screen {
+html.neo {
+  color-scheme: light;
+  --color-slate-50:#fffdf5; --color-slate-100:#f5eedb; --color-slate-200:#ebe2c8; --color-slate-300:#d9cdae;
+  --color-slate-400:#808080; --color-slate-500:#5c5c5c; --color-slate-600:#444444; --color-slate-700:#2b2b2b;
+  --color-slate-800:#1f1f1f; --color-slate-900:#111111; --color-slate-950:#0a0a0a;
+  --color-white:#fffefa;
+  --color-blue-50:#efecff; --color-blue-100:#e0dcff; --color-blue-200:#c8c1ff; --color-blue-300:#a79cff;
+  --color-blue-400:#8b7dff; --color-blue-500:#6d5dfc; --color-blue-600:#5b4bf0; --color-blue-700:#4a3bd6;
+  --color-blue-800:#3b2fb0; --color-blue-900:#2e2587; --color-blue-950:#1c1650;
+  --radius-md:0px; --radius-lg:0px; --radius-xl:0px; --radius-2xl:0px; --radius-3xl:0px;
+}
+html.neo body { background:#fdf6e3; }
+html.neo #root > .min-h-screen.bg-slate-100,
+html.neo body {
+  background-color:#fdf6e3;
+  background-image:radial-gradient(rgba(17,17,17,.28) 1.2px, transparent 1.4px);
+  background-size:22px 22px;
+}
+html.neo *, html.neo ::before, html.neo ::after { border-color:#111; }
+html.neo [class*="border-slate-7"], html.neo [class*="border-slate-8"], html.neo [class*="border-slate-9"],
+html.neo [class*="border-white"] { border-color:revert-layer; }
+html.neo :not(:is(.printable-report,.card-wrapper,.lunch-sheet,.paper-light,.paper) *):not(:is(.printable-report,.card-wrapper,.lunch-sheet,.paper-light,.paper)) {
+  &.border { border-width:2px; }
+  &.border-b { border-bottom-width:2px; }
+  &.border-t { border-top-width:2px; }
+  &.border-l { border-left-width:2px; }
+  &.border-r { border-right-width:2px; }
+  &.border-2 { border-width:3px; }
+  &:is(h1,h2,h3,th,label,legend) { font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.03em; }
+  &:is(button,input,select,textarea) { font-family:var(--font-mono); }
+  &:is(h1,h2,h3) { font-weight:800; }
+  &:is([class^="shadow-"],[class*=" shadow-"]):not(.shadow-none) { box-shadow:4px 4px 0 #111 !important; }
+  &.bg-white:is(.rounded-xl,.rounded-2xl,.rounded-3xl) { box-shadow:4px 4px 0 #111; }
+  &:is(button)[class*="bg-"]:not(.bg-transparent) { border:2px solid #111; box-shadow:3px 3px 0 #111; font-weight:700; transition:transform .06s, box-shadow .06s; }
+  &:is(button)[class*="bg-"]:not(.bg-transparent):active { transform:translate(3px,3px); box-shadow:0 0 0 #111 !important; }
+  &:is(input,select,textarea):not([type=checkbox]):not([type=radio]) { background-color:#fffefa; border:2px solid #111; }
+  &:is(input,select,textarea):focus { outline:3px solid #6d5dfc; outline-offset:0; box-shadow:4px 4px 0 #111 !important; }
+  &:is(input,select,textarea,button):focus-visible { outline:3px solid #6d5dfc; outline-offset:1px; }
+  &:is(thead,th) { border-color:#111; }
+}
+html.neo header[class*="bg-slate-9"] { border-bottom:3px solid #111; }
+html.neo input[type=checkbox], html.neo input[type=radio] { accent-color:#5b4bf0; }
+html.neo ::selection { background:#6d5dfc; color:#fff; }
+html.neo .theme-switch[aria-checked="true"] { background:#6d5dfc; border-color:#fff; }
+}

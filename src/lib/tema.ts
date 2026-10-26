@@ -1,16 +1,37 @@
-export type Tema = 'terang' | 'gelap';
+export type Tema = 'terang' | 'gelap' | 'neo' | 'clay' | 'retro';
 export const KUNCI_TEMA = 'absensi_tema';
+export const DAFTAR_TEMA: Tema[] = ['gelap', 'neo', 'clay', 'retro'];
 
+const VALID: string[] = ['terang', 'gelap', 'neo', 'clay', 'retro'];
+
+/** Tema tersimpan; bila belum ada pilihan, ikuti prefers-color-scheme. */
 export function bacaTema(): Tema {
   try {
-    return localStorage.getItem(KUNCI_TEMA) === 'gelap' ? 'gelap' : 'terang';
+    const v = localStorage.getItem(KUNCI_TEMA);
+    if (v && VALID.includes(v)) return v as Tema;
   } catch {
-    return 'terang';
+    /* diabaikan */
   }
+  try {
+    if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) return 'gelap';
+  } catch {
+    /* diabaikan */
+  }
+  return 'terang';
+}
+
+/** Kelas pada <html>: gelap=dark, neo, clay, retro=dark+retro. */
+export function kelasTema(tema: Tema): string[] {
+  if (tema === 'gelap') return ['dark'];
+  if (tema === 'retro') return ['dark', 'retro'];
+  if (tema === 'neo' || tema === 'clay') return [tema];
+  return [];
 }
 
 export function terapkanTema(tema: Tema, simpan = true): void {
-  document.documentElement.classList.toggle('dark', tema === 'gelap');
+  const el = document.documentElement;
+  el.classList.remove('dark', 'neo', 'clay', 'retro');
+  kelasTema(tema).forEach(k => el.classList.add(k));
   if (!simpan) return;
   try {
     localStorage.setItem(KUNCI_TEMA, tema);

@@ -1,0 +1,43 @@
+/* Tema Retro terminal: hitam-hijau, huruf fosfor, monospace, sudut kotak, kursor berkedip.
+   Dipakai bersama class "dark" (palet warna ada di retro-colors.css, dibuat scripts/gen-dark.py). */
+@media screen {
+html.retro {
+  color-scheme: dark;
+  --color-slate-50:#ecfff2; --color-slate-100:#d2ffe0; --color-slate-200:#b4ffc6; --color-slate-300:#8af5a2;
+  --color-slate-400:#5fd47e; --color-slate-500:#3a9f55; --color-slate-600:#14612c; --color-slate-700:#0f4a22;
+  --color-slate-800:#082010; --color-slate-900:#04140a; --color-slate-950:#010603;
+  --color-blue-50:#052e16; --color-blue-100:#073d1c; --color-blue-200:#9dffb4; --color-blue-300:#5cf08a;
+  --color-blue-400:#2fd45e; --color-blue-500:#22e05a; --color-blue-600:#12c446; --color-blue-700:#0e9a38;
+  --color-blue-800:#0b7a2d; --color-blue-900:#085c22; --color-blue-950:#033d14;
+  --radius-md:0px; --radius-lg:0px; --radius-xl:0px; --radius-2xl:0px; --radius-3xl:0px;
+}
+html.retro :not(:is(.printable-report,.card-wrapper,.lunch-sheet,.paper-light,.paper) *):not(:is(.printable-report,.card-wrapper,.lunch-sheet,.paper-light,.paper)) { 
+  font-family:var(--font-mono) !important;
+  &.text-white { color:#d4ffe0 !important; }
+  &:is(h1,h2,h3) { color:#7dffa0 !important; text-shadow:0 0 6px rgba(80,255,130,.75), 0 0 14px rgba(40,220,100,.45); text-transform:uppercase; letter-spacing:.04em; }
+  &:is(h1,h2,h3)::before { content:"> "; white-space:pre; }
+  &:is(h1)::after { content:"_"; animation:retro-blink 1.06s steps(1) infinite; }
+  &:is(th,label,legend) { text-transform:uppercase; letter-spacing:.04em; }
+  &[class^="shadow-"], &[class*=" shadow-"] { box-shadow:0 0 0 1px #14612c, 0 0 14px rgba(34,224,90,.18) !important; }
+  &:is(input,select,textarea):not([type=checkbox]):not([type=radio]) { background-color:#010603; border:1px solid #1a7a38; caret-color:#7dffa0; }
+  &:is(input,select,textarea):focus { outline:1px solid #7dffa0; box-shadow:0 0 10px rgba(80,255,130,.5) !important; }
+  &:is(button):focus-visible { outline:1px solid #7dffa0; outline-offset:1px; }
+  &:is(button)[class*="bg-"]:not(.bg-transparent) { border:1px solid #1a7a38; }
+  &.bg-blue-600, &.bg-blue-500, &.bg-blue-700 { color:#00160a !important; font-weight:700; }
+}
+html.retro *, html.retro ::before, html.retro ::after { border-color:#14612c; }
+html.retro [class*="border-slate-7"], html.retro [class*="border-slate-8"] { border-color:#0f4a22; }
+html.retro body { color:#6fe38a; }
+html.retro body::after {
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:2147483000;
+  background:repeating-linear-gradient(to bottom, rgba(0,0,0,.14) 0 1px, transparent 1px 3px);
+}
+html.retro input[type=checkbox], html.retro input[type=radio] { accent-color:#22e05a; }
+html.retro ::selection { background:#22e05a; color:#00160a; }
+html.retro .theme-switch[aria-checked="true"] { background:#12c446; border-color:#7dffa0; color:#00160a; }
+@keyframes retro-blink { 50% { opacity:0; } }
+}
+@media screen and (prefers-reduced-motion: reduce) {
+  html.retro h1::after { animation:none; }
+  html.neo *, html.clay * { transition:none !important; }
+}
