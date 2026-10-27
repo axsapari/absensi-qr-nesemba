@@ -15,7 +15,7 @@
         if (!t && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) t = 'gelap';
         var c = document.documentElement.classList;
         if (t === 'gelap') c.add('dark');
-        else if (t === 'retro') { c.add('dark'); c.add('retro'); }
+        else if (t === 'retro' || t === 'glass') { c.add('dark'); c.add(t); }
         else if (t === 'neo' || t === 'clay') c.add(t);
       } catch (e) {}
     </script>

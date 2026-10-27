@@ -1,0 +1,83 @@
+/* Tema Glassmorphism: kaca buram di atas gradasi biru-oranye sesuai logo SMPN 9 Banjar
+   (biru #1b1bef, oranye #ee7907). Dipakai bersama class "dark"; palet kaca ada di
+   glass-colors.css (dibuat scripts/gen-dark.py). Semua aturan hanya untuk layar. */
+@media screen {
+html.glass {
+  color-scheme: dark;
+  --glass-edge:rgba(255,255,255,.22);
+  --glass-shadow:0 8px 32px rgba(2,4,36,.42), inset 0 1px 0 rgba(255,255,255,.28);
+  --color-slate-600:rgba(255,255,255,.28); --color-slate-700:rgba(255,255,255,.2);
+  --color-slate-800:rgba(255,255,255,.1); --color-slate-900:rgba(10,16,70,.5); --color-slate-950:rgba(6,10,52,.62);
+  --color-blue-50:#e8ebff; --color-blue-100:#d3d9ff; --color-blue-200:#b6c0ff; --color-blue-300:#94a3ff;
+  --color-blue-400:#6f80ff; --color-blue-500:#4558ff; --color-blue-600:#2f40ee; --color-blue-700:#2330d6;
+  --color-blue-800:#1b24a8; --color-blue-900:#151b7c; --color-blue-950:#0b0f45;
+  --color-amber-400:#ffab4a; --color-amber-500:#ee7907; --color-amber-600:#d96a00;
+  --radius-md:.75rem; --radius-lg:1rem; --radius-xl:1.25rem; --radius-2xl:1.5rem; --radius-3xl:2rem;
+}
+html.glass body {
+  background-color:#070b2e;
+  background-image:
+    radial-gradient(48rem 34rem at 6% -4%, rgba(47,64,238,.62), transparent 62%),
+    radial-gradient(42rem 32rem at 100% 8%, rgba(238,121,7,.40), transparent 60%),
+    radial-gradient(46rem 36rem at 70% 108%, rgba(27,27,239,.5), transparent 62%),
+    radial-gradient(30rem 24rem at 0% 100%, rgba(238,121,7,.22), transparent 60%),
+    linear-gradient(160deg,#060a2a 0%,#0b1245 55%,#150f33 100%);
+  background-attachment:fixed;
+  color:#eef1ff;
+}
+html.glass #root > .min-h-screen, html.glass #root > .min-h-screen.bg-slate-100 { background:transparent !important; }
+html.glass *, html.glass ::before, html.glass ::after { border-color:rgba(255,255,255,.16); }
+html.glass [class*="border-slate-7"], html.glass [class*="border-slate-8"], html.glass [class*="border-slate-9"] { border-color:rgba(255,255,255,.14); }
+html.glass [class*="border-white"] { border-color:revert-layer; }
+html.glass :not(:is(.printable-report,.card-wrapper,.lunch-sheet,.paper-light,.paper) *):not(:is(.printable-report,.card-wrapper,.lunch-sheet,.paper-light,.paper)) {
+  /* kaca: panel, kartu, tabel, kolom isian */
+  &:is([class*="bg-white"],[class*="bg-slate-50"],[class*="bg-slate-100"],[class*="bg-slate-200"]):not(.bg-transparent):not(button):not(input):not(select):not(textarea):not(span):not(td):not(th):not(tr):not(tbody):not(thead):not(svg):not(img):not(.rounded-full) {
+    -webkit-backdrop-filter:blur(18px) saturate(150%); backdrop-filter:blur(18px) saturate(150%); }
+  &:is([class*="bg-slate-8"],[class*="bg-slate-9"]):not(span):not(button):not(.rounded-full) {
+    -webkit-backdrop-filter:blur(22px) saturate(160%); backdrop-filter:blur(22px) saturate(160%); }
+  &:is(header,aside,nav) { border-color:rgba(255,255,255,.14); box-shadow:inset 0 -1px 0 rgba(255,255,255,.1); }
+  &.bg-white:is(.rounded-xl,.rounded-2xl,.rounded-3xl) { box-shadow:var(--glass-shadow); border-color:var(--glass-edge); }
+  &:is([class^="shadow-"],[class*=" shadow-"]):not(.shadow-none) { box-shadow:var(--glass-shadow) !important; }
+  &:is(h1,h2,h3) { text-shadow:0 1px 14px rgba(70,90,255,.45); letter-spacing:-.01em; }
+
+  /* tombol utama biru, kaca terang di atasnya */
+  &:is(button,a):is(.bg-blue-500,.bg-blue-600,.bg-blue-700) {
+    background-image:linear-gradient(180deg,rgba(255,255,255,.28),rgba(255,255,255,0) 55%);
+    border:1px solid rgba(255,255,255,.35);
+    box-shadow:0 6px 18px rgba(47,64,238,.5), inset 0 1px 0 rgba(255,255,255,.45); }
+  &:is(button,a):is(.bg-amber-500,.bg-amber-600,.bg-orange-500,.bg-orange-600) {
+    background-image:linear-gradient(180deg,rgba(255,255,255,.3),rgba(255,255,255,0) 55%);
+    border:1px solid rgba(255,255,255,.4);
+    box-shadow:0 6px 18px rgba(238,121,7,.45), inset 0 1px 0 rgba(255,255,255,.5); }
+  &:is(button)[class*="bg-"]:not(.bg-transparent) { transition:transform .15s ease, box-shadow .15s ease, background-color .15s ease; }
+  &:is(button)[class*="bg-"]:not(.bg-transparent):hover { transform:translateY(-1px); }
+  &:is(button)[class*="bg-"]:not(.bg-transparent):active { transform:translateY(0) scale(.98); }
+  &:is(aside *):is(button,a):is(.bg-blue-600,.bg-blue-500) { box-shadow:0 8px 24px rgba(47,64,238,.55), inset 3px 0 0 #ee7907, inset 0 1px 0 rgba(255,255,255,.45); }
+  &:is(button):not([class*="bg-"]):hover { background-color:rgba(255,255,255,.08); }
+  &:is(button):disabled { opacity:.5; }
+
+  /* kolom isian: kaca cekung, fokus menyala oranye */
+  &:is(input,select,textarea):not([type=checkbox]):not([type=radio]):not([type=range]) {
+    background-color:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.22); color:#f4f6ff;
+    box-shadow:inset 0 2px 6px rgba(2,4,36,.28); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); }
+  &:is(input,select,textarea):focus {
+    outline:none; border-color:#ffab4a !important;
+    box-shadow:0 0 0 3px rgba(238,121,7,.35), inset 0 2px 6px rgba(2,4,36,.28) !important; }
+  &:is(button,a):focus-visible { outline:2px solid #ffab4a; outline-offset:2px; }
+
+  /* tabel */
+  &:is(th) { background-color:rgba(255,255,255,.07); }
+  &:is(tr):hover > td { background-color:rgba(255,255,255,.05); }
+}
+/* modal: kaca lebih pekat supaya teks tetap jelas di atas konten yang kabur */
+html.glass .fixed:is(.inset-0,[class*="inset-"]) :is(div)[class*="bg-white"][class*="rounded-"]:is([class*="shadow"],[class*="max-w"],[class*="w-full"]):not(:is(.printable-report,.card-wrapper,.lunch-sheet,.paper-light,.paper)):not(:is(.printable-report,.card-wrapper,.lunch-sheet,.paper-light,.paper) *) {
+  background-color:rgba(14,20,82,.97) !important; border:1px solid rgba(255,255,255,.28);
+  -webkit-backdrop-filter:blur(30px) saturate(160%); backdrop-filter:blur(30px) saturate(160%); }
+html.glass .fixed:is(.inset-0)[class*="bg-black"], html.glass .fixed.inset-0[class*="bg-slate-9"] { background-color:rgba(4,7,36,.58) !important; }
+html.glass input[type=checkbox], html.glass input[type=radio] { accent-color:#ee7907; }
+html.glass ::selection { background:#ee7907; color:#fff; }
+html.glass ::-webkit-scrollbar { width:10px; height:10px; }
+html.glass ::-webkit-scrollbar-thumb { background:rgba(255,255,255,.22); border-radius:9px; border:2px solid transparent; background-clip:padding-box; }
+html.glass ::-webkit-scrollbar-track { background:transparent; }
+html.glass .theme-switch[aria-checked="true"] { background:linear-gradient(135deg,#2f40ee,#ee7907); border-color:rgba(255,255,255,.6); color:#fff; }
+}

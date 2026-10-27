@@ -2,7 +2,10 @@
    nilai bawaan Tailwind dikembalikan di dalam elemen berikut.
    Tambahkan class "paper" pada elemen lain yang harus tampil asli. */
 @media screen {
-html:is(.neo,.clay,.retro) :is(.printable-report,.card-wrapper,.lunch-sheet,.paper-light,.paper) {
+html:is(.neo,.clay,.retro,.glass) :is(.printable-report,.card-wrapper,.lunch-sheet,.paper-light,.paper) {
+  --color-amber-400:oklch(82.8% .189 84.429);
+  --color-amber-500:oklch(76.9% .188 70.08);
+  --color-amber-600:oklch(66.6% .179 58.318);
   --color-blue-100:oklch(93.2% .032 255.585);
   --color-blue-200:oklch(88.2% .059 254.128);
   --color-blue-300:oklch(80.9% .105 251.813);

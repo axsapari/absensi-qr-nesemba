@@ -20,11 +20,19 @@ PALETTES={
   TXT={'900':'#9dffb4','800':'#8af5a2','700':'#6fe38a','600':'#4fc76d','500':'#3a9f55'},
   BR={'100':'#0f4a22','200':'#14612c','300':'#1a7a38'},
   WHITE='#04140a',BASE='#031006',BODY='#010603',PH='#2f7a45'),
+
+ 'glass':dict(sel='html.glass',out='src/glass-colors.css',
+  BG={'50':(255,255,255,.04),'100':(255,255,255,.07),'200':(255,255,255,.12),'300':(255,255,255,.18)},
+  TXT={'900':'#f7f8ff','800':'#eef1ff','700':'#dde3fb','600':'#c4cdf2','500':'#a6b2e0'},
+  BR={'100':'rgba(255,255,255,.14)','200':'rgba(255,255,255,.18)','300':'rgba(255,255,255,.26)'},
+  WHITE=(255,255,255,.10),BASE='transparent',BODY='#070b2e',PH='#8d99cc',TINT=1.6),
 }
 def build(P):
     SEL=P['sel']; BG=P['BG']; TXT=P['TXT']; BR=P['BR']; rules=[]
     def hexrgb(h):
+        if isinstance(h,tuple): return list(h[:3])
         h=h.lstrip('#'); return [int(h[i:i+2],16) for i in(0,2,4)]
+    def alpha(h): return h[3] if isinstance(h,tuple) else 1
     def add(t,decl):
         m=re.match(r'^((?:hover|focus|disabled|group-hover|even|odd|placeholder):)?([a-z\-]+)-(.+)$',t)
         pre=m.group(1) if m else None
@@ -42,24 +50,25 @@ def build(P):
         pre,kind,col,step,op=m.groups()
         if col=='white':
             if kind=='bg' and not step:
-                r,g,b=hexrgb(P['WHITE'])
-                add(t,'background-color:'+(P['WHITE'] if not op else f'rgba({r},{g},{b},{int(op)/100})')+'!important')
+                r,g,b=hexrgb(P['WHITE']); wa=alpha(P['WHITE'])
+                if isinstance(P['WHITE'],tuple): add(t,f'background-color:rgba({r},{g},{b},{(wa if (not op or int(op)>=50) else int(op)/100)})!important')
+                else: add(t,'background-color:'+(P['WHITE'] if not op else f'rgba({r},{g},{b},{int(op)/100})')+'!important')
             continue
         if not step: continue
         step_i=int(step); a=(int(op)/100) if op else 1
         if col in('slate','gray','zinc','neutral','stone'):
             if kind=='bg' and step in BG:
-                r,g,b=hexrgb(BG[step]); add(t,f'background-color:rgba({r},{g},{b},{a})!important')
+                r,g,b=hexrgb(BG[step]); add(t,f'background-color:rgba({r},{g},{b},{round(a*alpha(BG[step]),3)})!important')
             elif kind=='text' and step in TXT: add(t,f'color:{TXT[step]}!important')
             elif kind=='border' and step in BR: add(t,f'border-color:{BR[step]}!important')
             elif kind=='divide' and step in BR:
                 rules.append(f'{SEL} .{esc(t)}>:not(:last-child){PAPER}{{border-color:{BR[step]}!important}}')
             continue
         if kind=='bg' and step_i in(50,100,200):
-            pct=round({50:14,100:20,200:28}[step_i]*a)
+            pct=round({50:14,100:20,200:28}[step_i]*a*P.get('TINT',1))
             add(t,f'background-color:color-mix(in srgb,var(--color-{col}-500) {pct}%,{P["BASE"]})!important')
         elif kind=='border' and step_i in(100,200,300):
-            pct={100:30,200:40,300:50}[step_i]
+            pct=min(90,round({100:30,200:40,300:50}[step_i]*P.get('TINT',1)))
             add(t,f'border-color:color-mix(in srgb,var(--color-{col}-400) {pct}%,{P["BASE"]})!important')
         elif kind=='text' and step_i in(600,700,800,900):
             tgt={600:400,700:300,800:200,900:200}[step_i]

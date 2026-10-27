@@ -1,8 +1,8 @@
-export type Tema = 'terang' | 'gelap' | 'neo' | 'clay' | 'retro';
+export type Tema = 'terang' | 'gelap' | 'neo' | 'clay' | 'retro' | 'glass';
 export const KUNCI_TEMA = 'absensi_tema';
-export const DAFTAR_TEMA: Tema[] = ['gelap', 'neo', 'clay', 'retro'];
+export const DAFTAR_TEMA: Tema[] = ['gelap', 'neo', 'clay', 'retro', 'glass'];
 
-const VALID: string[] = ['terang', 'gelap', 'neo', 'clay', 'retro'];
+const VALID: string[] = ['terang', 'gelap', 'neo', 'clay', 'retro', 'glass'];
 
 /** Tema tersimpan; bila belum ada pilihan, ikuti prefers-color-scheme. */
 export function bacaTema(): Tema {
@@ -24,13 +24,14 @@ export function bacaTema(): Tema {
 export function kelasTema(tema: Tema): string[] {
   if (tema === 'gelap') return ['dark'];
   if (tema === 'retro') return ['dark', 'retro'];
+  if (tema === 'glass') return ['dark', 'glass'];
   if (tema === 'neo' || tema === 'clay') return [tema];
   return [];
 }
 
 export function terapkanTema(tema: Tema, simpan = true): void {
   const el = document.documentElement;
-  el.classList.remove('dark', 'neo', 'clay', 'retro');
+  el.classList.remove('dark', 'neo', 'clay', 'retro', 'glass');
   kelasTema(tema).forEach(k => el.classList.add(k));
   if (!simpan) return;
   try {
