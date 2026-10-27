@@ -1,0 +1,66 @@
+/* Tema Kontras Tinggi: putih-hitam murni, garis 2px, fokus tebal kuning, teks sangat gelap
+   (rasio kontras >= 7:1 / WCAG AAA untuk teks biasa). Hanya untuk layar. */
+@media screen {
+html.kontras {
+  color-scheme: light;
+  --color-slate-50:#ffffff; --color-slate-100:#f2f2f2; --color-slate-200:#e0e0e0; --color-slate-300:#bdbdbd;
+  --color-slate-400:#595959; --color-slate-500:#3d3d3d; --color-slate-600:#262626; --color-slate-700:#141414;
+  --color-slate-800:#0a0a0a; --color-slate-900:#000000; --color-slate-950:#000000;
+  --color-blue-50:#e6ecff; --color-blue-100:#ccd9ff; --color-blue-200:#99b3ff; --color-blue-300:#6688ff;
+  --color-blue-400:#3355ff; --color-blue-500:#0a2fd6; --color-blue-600:#0026c2; --color-blue-700:#001ea0;
+  --color-blue-800:#001680; --color-blue-900:#000f5c; --color-blue-950:#000a3d;
+  --color-emerald-500:#007a3d; --color-emerald-600:#006030; --color-emerald-700:#004a25; --color-emerald-800:#003a1c;
+  --color-amber-500:#b35a00; --color-amber-600:#9a4a00; --color-amber-700:#7a3a00; --color-amber-800:#5a2c00;
+  --color-rose-500:#b0123a; --color-rose-600:#9a0a30; --color-rose-700:#800828; --color-rose-800:#600620;
+  --color-red-500:#b00000; --color-red-600:#9a0000; --color-red-700:#800000; --color-red-800:#600000;
+  --color-indigo-500:#3a3ac8; --color-indigo-600:#2c2cb0; --color-indigo-700:#222290; --color-indigo-800:#1a1a70;
+  --color-purple-500:#7a1aaa; --color-purple-600:#661490; --color-purple-700:#520f75; --color-purple-800:#400b5c;
+  --color-sky-500:#0a6aa8; --color-sky-600:#085a90; --color-sky-700:#064a78; --color-sky-800:#043a60;
+  --color-teal-500:#00706a; --color-teal-600:#005c58; --color-teal-700:#004a46; --color-teal-800:#003a38;
+  --color-orange-500:#c05000; --color-orange-600:#a04000; --color-orange-700:#803200; --color-orange-800:#602600;
+  --color-violet-500:#5a2ac0; --color-violet-600:#4a20a0; --color-violet-700:#3a1a80; --color-violet-800:#2c1260;
+  --radius-md:.25rem; --radius-lg:.3rem; --radius-xl:.375rem; --radius-2xl:.4rem; --radius-3xl:.5rem;
+}
+html.kontras body { background:#fff; color:#000; font-weight:500; }
+html.kontras #root > .min-h-screen, html.kontras #root > .min-h-screen.bg-slate-100 { background:#fff; }
+html.kontras *, html.kontras ::before, html.kontras ::after { border-color:#000; }
+html.kontras [class*="border-slate-7"], html.kontras [class*="border-slate-8"], html.kontras [class*="border-slate-9"], html.kontras [class*="border-white"] { border-color:#fff; }
+html.kontras :not(:is(.printable-report,.card-wrapper,.lunch-sheet,.paper-light,.paper) *):not(:is(.printable-report,.card-wrapper,.lunch-sheet,.paper-light,.paper)) {
+  &.border { border-width:2px; }
+  &.border-b { border-bottom-width:2px; }
+  &.border-t { border-top-width:2px; }
+  &.border-l { border-left-width:2px; }
+  &.border-r { border-right-width:2px; }
+  &.border-2 { border-width:3px; }
+  &:is([class^="shadow-"],[class*=" shadow-"]):not(.shadow-none) { box-shadow:none !important; }
+  &:is([class*="backdrop-blur"]) { -webkit-backdrop-filter:none; backdrop-filter:none; }
+  &:is(h1,h2,h3) { font-weight:800; }
+  &:is(p,span,label,td,li,div,a,button) { text-shadow:none; }
+  &:is(a):not([class*="bg-"]) { text-decoration:underline; text-underline-offset:2px; }
+  &.text-xs, &[class*="text-[10px]"], &[class*="text-[11px]"] { font-size:.8rem; }
+  &:is(button)[class*="bg-"]:not(.bg-transparent) { border:2px solid #000; font-weight:700; }
+  &:is(input,select,textarea):not([type=checkbox]):not([type=radio]):not([type=range]) { background-color:#fff; color:#000; border:2px solid #000; }
+  &:is(input,select,textarea,button,a,[tabindex]):focus-visible,
+  &:is(input,select,textarea):focus { outline:3px solid #000; outline-offset:2px; box-shadow:0 0 0 6px #ffd400 !important; }
+  &:is(th) { background-color:#000; color:#fff; border-color:#000; }
+  &:is(th) * { color:#fff; }
+  &:is(tr):hover > td { background-color:#ffd400; color:#000; }
+  &:is(tr):hover > td * { color:#000; }
+}
+html.kontras ::placeholder { color:#4a4a4a; opacity:1; }
+html.kontras [class*="bg-slate-9"]:not(.fixed) [class*="text-slate-3"], html.kontras [class*="bg-slate-9"]:not(.fixed) [class*="text-slate-4"], html.kontras [class*="bg-slate-9"]:not(.fixed) [class*="text-slate-5"],
+html.kontras aside [class*="text-slate-"], html.kontras header [class*="text-slate-"] { color:#f2f2f2 !important; }
+html.kontras [class*="bg-slate-9"]:not(.fixed):not(input):not(select):not(textarea) { background-color:#000 !important; }
+html.kontras aside [class*="text-blue-"], html.kontras header [class*="text-blue-"], html.kontras [class*="bg-slate-9"]:not(.fixed) [class*="text-blue-"] { color:#a9bbff !important; }
+html.kontras aside .text-xs, html.kontras aside [class*="text-[1"], html.kontras header .text-xs, html.kontras header [class*="text-[1"] { font-size:.72rem; font-weight:500; }
+html.kontras header h1 { font-weight:700; }
+html.kontras [class*="bg-slate-9"]:not(.fixed) input ~ button[class*="text-slate-"], html.kontras [class*="bg-slate-9"]:not(.fixed) input ~ [class*="text-slate-"] { color:#000 !important; }
+html.kontras input[type=checkbox], html.kontras input[type=radio] { accent-color:#0026c2; width:1.1rem; height:1.1rem; }
+html.kontras ::selection { background:#000; color:#ffd400; }
+html.kontras ::-webkit-scrollbar { width:16px; height:16px; }
+html.kontras ::-webkit-scrollbar-track { background:#fff; border-left:2px solid #000; }
+html.kontras ::-webkit-scrollbar-thumb { background:#000; border:3px solid #fff; }
+html.kontras .fixed.inset-0[class*="bg-"] { background-color:rgba(0,0,0,.7) !important; }
+html.kontras .theme-switch { border:2px solid #fff; }
+html.kontras .theme-switch[aria-checked="true"] { background:#ffd400; color:#000; border-color:#fff; }
+}
