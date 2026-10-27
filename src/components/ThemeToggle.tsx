@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Moon, Boxes, Cloud, Terminal, Droplets } from 'lucide-react';
+import { Moon, Boxes, Cloud, Terminal, Droplets, Monitor } from 'lucide-react';
 import { bacaTema, terapkanTema, type Tema } from '../lib/tema';
 
 const ITEM: { tema: Exclude<Tema, 'terang'>; nama: string; Ikon: React.ComponentType<{ className?: string }> }[] = [
@@ -8,6 +8,7 @@ const ITEM: { tema: Exclude<Tema, 'terang'>; nama: string; Ikon: React.Component
   { tema: 'clay', nama: 'Clay', Ikon: Cloud },
   { tema: 'retro', nama: 'Retro terminal', Ikon: Terminal },
   { tema: 'glass', nama: 'Glassmorphism', Ikon: Droplets },
+  { tema: 'win98', nama: 'Windows 98 klasik', Ikon: Monitor },
 ];
 
 /** Saklar tema berdampingan; hanya satu aktif, mematikan = kembali ke terang. */

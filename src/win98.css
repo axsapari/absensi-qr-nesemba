@@ -1,0 +1,51 @@
+/* Tema Windows 98 klasik: abu-abu perak, tepi timbul 3D, bilah judul biru tua, desktop teal. */
+@media screen {
+html.win98 {
+  color-scheme: light;
+  --w98-raised:inset -1px -1px #0a0a0a, inset 1px 1px #ffffff, inset -2px -2px #808080, inset 2px 2px #dfdfdf;
+  --w98-sunken:inset -1px -1px #ffffff, inset 1px 1px #808080, inset -2px -2px #dfdfdf, inset 2px 2px #0a0a0a;
+  --color-slate-50:#dcdcdc; --color-slate-100:#c0c0c0; --color-slate-200:#b4b4b4; --color-slate-300:#808080;
+  --color-slate-400:#666666; --color-slate-500:#404040; --color-slate-600:#2a2a2a; --color-slate-700:#1a1a1a;
+  --color-slate-800:#0000a0; --color-slate-900:#000080; --color-slate-950:#00005c;
+  --color-blue-50:#d8e4f4; --color-blue-100:#c4d6ee; --color-blue-200:#a8c2e4; --color-blue-300:#7aa4d8;
+  --color-blue-400:#4c86cc; --color-blue-500:#1084d0; --color-blue-600:#000080; --color-blue-700:#00006a;
+  --color-blue-800:#000055; --color-blue-900:#00003f; --color-blue-950:#000028;
+  --color-emerald-500:#007a3d; --color-emerald-600:#006030; --color-emerald-700:#004a25; --color-emerald-800:#003a1c; --color-amber-500:#b35a00; --color-amber-600:#9a4a00; --color-amber-700:#7a3a00; --color-amber-800:#5a2c00; --color-rose-500:#b0123a; --color-rose-600:#9a0a30; --color-rose-700:#800828; --color-rose-800:#600620; --color-red-500:#b00000; --color-red-600:#9a0000; --color-red-700:#800000; --color-red-800:#600000; --color-indigo-500:#3a3ac8; --color-indigo-600:#2c2cb0; --color-indigo-700:#222290; --color-indigo-800:#1a1a70; --color-purple-500:#7a1aaa; --color-purple-600:#661490; --color-purple-700:#520f75; --color-purple-800:#400b5c; --color-sky-500:#0a6aa8; --color-sky-600:#085a90; --color-sky-700:#064a78; --color-sky-800:#043a60; --color-teal-500:#00706a; --color-teal-600:#005c58; --color-teal-700:#004a46; --color-teal-800:#003a38; --color-orange-500:#c05000; --color-orange-600:#a04000; --color-orange-700:#803200; --color-orange-800:#602600; --color-violet-500:#5a2ac0; --color-violet-600:#4a20a0; --color-violet-700:#3a1a80; --color-violet-800:#2c1260;
+  --radius-md:0px; --radius-lg:0px; --radius-xl:0px; --radius-2xl:0px; --radius-3xl:0px;
+}
+html.win98 body { background:#008080; color:#000; }
+html.win98 #root > .min-h-screen, html.win98 #root > .min-h-screen.bg-slate-100 { background:#c0c0c0; }
+html.win98 .bg-gradient-to-br.min-h-screen, html.win98 [class*="bg-slate-950"].min-h-screen { background:#008080 !important; }
+html.win98 *, html.win98 ::before, html.win98 ::after { border-color:#808080; }
+html.win98 [class*="border-slate-7"], html.win98 [class*="border-slate-8"], html.win98 [class*="border-slate-9"], html.win98 [class*="border-white"] { border-color:revert-layer; }
+html.win98 :not(:is(.printable-report,.card-wrapper,.lunch-sheet,.paper-light,.paper) *):not(:is(.printable-report,.card-wrapper,.lunch-sheet,.paper-light,.paper)) {
+  font-family:"MS Sans Serif","Microsoft Sans Serif",Tahoma,"Segoe UI",Arial,sans-serif;
+  letter-spacing:0;
+  &:is([class^="shadow-"],[class*=" shadow-"]):not(.shadow-none) { box-shadow:var(--w98-raised) !important; }
+  &.bg-white { background-color:#c0c0c0; }
+  &.bg-white:is(.rounded-xl,.rounded-2xl,.rounded-3xl) { box-shadow:var(--w98-raised); border-color:#c0c0c0; }
+  &:is(header) { background:linear-gradient(90deg,#000080,#1084d0) !important; border-bottom:2px solid #dfdfdf; }
+  &:is(aside) { box-shadow:inset -2px 0 #808080, inset -3px 0 #fff; }
+  &:is(h1,h2,h3) { font-weight:700; }
+  &:is(button):not(.bg-transparent)[class*="bg-"] { box-shadow:var(--w98-raised); border:0; }
+  &:is(button):not(.bg-transparent)[class*="bg-"]:active { box-shadow:var(--w98-sunken) !important; padding-top:calc(.5rem + 1px); }
+  &:is(button):not([class*="bg-"]):hover { background-color:rgba(255,255,255,.35); }
+  &:is(button,a,input,select,textarea):focus-visible { outline:1px dotted #000; outline-offset:-4px; }
+  &:is(input,select,textarea):not([type=checkbox]):not([type=radio]):not([type=range]) {
+    background-color:#fff; color:#000; border:0; box-shadow:var(--w98-sunken) !important; }
+  &:is(input,select,textarea):focus { outline:none; }
+  &:is(thead,th) { background-color:#c0c0c0; box-shadow:inset -1px -1px #808080, inset 1px 1px #fff; }
+  &:is(tr):hover > td { background-color:rgba(0,0,128,.08); }
+  &:is(.rounded-full):is(img,span,div):not(.theme-switch) { }
+}
+html.win98 table { background:#fff; }
+html.win98 aside [class*="text-slate-3"], html.win98 header [class*="text-slate-3"], html.win98 [class*="bg-slate-9"] [class*="text-slate-3"], html.win98 aside [class*="text-slate-4"], html.win98 header [class*="text-slate-4"], html.win98 aside [class*="text-slate-5"], html.win98 header [class*="text-slate-5"] { color:#d4d4f4 !important; }
+html.win98 tbody td { background-color:#fff; }
+html.win98 input[type=checkbox], html.win98 input[type=radio] { accent-color:#000080; }
+html.win98 ::selection { background:#000080; color:#fff; }
+html.win98 ::-webkit-scrollbar { width:16px; height:16px; }
+html.win98 ::-webkit-scrollbar-track { background:repeating-conic-gradient(#c0c0c0 0 25%,#fff 0 50%) 0 0/2px 2px; }
+html.win98 ::-webkit-scrollbar-thumb { background:#c0c0c0; box-shadow:var(--w98-raised); }
+html.win98 .fixed.inset-0[class*="bg-"] { background-color:rgba(0,0,0,.45) !important; }
+html.win98 .theme-switch[aria-checked="true"] { background:#c0c0c0; color:#000; box-shadow:var(--w98-sunken); border-color:#000; }
+}

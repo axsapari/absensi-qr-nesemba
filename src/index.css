@@ -6,6 +6,7 @@
 @import "./retro.css";
 @import "./glass-colors.css";
 @import "./glass.css";
+@import "./win98.css";
 @import "./tema-kertas.css";
 
 /* Cetak laporan resmi: hanya kertas laporan yang dicetak, tanpa modal/frame/pratinjau. */
