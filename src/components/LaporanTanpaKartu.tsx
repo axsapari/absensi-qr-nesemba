@@ -143,7 +143,7 @@ export const LaporanTanpaKartu: React.FC<Props> = ({
 
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="w-full min-w-[640px] text-left text-sm">
             <thead className="bg-slate-50 text-[11px] uppercase text-slate-500">
               <tr>
                 <th className="px-4 py-3 w-10">No</th>
@@ -173,7 +173,7 @@ export const LaporanTanpaKartu: React.FC<Props> = ({
                         <div className="font-bold text-slate-900">{r.siswa.nama}</div>
                         <div className="text-[11px] text-slate-400">{r.siswa.nisn}</div>
                       </td>
-                      <td className="px-4 py-3 font-semibold text-slate-700">{r.kelas?.nama_kelas || '-'}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-700 whitespace-nowrap">{r.kelas?.nama_kelas || '-'}</td>
                       <td className="px-4 py-3 text-center">
                         <span
                           className={`inline-flex items-center gap-1 font-black px-2.5 py-1 rounded-full text-xs ${

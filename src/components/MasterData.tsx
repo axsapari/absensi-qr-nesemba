@@ -349,7 +349,7 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
           {/* Table Container */}
           <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm text-slate-700">
+              <table className="w-full min-w-[820px] text-left text-sm text-slate-700">
                 <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-bold border-b border-slate-200">
                   <tr>
                     <th className="px-4 py-3.5">Foto</th>
@@ -402,7 +402,7 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
                             )}
                           </td>
                           <td className="px-4 py-3">
-                            <span className="font-semibold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
+                            <span className="font-semibold text-slate-800 bg-slate-100 px-2 py-0.5 rounded whitespace-nowrap">
                               {k?.nama_kelas || '-'}
                             </span>
                           </td>

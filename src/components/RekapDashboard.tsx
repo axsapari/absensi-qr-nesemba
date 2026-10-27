@@ -1168,7 +1168,7 @@ export const RekapDashboard: React.FC = () => {
                 </span>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm text-slate-700">
+                <table className="w-full min-w-[860px] text-left text-sm text-slate-700">
                   <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase font-bold text-slate-500">
                     <tr>
                       <th className="px-4 py-3.5">No</th>
@@ -1212,14 +1212,14 @@ export const RekapDashboard: React.FC = () => {
                             </div>
                           </td>
                           <td className="px-4 py-3">
-                            <span className="font-semibold text-slate-800 bg-slate-100 px-2.5 py-1 rounded-md text-xs">
+                            <span className="font-semibold text-slate-800 bg-slate-100 px-2.5 py-1 rounded-md text-xs whitespace-nowrap inline-block">
                               {item.kelas?.nama_kelas || '-'}
                             </span>
                           </td>
                           <td className="px-4 py-3">
                             {item.scanMasuk ? (
                               <div className="flex items-center gap-1.5">
-                                <span className="font-mono font-bold text-slate-800">
+                                <span className="font-mono font-bold text-slate-800 whitespace-nowrap">
                                   {item.scanMasuk.waktu_scan.substring(0, 5)} WIB
                                 </span>
                                 {item.scanMasuk.synced ? (
@@ -1376,7 +1376,7 @@ export const RekapDashboard: React.FC = () => {
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm text-slate-700">
+                <table className="w-full min-w-[760px] text-left text-sm text-slate-700">
                   <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase font-bold text-slate-500">
                     <tr>
                       <th className="px-4 py-3.5">No</th>
@@ -1420,7 +1420,7 @@ export const RekapDashboard: React.FC = () => {
                             </div>
                           </td>
                           <td className="px-4 py-3">
-                            <span className="font-semibold text-slate-800 bg-slate-100 px-2.5 py-1 rounded-md text-xs">
+                            <span className="font-semibold text-slate-800 bg-slate-100 px-2.5 py-1 rounded-md text-xs whitespace-nowrap inline-block">
                               {item.kelas?.nama_kelas || '-'}
                             </span>
                           </td>
@@ -1689,7 +1689,7 @@ export const RekapDashboard: React.FC = () => {
               </span>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm text-slate-700">
+              <table className="w-full min-w-[760px] text-left text-sm text-slate-700">
                 <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase font-bold text-slate-500">
                   <tr>
                     <th className="px-4 py-3">Tanggal</th>
@@ -1937,7 +1937,7 @@ export const RekapDashboard: React.FC = () => {
 
           <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm text-slate-700">
+              <table className="w-full min-w-[760px] text-left text-sm text-slate-700">
                 <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase font-bold text-slate-500">
                   <tr>
                     <th className="px-4 py-3">Waktu</th>
