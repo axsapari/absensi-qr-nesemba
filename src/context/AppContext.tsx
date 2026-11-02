@@ -48,6 +48,7 @@ import { safeSetItem, ukurPenyimpanan, STORAGE_FULL_EVENT, STORAGE_WARN_EVENT } 
 import { idbGet, idbSet } from '../lib/idbStore';
 import { ABSENSI_IDB_KEY, jendelaLokal, gabungRiwayat, buatPenulisRiwayat } from '../lib/absensiStore';
 import { processSyncToDatabase } from '../lib/syncService';
+import { tarikSemuaBaris } from '../lib/tarikSemuaBaris';
 import { getSupabaseClient, resetSupabaseClient } from '../lib/supabase';
 import { gabungkanKonfigSupabase } from '../lib/defaultConfig';
 import { runDataAudit } from '../lib/dataAudit';
@@ -1068,7 +1069,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Catatan kehadiran (Izin/Sakit/Alpa) -- selalu ambil yang terbaru dari
         // Supabase (termasuk Alpa yang ditandai otomatis oleh penjadwalan di server),
         // supaya semua perangkat melihat status yang sama.
-        const catatanResult = await supabase.from('catatan_kehadiran').select('*');
+        // Ditarik per halaman: satu SELECT dibatasi 1000 baris oleh server, sedangkan
+        // tabel ini sudah lebih dari itu (baris terbaru, mis. alpa hari ini, bisa terpotong).
+        const catatanResult: { data: CatatanKehadiran[] | null; error: { message: string } | null } = await tarikSemuaBaris<CatatanKehadiran>(
+          (dari, sampai) => supabase.from('catatan_kehadiran').select('*').order('tanggal', { ascending: true }).order('id', { ascending: true }).range(dari, sampai)
+        ).then((data) => ({ data, error: null })).catch((e: Error) => ({ data: null, error: { message: e.message } }));
         if (catatanResult.error) {
           // Tidak fatal -- mungkin tabel ini belum dibuat (fitur belum dipasang).
           // Jangan blokir sinkronisasi siswa/kelas yang sudah berhasil di atas.
