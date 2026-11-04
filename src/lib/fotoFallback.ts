@@ -11,7 +11,8 @@
  */
 import { tandaiFotoHilang } from './fotoCache';
 
-export const FOTO_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'JPG', 'JPEG', 'PNG', 'WEBP'];
+// .JPG (huruf besar) dicoba tepat setelah .jpg: 232 dari 248 foto di Storage sekolah berekstensi .JPG.
+export const FOTO_EXTENSIONS = ['jpg', 'JPG', 'jpeg', 'png', 'webp', 'JPEG', 'PNG', 'WEBP'];
 
 const EXT_RE = /\.(jpe?g|png|webp)(\?[^#]*)?(#.*)?$/i;
 
