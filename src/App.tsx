@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { panaskanFotoSiswa } from './lib/fotoPreload';
 import { AppProvider, useApp } from './context/AppContext';
 import { Sidebar, AppView } from './components/Sidebar';
 import { TopHeader } from './components/TopHeader';
@@ -20,11 +21,23 @@ import { CadanganRunner } from './components/CadanganOtomatis';
 const PROTECTED_VIEWS: AppView[] = ['rekap', 'master', 'kartu', 'backup', 'admin', 'settings'];
 
 function MainApp() {
-  const { currentUser, authChecking, supabaseConfig } = useApp();
+  const { currentUser, authChecking, supabaseConfig, siswaList } = useApp();
   const [currentView, setCurrentView] = useState<AppView>('kiosk');
   const [selectedStudentForCard, setSelectedStudentForCard] = useState<string | undefined>(undefined);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
+
+  // Pemanasan foto untuk SEMUA layar (scan, rekap, master): foto yang ada disimpan di perangkat 24 jam,
+  // foto yang belum diunggah diingat 6 jam. Pemanggilan berulang nyaris tanpa permintaan jaringan,
+  // sehingga log Supabase Storage tidak terus membengkak oleh foto yang hilang.
+  useEffect(() => {
+    if (!supabaseConfig.url || siswaList.length === 0) return;
+    let batal = false;
+    const jalan = () => { if (navigator.onLine) void panaskanFotoSiswa(siswaList, supabaseConfig.url, { batalkan: () => batal }); };
+    const awal = window.setTimeout(jalan, 3000);
+    const ulang = window.setInterval(jalan, 3 * 60 * 60 * 1000);
+    return () => { batal = true; window.clearTimeout(awal); window.clearInterval(ulang); };
+  }, [siswaList.length, supabaseConfig.url]);
 
   const handleSelectCetakSiswa = (siswaId: string) => {
     setSelectedStudentForCard(siswaId);

@@ -9,6 +9,8 @@
  *     if (nextFotoCandidate(e.target as HTMLImageElement)) return;
  *     ...(kode lama: pasang placeholder)
  */
+import { tandaiFotoHilang } from './fotoCache';
+
 export const FOTO_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'JPG', 'JPEG', 'PNG', 'WEBP'];
 
 const EXT_RE = /\.(jpe?g|png|webp)(\?[^#]*)?(#.*)?$/i;
@@ -47,7 +49,12 @@ export function nextFotoCandidate(img: HTMLImageElement): boolean {
   }
   const alts = fotoAlternatives(original);
   const tried = Number(img.dataset.fotoCoba || '0');
-  if (tried >= alts.length) return false;
+  if (tried >= alts.length) {
+    // Semua ekstensi gagal: ingat sebagai 'tidak ada' (bila perangkat online) agar tampilan berikutnya
+    // langsung memakai placeholder tanpa mengulang 8 permintaan.
+    if (/^https?:/i.test(original) && (typeof navigator === 'undefined' || navigator.onLine)) tandaiFotoHilang(original.replace(/[?#].*$/, ''));
+    return false;
+  }
   img.dataset.fotoCoba = String(tried + 1);
   img.src = alts[tried];
   return true;

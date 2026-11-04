@@ -543,6 +543,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Refs prevent background/online-event handlers from using stale React state.
   const syncInFlightRef = useRef(false);
   const autoSyncTimerRef = useRef<number | null>(null);
+  const lastFocusPengaturanRef = useRef(0);
+  const lastAkunKioskRef = useRef(0);
   const autoSyncRetryRef = useRef(0);
   const lastStorageCheckRef = useRef(0);
   // Interval kirim batch scan ke Supabase (sebelumnya 6 menit).
@@ -896,6 +898,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Setelah staf login, ambil akun kiosk dari database supaya perangkat baru (atau yang sandinya sudah
     // diganti) otomatis login sebagai kiosk saat staf logout, tanpa mengetik email/password.
     const ambilAkunKioskDariServer = async () => {
+      // Cukup sekali per 30 menit per perangkat (sandi kiosk jarang berubah).
+      const sekarangKiosk = Date.now();
+      if (sekarangKiosk - lastAkunKioskRef.current < 30 * 60 * 1000) return;
+      lastAkunKioskRef.current = sekarangKiosk;
       try {
         const { data, error } = await supabase
           .from('kiosk_akun').select('email,password').eq('id', 'default').maybeSingle();
@@ -2276,8 +2282,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       appendDiagnosticTrace(document.visibilityState === 'visible' ? 'visibility' : 'focus', absensiList, `aktivitas tab: ${document.visibilityState}`);
       if (document.visibilityState === 'visible' && navigator.onLine && !isSimulatedOffline) {
         // v16: pindah tab/focus tidak lagi memicu sinkronisasi absensi.
-        // Hanya refresh pengaturan ringan agar perubahan jam tetap terbaca.
-        void refreshPengaturanJamFromSupabase();
+        // Hanya refresh pengaturan ringan agar perubahan jam tetap terbaca. Dibatasi maksimal sekali per
+        // 10 menit: pindah-pindah tab tidak perlu memukul server setiap kali.
+        const sekarang = Date.now();
+        if (sekarang - lastFocusPengaturanRef.current >= 10 * 60 * 1000) {
+          lastFocusPengaturanRef.current = sekarang;
+          void refreshPengaturanJamFromSupabase();
+        }
       }
     };
     window.addEventListener('online', handleOnline);

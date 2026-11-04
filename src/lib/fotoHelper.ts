@@ -1,4 +1,5 @@
 import { Siswa } from '../types';
+import { fotoDariCache, fotoHilang } from './fotoCache';
 
 // Nama bucket Supabase Storage tempat menyimpan foto siswa.
 // Buat bucket ini di Supabase Dashboard > Storage, dan set sebagai PUBLIC bucket.
@@ -20,6 +21,20 @@ export const FOTO_SISWA_BUCKET = 'foto-siswa';
  * ini -- pasang `onError` di <img> pemanggil untuk otomatis jatuh ke placeholder.
  */
 export function getFotoSiswaUrl(
+  siswa: Pick<Siswa, 'foto_url' | 'nisn' | 'jenis_kelamin'>,
+  supabaseUrl: string,
+  opsi: { abaikanCache?: boolean } = {}
+): string {
+  const url = tentukanUrlFoto(siswa, supabaseUrl);
+  if (opsi.abaikanCache || !/^https?:/i.test(url)) return url;
+  // Ingatan perangkat: pakai salinan lokal bila ada; foto yang diketahui tidak ada langsung placeholder.
+  const lokal = fotoDariCache(url);
+  if (lokal) return lokal;
+  if (fotoHilang(url)) return getFotoPlaceholder(siswa.jenis_kelamin);
+  return url;
+}
+
+function tentukanUrlFoto(
   siswa: Pick<Siswa, 'foto_url' | 'nisn' | 'jenis_kelamin'>,
   supabaseUrl: string
 ): string {

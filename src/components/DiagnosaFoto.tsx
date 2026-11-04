@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Camera, Loader2 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { getFotoSiswaUrl } from '../lib/fotoHelper';
+import { bersihkanCacheFoto } from '../lib/fotoCache';
 import { HasilFotoSiswa, tafsirkanDiagnosaFoto, ujiFotoSiswa } from '../lib/diagnosaFoto';
 
 /** Kartu "Diagnosa Foto Siswa" di Panel Admin > Pemeliharaan. Hanya membaca (HEAD), tidak mengubah data. */
@@ -25,10 +26,11 @@ export const DiagnosaFoto: React.FC = () => {
   const jalankan = async () => {
     setJalan(true);
     setHasil(null);
+    await bersihkanCacheFoto(); // diagnosa harus melihat kondisi Storage yang sebenarnya
     const sampel = siswaList.filter((s) => s.status_aktif !== false && s.nisn).slice(0, 5);
     const out: HasilFotoSiswa[] = [];
     for (const s of sampel) {
-      out.push(await ujiFotoSiswa({ nama: s.nama, nisn: s.nisn }, getFotoSiswaUrl(s, supabaseConfig.url), cekStatus));
+      out.push(await ujiFotoSiswa({ nama: s.nama, nisn: s.nisn }, getFotoSiswaUrl(s, supabaseConfig.url, { abaikanCache: true }), cekStatus));
     }
     setHasil(out);
     setJalan(false);

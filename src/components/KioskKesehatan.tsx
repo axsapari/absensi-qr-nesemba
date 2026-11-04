@@ -71,7 +71,7 @@ export const KioskKesehatan: React.FC<{
       };
       const sampel = pilihSampel<Siswa>(siswaList.filter((s) => s.status_aktif !== false && s.nisn), 3);
       const hasil: HasilFotoSiswa[] = [];
-      for (const s of sampel) hasil.push(await ujiFotoSiswa({ nama: s.nama, nisn: s.nisn }, getFotoSiswaUrl(s, supabaseConfig.url), cek));
+      for (const s of sampel) hasil.push(await ujiFotoSiswa({ nama: s.nama, nisn: s.nisn }, getFotoSiswaUrl(s, supabaseConfig.url, { abaikanCache: true }), cek));
       const tafsir = tafsirkanDiagnosaFoto(hasil, supabaseConfig.url);
       if (tafsir.tingkat !== 'ok') setFoto({ tingkat: tafsir.tingkat, pesan: tafsir.pesan });
     }, 4000);

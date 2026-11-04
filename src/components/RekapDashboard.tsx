@@ -1196,6 +1196,7 @@ export const RekapDashboard: React.FC = () => {
                             <div className="flex items-center gap-3">
                               <img
                                 src={getFotoSiswaUrl(item.siswa, supabaseConfig.url)}
+                                loading="lazy"
                                 alt={item.siswa.nama}
                                 onError={(e) => {
                                   if (nextFotoCandidate(e.target as HTMLImageElement)) return;
@@ -1406,6 +1407,7 @@ export const RekapDashboard: React.FC = () => {
                             <div className="flex items-center gap-3">
                               <img
                                 src={getFotoSiswaUrl(item.siswa, supabaseConfig.url)}
+                                loading="lazy"
                                 alt={item.siswa.nama}
                                 onError={(e) => {
                                   if (nextFotoCandidate(e.target as HTMLImageElement)) return;
@@ -1627,6 +1629,7 @@ export const RekapDashboard: React.FC = () => {
               <div className="flex items-center gap-4 w-full md:w-auto">
                 <img
                   src={getFotoSiswaUrl(selectedStudentData.student, supabaseConfig.url)}
+                                loading="lazy"
                   alt={selectedStudentData.student.nama}
                   onError={(e) => {
                     if (nextFotoCandidate(e.target as HTMLImageElement)) return;

@@ -376,6 +376,7 @@ export const MasterData: React.FC<{ onSelectCetakSiswa?: (siswaId: string) => vo
                           <td className="px-4 py-3">
                             <img
                               src={getFotoSiswaUrl(s, supabaseConfig.url)}
+                                loading="lazy"
                               alt={s.nama}
                               className="w-10 h-10 rounded-xl object-cover border border-slate-200 shadow-2xs"
                               onError={(e) => {

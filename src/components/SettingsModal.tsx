@@ -1,3 +1,4 @@
+import { bersihkanCacheFoto } from '../lib/fotoCache';
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { SUPABASE_SQL_SCHEMA, getSupabaseClient } from '../lib/supabase';
@@ -613,6 +614,7 @@ export const SettingsModal: React.FC = () => {
             <button
               type="button"
               onClick={async () => {
+                await bersihkanCacheFoto(); // sinkron manual = ambil ulang foto terbaru
                 await syncMasterData();
               }}
               className="w-full flex items-center justify-center gap-2 px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition"
