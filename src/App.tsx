@@ -23,8 +23,8 @@ const PROTECTED_VIEWS: AppView[] = ['rekap', 'master', 'kartu', 'backup', 'admin
 function MainApp() {
   const { currentUser, authChecking, supabaseConfig, siswaList } = useApp();
   const [viewState, setCurrentView] = useState<AppView>('kiosk');
-  // Guru piket hanya boleh membuka Rekap (konfirmasi kehadiran); layar lain tidak pernah dirender untuknya.
-  const currentView: AppView = currentUser?.role === 'piket' ? 'rekap' : viewState;
+  // Guru piket & wali kelas hanya boleh membuka Rekap; layar lain tidak pernah dirender untuk mereka.
+  const currentView: AppView = currentUser?.role === 'piket' || currentUser?.role === 'wali_kelas' ? 'rekap' : viewState;
   const [selectedStudentForCard, setSelectedStudentForCard] = useState<string | undefined>(undefined);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);

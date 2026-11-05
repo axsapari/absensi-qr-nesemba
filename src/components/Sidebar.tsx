@@ -109,10 +109,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
   ];
 
-  const visibleMenuItems = currentUser?.role === 'piket'
+  const visibleMenuItems = currentUser?.role === 'piket' || currentUser?.role === 'wali_kelas'
     ? menuItems.filter((item) => item.id === 'rekap')
-    : currentUser?.role === 'wali_kelas'
-    ? menuItems.filter((item) => item.id === 'kiosk' || item.id === 'rekap')
     : menuItems;
 
   const handleSelectNav = (view: AppView) => {
