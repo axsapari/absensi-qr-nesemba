@@ -1168,8 +1168,8 @@ export const RekapDashboard: React.FC = () => {
                 </span>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[860px] text-left text-sm text-slate-700">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-xs uppercase font-bold text-slate-500">
+                <table className="w-full md:min-w-[860px] text-left text-sm text-slate-700 max-md:block">
+                  <thead className="max-md:hidden bg-slate-50 border-b border-slate-200 text-xs uppercase font-bold text-slate-500">
                     <tr>
                       <th className="px-4 py-3.5">No</th>
                       <th className="px-4 py-3.5">Siswa</th>
@@ -1181,7 +1181,7 @@ export const RekapDashboard: React.FC = () => {
                       <th className="px-4 py-3.5 text-right">Aksi</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-slate-100 max-md:block">
                     {dailyAttendanceList.length === 0 ? (
                       <tr>
                         <td colSpan={8} className="px-6 py-12 text-center text-slate-400 italic">
@@ -1190,9 +1190,9 @@ export const RekapDashboard: React.FC = () => {
                       </tr>
                     ) : (
                       dailyAttendanceList.map((item, idx) => (
-                        <tr key={item.siswa.id} className="hover:bg-slate-50/70 transition">
-                          <td className="px-4 py-3 text-slate-400 font-mono text-xs">{idx + 1}</td>
-                          <td className="px-4 py-3">
+                        <tr key={item.siswa.id} className="hover:bg-slate-50/70 transition max-md:grid max-md:grid-cols-2 max-md:gap-x-3 max-md:gap-y-2 max-md:p-3">
+                          <td className="px-4 py-3 text-slate-400 font-mono text-xs max-md:p-0 max-md:hidden">{idx + 1}</td>
+                          <td className="px-4 py-3 max-md:p-0 max-md:order-1 max-md:col-span-2">
                             <div className="flex items-center gap-3">
                               <img
                                 src={getFotoSiswaUrl(item.siswa, supabaseConfig.url)}
@@ -1212,12 +1212,12 @@ export const RekapDashboard: React.FC = () => {
                               </div>
                             </div>
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 max-md:p-0 max-md:order-3">
                             <span className="font-semibold text-slate-800 bg-slate-100 px-2.5 py-1 rounded-md text-xs whitespace-nowrap inline-block">
                               {item.kelas?.nama_kelas || '-'}
                             </span>
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 max-md:p-0 max-md:order-4 max-md:before:content-[attr(data-label)] max-md:before:block max-md:before:text-[10px] max-md:before:font-bold max-md:before:uppercase max-md:before:text-slate-400 max-md:before:mb-0.5" data-label="Scan Masuk">
                             {item.scanMasuk ? (
                               <div className="flex items-center gap-1.5">
                                 <span className="font-mono font-bold text-slate-800 whitespace-nowrap">
@@ -1237,7 +1237,7 @@ export const RekapDashboard: React.FC = () => {
                               <span className="text-slate-400 text-xs italic">-</span>
                             )}
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 max-md:p-0 max-md:order-2 max-md:col-span-2">
                             {item.catatan?.status === 'dispensasi' ? (
                               <span className="inline-flex items-center gap-1 bg-teal-100 text-teal-800 font-bold px-2.5 py-1 rounded-full text-xs" title={item.catatan.keterangan || ''}>
                                 Dispensasi{item.catatan.keterangan ? ` • ${item.catatan.keterangan}` : ''}
@@ -1284,7 +1284,7 @@ export const RekapDashboard: React.FC = () => {
                               </span>
                             )}
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 max-md:p-0 max-md:order-5 max-md:before:content-[attr(data-label)] max-md:before:block max-md:before:text-[10px] max-md:before:font-bold max-md:before:uppercase max-md:before:text-slate-400 max-md:before:mb-0.5" data-label="Scan Pulang">
                             {item.scanPulang ? (
                               <div className="flex items-center gap-1.5">
                                 <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md text-xs">
@@ -1304,19 +1304,19 @@ export const RekapDashboard: React.FC = () => {
                               <span className="text-slate-400 text-xs italic">-</span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-xs">
+                          <td className="px-4 py-3 text-xs max-md:p-0 max-md:order-6">
                             <div className="font-medium text-slate-800">{item.siswa.nomor_wa_ortu}</div>
                             <div className="text-slate-400">{item.siswa.nama_ortu}</div>
                           </td>
-                          <td className="px-4 py-3 text-right">
-                            <div className="flex items-center justify-end gap-1">
+                          <td className="px-4 py-3 text-right max-md:p-0 max-md:order-7 max-md:col-span-2">
+                            <div className="flex items-center justify-end max-md:justify-between gap-1">
                               <button
                                 title="Lihat detail riwayat siswa"
                                 onClick={() => {
                                   setSelectedStudentId(item.siswa.id);
                                   setActiveTab('siswa');
                                 }}
-                                className="p-2.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
+                                className="p-2.5 max-md:min-h-11 max-md:min-w-11 max-md:flex max-md:items-center max-md:justify-center text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
                               >
                                 <Eye className="w-5 h-5" />
                               </button>
@@ -1324,7 +1324,7 @@ export const RekapDashboard: React.FC = () => {
                                 <button
                                   title={isWaliKelas ? "Input Izin/Sakit/Tidak Bawa Kartu" : "Tandai Izin/Sakit/Bolos/Tidak Bawa Kartu"}
                                   onClick={() => setIzinSakitTarget({ siswa: item.siswa, catatan: item.catatan })}
-                                  className="p-2.5 text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition cursor-pointer"
+                                  className="p-2.5 max-md:min-h-11 max-md:min-w-11 max-md:flex max-md:items-center max-md:justify-center text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition cursor-pointer"
                                 >
                                   <ClipboardList className="w-5 h-5" />
                                 </button>
@@ -1337,7 +1337,7 @@ export const RekapDashboard: React.FC = () => {
                                       deleteCatatanKehadiran(item.catatan!.id);
                                     }
                                   }}
-                                  className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                  className="p-2.5 max-md:min-h-11 max-md:min-w-11 max-md:flex max-md:items-center max-md:justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
                                 >
                                   <Trash2 className="w-5 h-5" />
                                 </button>
@@ -1350,7 +1350,7 @@ export const RekapDashboard: React.FC = () => {
                                       deleteAbsensi(item.scanMasuk!.id);
                                     }
                                   }}
-                                  className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                  className="p-2.5 max-md:min-h-11 max-md:min-w-11 max-md:flex max-md:items-center max-md:justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
                                 >
                                   <Trash2 className="w-5 h-5" />
                                 </button>

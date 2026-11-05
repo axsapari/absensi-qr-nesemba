@@ -73,20 +73,20 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
   return (
     <header className="bg-slate-900 border-b border-slate-800 text-white sticky top-0 z-20 shadow-md">
-      <div className="px-4 md:px-6 h-16 flex items-center justify-between gap-3">
+      <div className="px-3 md:px-6 h-16 flex items-center justify-between gap-2 md:gap-3">
         {/* Left Side: Mobile Menu Button & Breadcrumb */}
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-2 md:gap-3 min-w-0">
           <button
             type="button"
             onClick={onOpenMobileMenu}
-            className="md:hidden p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors shrink-0"
+            className="md:hidden min-h-10 min-w-10 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors shrink-0"
             title="Buka menu navigasi"
           >
             <Menu className="w-5 h-5" />
           </button>
 
           {/* Mobile Logo Indicator */}
-          <div className="md:hidden flex items-center gap-2 shrink-0">
+          <div className="hidden sm:flex md:hidden items-center gap-2 shrink-0">
             <SchoolLogo className="w-8 h-8" />
           </div>
 
@@ -106,7 +106,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </div>
 
         {/* Right Side: Network Sync Badge & User Chip */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
           <SyncStatusBadge compact={false} className="hidden lg:flex" />
           <SyncStatusBadge compact={true} className="flex lg:hidden" />
           <ThemeToggle />

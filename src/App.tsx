@@ -106,7 +106,7 @@ function MainApp() {
         />
 
         {/* Dynamic View Body (with pb-16 to guarantee clearance above fixed persistent footer) */}
-        <main className="flex-1 pb-16">
+        <main className="flex-1 pb-24 md:pb-16">
           {currentView === 'kiosk' && <ScanKiosk />}
           {currentView === 'rekap' && <RekapDashboard />}
           {currentView === 'master' && <MasterData onSelectCetakSiswa={handleSelectCetakSiswa} />}

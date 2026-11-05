@@ -208,7 +208,7 @@ export const ScanKiosk: React.FC = () => {
       {/* TOP HEADER: Pos Status, Live Clock, Simulator */}
       <div className="flex flex-col md:flex-row items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
         {/* Pos Status Badge */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-stretch gap-2 md:gap-3 w-full md:w-auto">
           <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 px-4 py-2 rounded-xl">
             <span className="relative flex h-3.5 w-3.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -250,7 +250,7 @@ export const ScanKiosk: React.FC = () => {
         </div>
 
         {/* Live Clock & Quick Controls */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-center md:justify-end gap-2 md:gap-3 w-full md:w-auto">
           {/* Jam pulang hari ini */}
           <div className="bg-blue-950/60 border border-blue-800/70 px-4 py-2 rounded-xl text-right">
             <div className="text-[10px] md:text-xs font-semibold uppercase tracking-wider text-blue-300/90">Jam pulang hari ini</div>
@@ -262,7 +262,7 @@ export const ScanKiosk: React.FC = () => {
 
           {/* Big Digital Clock */}
           <div className="bg-slate-900/90 border border-slate-800 px-5 py-2 rounded-xl text-right">
-            <div className="text-3xl md:text-4xl font-mono font-black tracking-wider text-emerald-400">
+            <div className="text-2xl sm:text-3xl md:text-4xl font-mono font-black tracking-wider text-emerald-400">
               {currentActiveTimeStr} <span className="text-xs font-sans text-slate-400">WIB</span>
             </div>
             <div className="text-sm md:text-base text-slate-400 font-semibold">
@@ -282,7 +282,7 @@ export const ScanKiosk: React.FC = () => {
             id="toggle-sound-btn"
             onClick={handleToggleSound}
             title={soundOn ? 'Suara Aktif (Klik untuk mute)' : 'Suara Mute (Klik untuk aktifkan)'}
-            className="p-2.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 rounded-xl transition cursor-pointer"
+            className="p-2.5 min-h-11 min-w-11 flex items-center justify-center bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 rounded-xl transition cursor-pointer"
           >
             {soundOn ? <Volume2 className="w-5 h-5 text-emerald-400" /> : <VolumeX className="w-5 h-5 text-slate-500" />}
           </button>
@@ -291,7 +291,7 @@ export const ScanKiosk: React.FC = () => {
             id="toggle-fullscreen-btn"
             onClick={toggleFullscreen}
             title="Layar Penuh (Kiosk Mode)"
-            className="p-2.5 bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 rounded-xl transition cursor-pointer"
+            className="p-2.5 min-h-11 min-w-11 flex items-center justify-center bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-300 rounded-xl transition cursor-pointer"
           >
             {isFullscreen ? <Minimize2 className="w-5 h-5 text-blue-400" /> : <Maximize2 className="w-5 h-5 text-slate-400" />}
           </button>

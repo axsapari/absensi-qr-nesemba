@@ -54,7 +54,7 @@ export const SyncStatusBadge: React.FC<SyncStatusBadgeProps> = ({ compact = fals
         <button
           type="button"
           onClick={() => setIsOpenModal(true)}
-          className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition cursor-pointer select-none ${
+          className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1.5 min-h-10 sm:min-h-0 rounded-xl border text-xs font-semibold transition cursor-pointer select-none ${
             !effectiveOnline
               ? 'bg-amber-950/40 border-amber-800/80 text-amber-300 hover:bg-amber-900/40'
               : pendingSyncCount > 0
@@ -81,11 +81,11 @@ export const SyncStatusBadge: React.FC<SyncStatusBadgeProps> = ({ compact = fals
           {/* Network icon & text */}
           <span className="flex items-center gap-1">
             {effectiveOnline ? (
-              <Wifi className="w-3.5 h-3.5 text-emerald-400" />
+              <Wifi className="w-3.5 h-3.5 text-emerald-400 hidden sm:block" />
             ) : (
               <WifiOff className="w-3.5 h-3.5 text-amber-400" />
             )}
-            <span className="font-bold">
+            <span className="font-bold hidden sm:inline">
               {isSimulatedOffline
                 ? 'Simulasi Offline'
                 : effectiveOnline
@@ -94,7 +94,7 @@ export const SyncStatusBadge: React.FC<SyncStatusBadgeProps> = ({ compact = fals
             </span>
           </span>
 
-          <span className="text-slate-500">•</span>
+          <span className="text-slate-500 hidden sm:inline">•</span>
 
           {/* Sync Status Label */}
           {isSyncing ? (
@@ -105,7 +105,7 @@ export const SyncStatusBadge: React.FC<SyncStatusBadgeProps> = ({ compact = fals
           ) : pendingSyncCount > 0 ? (
             <span className="flex items-center gap-1 text-amber-300 font-bold bg-amber-950/70 px-1.5 py-0.5 rounded text-[11px]">
               <AlertCircle className="w-3 h-3" />
-              <span>{pendingSyncCount} {compact ? 'pending' : 'belum sinkron'}</span>
+              <span>{pendingSyncCount}<span className={compact ? 'hidden sm:inline' : ''}> {compact ? 'pending' : 'belum sinkron'}</span></span>
             </span>
           ) : (
             <span className="flex items-center gap-1 text-emerald-400 font-medium">
@@ -114,7 +114,7 @@ export const SyncStatusBadge: React.FC<SyncStatusBadgeProps> = ({ compact = fals
             </span>
           )}
 
-          <ChevronDown className="w-3 h-3 opacity-60 ml-0.5" />
+          <ChevronDown className="w-3 h-3 opacity-60 ml-0.5 hidden sm:block" />
         </button>
 
         {/* Dedicated "Sinkron Data" Compact Button */}
@@ -123,7 +123,8 @@ export const SyncStatusBadge: React.FC<SyncStatusBadgeProps> = ({ compact = fals
           id="btn-sinkron-data"
           onClick={handleManualSync}
           disabled={isSyncing}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition cursor-pointer select-none shadow-xs ${
+          aria-label="Sinkron Data"
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 min-h-10 min-w-10 justify-center sm:min-h-0 sm:min-w-0 rounded-xl border text-xs font-bold transition cursor-pointer select-none shadow-xs ${
             isSyncing
               ? 'bg-slate-800 border-slate-700 text-slate-400 cursor-not-allowed'
               : pendingSyncCount > 0
@@ -133,7 +134,7 @@ export const SyncStatusBadge: React.FC<SyncStatusBadgeProps> = ({ compact = fals
           title="Klik untuk memastikan seluruh data tersinkron ke database"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-          <span>{isSyncing ? 'Sinkron...' : 'Sinkron Data'}</span>
+          <span className="hidden sm:inline">{isSyncing ? 'Sinkron...' : 'Sinkron Data'}</span>
         </button>
       </div>
 
@@ -144,7 +145,7 @@ export const SyncStatusBadge: React.FC<SyncStatusBadgeProps> = ({ compact = fals
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="fixed top-20 right-6 z-50 bg-slate-900/95 border border-emerald-500/80 text-white px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2 text-xs font-semibold backdrop-blur-md"
+            className="fixed top-20 right-3 left-3 sm:left-auto sm:right-6 z-50 bg-slate-900/95 border border-emerald-500/80 text-white px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2 text-xs font-semibold backdrop-blur-md"
           >
             <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
             <span>{feedbackMsg}</span>
