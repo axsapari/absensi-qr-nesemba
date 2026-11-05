@@ -152,7 +152,7 @@ CREATE TABLE IF NOT EXISTS public.staf_profil (
   username TEXT NOT NULL,
   name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE,
-  role TEXT NOT NULL CHECK (role IN ('admin','petugas','wali_kelas')),
+  role TEXT NOT NULL CHECK (role IN ('admin','petugas','wali_kelas','piket')),
   wali_kelas_id TEXT,
   is_super_admin BOOLEAN NOT NULL DEFAULT FALSE,
   nip TEXT,

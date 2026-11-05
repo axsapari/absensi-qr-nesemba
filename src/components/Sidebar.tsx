@@ -109,7 +109,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
   ];
 
-  const visibleMenuItems = currentUser?.role === 'wali_kelas'
+  const visibleMenuItems = currentUser?.role === 'piket'
+    ? menuItems.filter((item) => item.id === 'rekap')
+    : currentUser?.role === 'wali_kelas'
     ? menuItems.filter((item) => item.id === 'kiosk' || item.id === 'rekap')
     : menuItems;
 
@@ -176,7 +178,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           Navigasi Menu
         </div>
 
-        {menuItems.map((item) => {
+        {visibleMenuItems.map((item) => {
           const isActive = currentView === item.id;
           const Icon = item.icon;
 
@@ -276,7 +278,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {currentUser.name}
                 </div>
                 <div className="text-[10px] text-blue-400 font-mono">
-                  @{currentUser.username} • {currentUser.role === 'wali_kelas' ? 'Wali Kelas' : currentUser.role === 'admin' ? 'Admin' : 'Petugas'}
+                  @{currentUser.username} • {currentUser.role === 'wali_kelas' ? 'Wali Kelas' : currentUser.role === 'piket' ? 'Guru Piket' : currentUser.role === 'admin' ? 'Admin' : 'Petugas'}
                 </div>
               </div>
             </div>

@@ -87,6 +87,8 @@ export const RekapDashboard: React.FC = () => {
   } = useApp();
 
   const isWaliKelas = currentUser?.role === 'wali_kelas';
+  /** Guru piket: hanya konfirmasi kehadiran harian (tandai izin/sakit/dll), tanpa laporan/ekspor/riwayat */
+  const isPiket = currentUser?.role === 'piket';
   const waliKelasId = currentUser?.wali_kelas_id || '';
   const visibleKelasIds = useMemo(() => isWaliKelas ? new Set(waliKelasId ? [waliKelasId] : []) : null, [isWaliKelas, waliKelasId]);
   const canEditCatatan = !isWaliKelas || !!waliKelasId;
@@ -683,7 +685,7 @@ export const RekapDashboard: React.FC = () => {
         </div>
 
         {/* Action Export & Print Controls */}
-        <div className="flex flex-wrap items-center gap-2.5">
+        {!isPiket && <div className="flex flex-wrap items-center gap-2.5">
           <button
             id="btn-print-laporan"
             onClick={() => setIsPrintModalOpen(true)}
@@ -746,13 +748,13 @@ export const RekapDashboard: React.FC = () => {
             <Download className="w-3.5 h-3.5" />
             <span>CSV</span>
           </button>
-        </div>
+        </div>}
       </div>
 
       {/* FILTER CONTROL PANEL CANGGIH */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
         {/* Row 1: Mode Tarik Data Selector */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+        <div className={`${isPiket ? "hidden" : "flex"} flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4`}>
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold uppercase text-slate-400 tracking-wider">Mode Tarik Data:</span>
             <div className="inline-flex bg-slate-100 p-1 rounded-xl">
@@ -1036,7 +1038,7 @@ export const RekapDashboard: React.FC = () => {
       </div>
 
       {/* NAVIGATION SUB-TABS */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-2">
+      <div className={`${isPiket ? "hidden" : "flex"} flex-wrap items-center gap-2 border-b border-slate-200 pb-2`}>
         <button
           id="tab-rekap-utama"
           onClick={() => setActiveTab('rekap')}
@@ -1310,7 +1312,7 @@ export const RekapDashboard: React.FC = () => {
                           </td>
                           <td className="px-4 py-3 text-right max-md:p-0 max-md:order-7 max-md:col-span-2">
                             <div className="flex items-center justify-end max-md:justify-between gap-1">
-                              <button
+                              {!isPiket && (<button
                                 title="Lihat detail riwayat siswa"
                                 onClick={() => {
                                   setSelectedStudentId(item.siswa.id);
@@ -1319,7 +1321,7 @@ export const RekapDashboard: React.FC = () => {
                                 className="p-2.5 max-md:min-h-11 max-md:min-w-11 max-md:flex max-md:items-center max-md:justify-center text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition cursor-pointer"
                               >
                                 <Eye className="w-5 h-5" />
-                              </button>
+                              </button>)}
                               {canEditCatatan && (
                                 <button
                                   title={isWaliKelas ? "Input Izin/Sakit/Tidak Bawa Kartu" : "Tandai Izin/Sakit/Bolos/Tidak Bawa Kartu"}
@@ -1342,7 +1344,7 @@ export const RekapDashboard: React.FC = () => {
                                   <Trash2 className="w-5 h-5" />
                                 </button>
                               )}
-                              {item.scanMasuk && (
+                              {item.scanMasuk && !isPiket && (
                                 <button
                                   title="Hapus record absensi ini"
                                   onClick={() => {

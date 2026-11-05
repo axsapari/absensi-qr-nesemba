@@ -259,7 +259,7 @@ export interface UserAccount {
   username: string; // 'agus' | 'moch' | 'alia' | 'feby'
   name: string; // Full Name
   email: string; // WAJIB sama persis dengan akun yang dibuat di Supabase Auth Dashboard
-  role: 'admin' | 'petugas' | 'wali_kelas';
+  role: 'admin' | 'petugas' | 'wali_kelas' | 'piket';
   wali_kelas_id?: string; // Kelas yang menjadi tanggung jawab Wali Kelas
   isSuperAdmin?: boolean; // Only 'agus' is Super Admin
   nip?: string; // NIP penandatangan/koordinator (opsional)
