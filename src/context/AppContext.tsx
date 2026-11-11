@@ -199,6 +199,8 @@ interface AppContextType {
   kioskAuthStatus: 'idle' | 'checking' | 'success' | 'failed' | 'not_configured';
   isSuperAdmin: boolean;
   loginUser: (username: string, password: string) => Promise<{ success: boolean; message: string }>;
+  /** Perangkat baru belum punya daftar guru: ambil daftar akun (tanpa kata sandi) untuk layar login. */
+  muatDaftarAkunLogin: () => Promise<void>;
   logoutUser: () => void;
   changeUserPassword: (username: string, oldPass: string, newPass: string) => Promise<{ success: boolean; message: string }>;
   adminResetUserPassword: (username: string, newPass: string) => Promise<{ success: boolean; message: string }>;
@@ -3267,6 +3269,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const isSuperAdmin = currentUser?.username?.toLowerCase() === 'agus';
 
   // Multi-user authentication -- sekarang benar-benar diverifikasi server lewat Supabase Auth
+  const muatDaftarAkunLogin = async () => {
+    const sb = getSupabaseClient(supabaseConfig);
+    if (!sb) return;
+    try {
+      const { data, error } = await sb.rpc('daftar_akun_login');
+      if (error || !Array.isArray(data)) return;
+      setUsers((prev) => {
+        const punya = new Set(prev.map((u) => (u.email || '').toLowerCase()));
+        const baru = (data as StafRow[])
+          .filter((r) => r.email && !punya.has(r.email.toLowerCase()))
+          .map((r) => fromStafRow({ ...r, nip: null, avatar: null }));
+        return baru.length ? [...prev, ...baru] : prev;
+      });
+    } catch (e) {
+      console.error('Gagal memuat daftar akun login:', e);
+    }
+  };
+
   const loginUser = async (
     username: string,
     password: string
@@ -3766,6 +3786,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         kioskAuthStatus,
         isSuperAdmin,
         loginUser,
+        muatDaftarAkunLogin,
         logoutUser,
         changeUserPassword,
         adminResetUserPassword,

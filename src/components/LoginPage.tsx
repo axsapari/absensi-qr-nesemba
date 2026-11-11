@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ThemeToggle } from './ThemeToggle';
 import { useApp } from '../context/AppContext';
 import { SchoolLogo } from './SchoolLogos';
@@ -19,7 +19,9 @@ interface LoginPageProps {
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onSuccess, onCancel }) => {
-  const { users, currentUser, loginUser, profilSekolah } = useApp();
+  const { users, currentUser, loginUser, profilSekolah, muatDaftarAkunLogin } = useApp();
+  // Perangkat baru: daftar guru belum ada di perangkat ini, ambil dulu dari server.
+  useEffect(() => { void muatDaftarAkunLogin(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [selectedUsername, setSelectedUsername] = useState<string>(
     currentUser?.username || 'agus'
