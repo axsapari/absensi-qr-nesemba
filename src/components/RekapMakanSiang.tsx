@@ -4,7 +4,7 @@ import { Printer, X, Utensils, Calendar, Scissors, History, FileSpreadsheet } fr
 import * as XLSX from 'xlsx';
 import { useApp } from '../context/AppContext';
 import { getTodayDateString } from '../data/initialData';
-import { hitungRekapMakanSiang, jumlahkanRekap, RekapKelasMakan } from '../lib/lunchRecap';
+import { BOLOS_TETAP_DAPAT_PORSI, hitungRekapMakanSiang, jumlahkanRekap, RekapKelasMakan } from '../lib/lunchRecap';
 
 /**
  * Rekap Makan Siang (cetak F4, dipotong per kelas). Aturan hitung ada di lib/lunchRecap.ts.
@@ -413,7 +413,7 @@ export const RekapMakanSiangModal: React.FC<Props> = ({ onClose }) => {
         </div>
 
         <div className="lunch-controls px-6 py-2.5 border-t border-slate-200 text-[11px] text-slate-500 bg-slate-50">
-          Porsi = jumlah siswa &minus; (sakit + izin + alpa + bolos + dispensasi{kurangiAktif ? ' + belum scan' : ''}). Siswa &ldquo;tidak bawa kartu&rdquo;
+          Porsi = jumlah siswa &minus; (sakit + izin + alpa{BOLOS_TETAP_DAPAT_PORSI ? '' : ' + bolos'} + dispensasi{kurangiAktif ? ' + belum scan' : ''}). {BOLOS_TETAP_DAPAT_PORSI ? 'Siswa bolos sementara tetap dihitung dalam porsi. ' : ''}Siswa &ldquo;tidak bawa kartu&rdquo;
           tetap dihitung hadir. Siswa dispensasi (kegiatan sekolah) tidak masuk porsi kelas karena makan siangnya diurus terpisah. Gunting mengikuti garis putus-putus.
         </div>
       </div>

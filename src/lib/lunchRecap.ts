@@ -13,8 +13,14 @@ import { sortKelas } from './classUtils';
  *   4. Catatan sakit / izin / alpa         -> mengurangi porsi
  *   5. Tanpa scan & tanpa catatan          -> "belum scan" (dikurangi bila kurangiBelumScan = true)
  *
- * porsi = total - sakit - izin - alpa - bolos - dispensasi (- belumScan bila kurangiBelumScan)
+ * porsi = total - sakit - izin - alpa - bolos* - dispensasi   (*bolos tidak dikurangi bila BOLOS_TETAP_DAPAT_PORSI) (- belumScan bila kurangiBelumScan)
  */
+/**
+ * SEMENTARA: siswa bolos tetap dihitung di porsi MBG (jumlahnya tetap tampil di baris "Bolos").
+ * Ganti ke `false` untuk mengembalikan aturan lama (bolos mengurangi porsi).
+ */
+export const BOLOS_TETAP_DAPAT_PORSI = true;
+
 export interface RekapKelasMakan {
   kelasId: string;
   namaKelas: string;
@@ -63,7 +69,7 @@ export function hitungRekapMakanSiang(input: {
     }
 
     const total = siswaKelas.length;
-    const pengurang = sakit + izin + alpa + bolos + dispensasi + (kurangiBelumScan ? belumScan : 0);
+    const pengurang = sakit + izin + alpa + (BOLOS_TETAP_DAPAT_PORSI ? 0 : bolos) + dispensasi + (kurangiBelumScan ? belumScan : 0);
     return {
       kelasId: kelas.id,
       namaKelas: kelas.nama_kelas,
