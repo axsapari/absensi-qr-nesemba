@@ -2649,7 +2649,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setLastScanResult(null);
   };
 
-  // Antrekan rekap mingguan otomatis: Jumat >= 15.00 (atau Sabtu/Minggu) untuk minggu berjalan, dan Senin-Kamis untuk
+  // Antrekan rekap mingguan otomatis: Jumat >= 11.40 (atau Sabtu/Minggu) untuk minggu berjalan, dan Senin-Kamis untuk
   // MINGGU LALU bila terlewat (pengejaran). Sekali per minggu; pengiriman sebenarnya dijalankan server.
   // Minggu sebelum WA_MINGGUAN_MULAI tidak pernah dikejar, supaya saat fitur baru aktif tidak ada kiriman data lama.
   useEffect(() => {
@@ -2659,7 +2659,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const day = now.getDay();
       const hh = now.getHours();
       if (!effectiveOnline || !waConfig.active || !getSupabaseClient(supabaseConfig)) return;
-      const jatuhTempo = (day === 5 && hh >= 15) || day === 6 || day === 0;
+      const jatuhTempo = (day === 5 && (hh > 11 || (hh === 11 && now.getMinutes() >= 40))) || day === 6 || day === 0;
       const kejar = day >= 1 && day <= 4;
       if (!jatuhTempo && !kejar) return;
       let start = getWeekMondayFriday(getTodayDateString()).start;

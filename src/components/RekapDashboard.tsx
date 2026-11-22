@@ -1919,7 +1919,7 @@ export const RekapDashboard: React.FC = () => {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <h3 className="font-black text-lg text-slate-900">Rekap WhatsApp Mingguan</h3>
-                <p className="text-xs text-slate-500 mt-1">Satu pesan per siswa untuk rekap Senin–Jumat, diantrekan otomatis setiap Jumat pukul 15.00 dan dikirim bertahap oleh server dengan jeda acak. Hari libur ditandai dan tidak dihitung; minggu yang seluruhnya libur tidak dikirim. Tidak ada WhatsApp setiap scan.</p>
+                <p className="text-xs text-slate-500 mt-1">Satu pesan per siswa untuk rekap Senin–Jumat, diantrekan otomatis setiap Jumat pukul 11.40 dan dikirim bertahap oleh server dengan jeda acak. Hari libur ditandai dan tidak dihitung; minggu yang seluruhnya libur tidak dikirim. Tidak ada WhatsApp setiap scan.</p>
               </div>
               <div className="flex gap-2">
                 <button disabled={weeklySending} onClick={async () => { setWeeklySending(true); setWeeklyMessage(''); const r = await sendWeeklyWhatsAppSummary(undefined, undefined, false); setWeeklyMessage(r.message); setWeeklySending(false); }} className="px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold disabled:opacity-50">{weeklySending ? 'Memproses...' : 'Antrekan Rekap Minggu Ini'}</button>
