@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../context/AppContext';
 import { Siswa, CatatanKehadiran } from '../types';
@@ -77,6 +77,8 @@ export const RekapDashboard: React.FC = () => {
     logNotifikasiList,
     logRekapWAMingguanList,
     sendWeeklyWhatsAppSummary,
+    muatRiwayatWaMingguan,
+    kirimUjiRekapMingguan,
     deleteAbsensi,
     setCatatanIzinSakit,
     deleteCatatanKehadiran,
@@ -158,6 +160,14 @@ export const RekapDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'rekap' | 'matriks' | 'siswa' | 'analisis' | 'tindakan' | 'tanpa_kartu' | 'wa_mingguan' | 'log_wa'>('rekap');
   const [weeklySending, setWeeklySending] = useState(false);
   const [weeklyMessage, setWeeklyMessage] = useState('');
+  const [nomorUjiWa, setNomorUjiWa] = useState('');
+  // Riwayat/antrean rekap WA mingguan hidup di server: muat saat tab dibuka dan segarkan tiap 30 detik.
+  useEffect(() => {
+    if (activeTab !== 'wa_mingguan') return;
+    void muatRiwayatWaMingguan();
+    const t = window.setInterval(() => { void muatRiwayatWaMingguan(); }, 30_000);
+    return () => window.clearInterval(t);
+  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
   const [selectedStudentId, setSelectedStudentId] = useState<string>(siswaList[0]?.id || '');
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [isLunchModalOpen, setIsLunchModalOpen] = useState(false);
@@ -1909,14 +1919,19 @@ export const RekapDashboard: React.FC = () => {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <h3 className="font-black text-lg text-slate-900">Rekap WhatsApp Mingguan</h3>
-                <p className="text-xs text-slate-500 mt-1">Satu pesan per siswa untuk rekap Senin–Jumat. Tidak ada lagi WhatsApp otomatis setiap scan.</p>
+                <p className="text-xs text-slate-500 mt-1">Satu pesan per siswa untuk rekap Senin–Jumat, diantrekan otomatis setiap Jumat pukul 15.00 dan dikirim bertahap oleh server dengan jeda acak. Hari libur ditandai dan tidak dihitung; minggu yang seluruhnya libur tidak dikirim. Tidak ada WhatsApp setiap scan.</p>
               </div>
               <div className="flex gap-2">
-                <button disabled={weeklySending} onClick={async () => { setWeeklySending(true); setWeeklyMessage(''); const r = await sendWeeklyWhatsAppSummary(undefined, undefined, false); setWeeklyMessage(r.message); setWeeklySending(false); }} className="px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold disabled:opacity-50">{weeklySending ? 'Mengirim...' : 'Kirim Rekap Mingguan'}</button>
-                <button disabled={weeklySending} onClick={async () => { setWeeklySending(true); setWeeklyMessage(''); const r = await sendWeeklyWhatsAppSummary(undefined, undefined, true); setWeeklyMessage(r.message); setWeeklySending(false); }} className="px-4 py-2.5 rounded-xl bg-amber-500 text-white text-xs font-bold disabled:opacity-50">Kirim Ulang yang Gagal</button>
+                <button disabled={weeklySending} onClick={async () => { setWeeklySending(true); setWeeklyMessage(''); const r = await sendWeeklyWhatsAppSummary(undefined, undefined, false); setWeeklyMessage(r.message); setWeeklySending(false); }} className="px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold disabled:opacity-50">{weeklySending ? 'Memproses...' : 'Antrekan Rekap Minggu Ini'}</button>
+                <button disabled={weeklySending} onClick={async () => { setWeeklySending(true); setWeeklyMessage(''); const r = await sendWeeklyWhatsAppSummary(undefined, undefined, true); setWeeklyMessage(r.message); setWeeklySending(false); }} className="px-4 py-2.5 rounded-xl bg-amber-500 text-white text-xs font-bold disabled:opacity-50">Antrekan Ulang yang Gagal</button>
               </div>
             </div>
             {weeklyMessage && <div className="mt-4 bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm text-slate-700">{weeklyMessage}</div>}
+            <div className="mt-4 flex flex-col sm:flex-row gap-2 sm:items-center text-xs">
+              <span className="font-bold text-slate-600">Uji coba ke nomor sendiri:</span>
+              <input value={nomorUjiWa} onChange={(e) => setNomorUjiWa(e.target.value)} placeholder="08xxxxxxxxxx" inputMode="tel" className="px-3 py-2 min-h-10 rounded-xl border border-slate-300 bg-white text-slate-800 font-mono sm:w-48" />
+              <button disabled={weeklySending || !nomorUjiWa.trim()} onClick={async () => { setWeeklySending(true); const r = await kirimUjiRekapMingguan(nomorUjiWa); setWeeklyMessage(r.message); setWeeklySending(false); }} className="px-4 py-2 min-h-10 rounded-xl bg-slate-800 text-white font-bold disabled:opacity-50">Kirim Pesan Uji</button>
+            </div>
           </div>
           <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
             <div className="px-4 py-3 border-b bg-slate-50 text-xs font-bold text-slate-600">Riwayat Rekap WA Mingguan ({logRekapWAMingguanList.length})</div>
