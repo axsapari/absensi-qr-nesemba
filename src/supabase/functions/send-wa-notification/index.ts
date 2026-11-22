@@ -21,93 +21,79 @@
 
 const WA_API_TOKEN = Deno.env.get('WA_API_TOKEN') || '';
 
+// Endpoint gateway DITETAPKAN di server. Alamat dari browser tidak pernah dipakai, supaya token
+// tidak bisa dibelokkan ke server lain.
+const ENDPOINT_FONNTE = 'https://api.fonnte.com/send';
+const ENDPOINT_WABLAS = 'https://phone.wablas.com/api/send-message';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-Deno.serve(async (req: Request) => {
-  // Browser akan mengirim preflight OPTIONS request dulu -- wajib direspons agar tidak diblokir CORS
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+// verify_jwt sudah memeriksa tanda tangan JWT. Di sini hanya memastikan perannya "authenticated"
+// (guru/staf/kiosk yang login), bukan kunci anon yang publik di browser.
+function peranJwt(req: Request): string {
+  try {
+    const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return String(payload.role || '');
+  } catch {
+    return '';
   }
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const { provider, endpointUrl, targetPhone, message } = await req.json();
-
-    if (!targetPhone || !message) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'targetPhone dan message wajib diisi' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    if (peranJwt(req) !== 'authenticated') {
+      return json({ success: false, error: 'Harus login sebagai pengguna aplikasi.' }, 401);
     }
 
+    const { provider, targetPhone, message } = await req.json();
+
+    if (!targetPhone || !message) {
+      return json({ success: false, error: 'targetPhone dan message wajib diisi' }, 400);
+    }
+    if (!/^62[0-9]{8,13}$/.test(String(targetPhone))) {
+      return json({ success: false, error: 'Format nomor tujuan tidak valid (harus 62xxxxxxxxxx).' }, 400);
+    }
+    if (String(message).length > 4000) {
+      return json({ success: false, error: 'Pesan terlalu panjang.' }, 400);
+    }
     if (!WA_API_TOKEN) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'WA_API_TOKEN belum diatur. Tambahkan secret WA_API_TOKEN di halaman Edge Functions > Manage secrets pada Supabase Dashboard.',
-        }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return json({
+        success: false,
+        error: 'WA_API_TOKEN belum diatur. Tambahkan secret WA_API_TOKEN di halaman Edge Functions > Manage secrets pada Supabase Dashboard.',
+      }, 500);
     }
 
     let res: Response;
+    let isSuccessFn: (r: any) => boolean;
 
     if (provider === 'wablas') {
-      res = await fetch(endpointUrl || 'https://phone.wablas.com/api/send-message', {
+      res = await fetch(ENDPOINT_WABLAS, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: WA_API_TOKEN,
-        },
-        body: JSON.stringify({
-          phone: targetPhone,
-          message: message,
-        }),
+        headers: { 'Content-Type': 'application/json', Authorization: WA_API_TOKEN },
+        body: JSON.stringify({ phone: targetPhone, message }),
       });
-    } else if (provider === 'custom') {
-      res = await fetch(endpointUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${WA_API_TOKEN}`,
-        },
-        body: JSON.stringify({
-          to: targetPhone,
-          message: message,
-        }),
-      });
+      isSuccessFn = (r) => r?.status === true || r?.status === 'success';
     } else {
-      // Default: Fonnte
       const formData = new FormData();
       formData.append('target', targetPhone);
       formData.append('message', message);
-
-      res = await fetch(endpointUrl || 'https://api.fonnte.com/send', {
-        method: 'POST',
-        headers: {
-          Authorization: WA_API_TOKEN,
-        },
-        body: formData,
-      });
+      res = await fetch(ENDPOINT_FONNTE, { method: 'POST', headers: { Authorization: WA_API_TOKEN }, body: formData });
+      // Fonnte membalas HTTP 200 juga saat gagal ({"status":false,"reason":...}); hanya status:true yang sukses.
+      isSuccessFn = (r) => r?.status === true;
     }
 
-    const resJson = await res.json().catch(() => ({ status: res.status, text: 'Respons bukan JSON' }));
-    const isSuccess =
-      res.ok && (resJson.status === true || resJson.status === 'success' || res.status === 200);
-
-    return new Response(
-      JSON.stringify({ success: isSuccess, response: resJson }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    const resJson = await res.json().catch(() => ({ status: false, text: 'Respons bukan JSON', http: res.status }));
+    return json({ success: res.ok && isSuccessFn(resJson), response: resJson });
   } catch (err) {
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: err instanceof Error ? err.message : 'Kesalahan tak dikenal di Edge Function',
-      }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    return json({ success: false, error: err instanceof Error ? err.message : 'Kesalahan tak dikenal di Edge Function' }, 500);
   }
 });
