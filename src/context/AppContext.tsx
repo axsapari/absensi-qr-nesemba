@@ -2649,21 +2649,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setLastScanResult(null);
   };
 
-  // Antrekan rekap mingguan otomatis: Jumat >= 15.00 (atau Sabtu/Minggu bila Jumat terlewat), sekali per minggu.
-  // Cukup SATU perangkat yang terbuka (kios/guru piket/admin); pengiriman sebenarnya dijalankan server.
+  // Antrekan rekap mingguan otomatis: Jumat >= 15.00 (atau Sabtu/Minggu) untuk minggu berjalan, dan Senin-Kamis untuk
+  // MINGGU LALU bila terlewat (pengejaran). Sekali per minggu; pengiriman sebenarnya dijalankan server.
+  // Minggu sebelum WA_MINGGUAN_MULAI tidak pernah dikejar, supaya saat fitur baru aktif tidak ada kiriman data lama.
   useEffect(() => {
+    const WA_MINGGUAN_MULAI = '2026-11-23';
     const timer = window.setInterval(() => {
       const now = new Date();
       const day = now.getDay();
       const hh = now.getHours();
+      if (!effectiveOnline || !waConfig.active || !getSupabaseClient(supabaseConfig)) return;
       const jatuhTempo = (day === 5 && hh >= 15) || day === 6 || day === 0;
-      if (!jatuhTempo || !effectiveOnline || !waConfig.active || !getSupabaseClient(supabaseConfig)) return;
-      const { start } = getWeekMondayFriday(getTodayDateString());
+      const kejar = day >= 1 && day <= 4;
+      if (!jatuhTempo && !kejar) return;
+      let start = getWeekMondayFriday(getTodayDateString()).start;
+      if (kejar) {
+        const d = new Date(`${start}T00:00:00`);
+        d.setDate(d.getDate() - 7);
+        start = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      }
+      if (start < WA_MINGGUAN_MULAI) return;
       let terakhir: string | null = null;
       try { terakhir = localStorage.getItem(STORAGE_KEYS.LAST_WEEKLY_WA_AUTOSEND); } catch { /* abaikan */ }
       if (terakhir === start) return;
       safeSetItem(STORAGE_KEYS.LAST_WEEKLY_WA_AUTOSEND, start);
-      void sendWeeklyWhatsAppSummary().then((r) => { if (!r.success) safeSetItem(STORAGE_KEYS.LAST_WEEKLY_WA_AUTOSEND, ''); });
+      const end = getWeekMondayFriday(start).end;
+      void sendWeeklyWhatsAppSummary(start, end).then((r) => { if (!r.success) safeSetItem(STORAGE_KEYS.LAST_WEEKLY_WA_AUTOSEND, ''); });
     }, 60_000);
     return () => window.clearInterval(timer);
   }, [effectiveOnline, waConfig.active, siswaList, absensiList, catatanKehadiranList, nationalHolidays, customSchoolDays, pengaturanJam]);
