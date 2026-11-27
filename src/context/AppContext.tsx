@@ -1460,7 +1460,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         .maybeSingle();
       if (error) throw error;
       if (!data) return;
-      setPengaturanJam((prev) => ({
+      setPengaturanJam((prev) => {
+        const next = {
         ...prev,
         jam_buka_pos: String(data.jam_buka_pos ?? prev.jam_buka_pos).slice(0, 5),
         batas_tepat_waktu: String(data.batas_tepat_waktu ?? prev.batas_tepat_waktu).slice(0, 5),
@@ -1471,7 +1472,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           hari_khusus: Array.isArray(data.hari_khusus) ? data.hari_khusus : (prev.hari_khusus || []),
         hari_aktif_sekolah: Array.isArray(data.hari_aktif_sekolah) ? data.hari_aktif_sekolah : prev.hari_aktif_sekolah,
         toleransi_duplikasi_menit: Number(data.toleransi_duplikasi_menit ?? prev.toleransi_duplikasi_menit),
-      }));
+        };
+        // Tidak ada perubahan: pertahankan objek lama supaya pembacaan berkala tidak memicu render ulang.
+        return JSON.stringify(next) === JSON.stringify(prev) ? prev : next;
+      });
     } catch (err) {
       console.warn('Gagal memperbarui pengaturan jam dari Supabase:', err);
     }
@@ -2332,6 +2336,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => window.clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSessionEmail, isSimulatedOffline]);
+
+  // Komputer pos tidak pernah pindah tab/fokus, jadi pengaturan (jam pulang, pulang cepat, libur) dibaca ulang
+  // otomatis tiap 2 menit selama online & sudah login: perubahan dari admin sampai tanpa reload manual.
+  // Hanya SATU baris kecil (pengaturan_jam) per siklus; dilewati bila ada perubahan pengaturan lokal yang belum terkirim
+  // (ditangani di refreshPengaturanJamFromSupabase).
+  useEffect(() => {
+    if (!activeSessionEmail || isSimulatedOffline) return;
+    const timer = window.setInterval(() => {
+      if (!navigator.onLine) return;
+      void refreshPengaturanJamFromSupabase();
+    }, 2 * 60 * 1000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionEmail, isSimulatedOffline, supabaseConfig.url, supabaseConfig.anonKey]);
 
   // Auto-dismiss banner after 5 seconds
   useEffect(() => {
